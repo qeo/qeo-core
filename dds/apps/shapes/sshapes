@@ -1,0 +1,2 @@
+./shapes -k myCerts/clientkey.pem -c myCerts/client.pem $*
+

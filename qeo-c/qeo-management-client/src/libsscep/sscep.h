@@ -1,15 +1,34 @@
-
 /*
- * sscep -- Simple SCEP client implementation
- * Copyright (c) Jarkko Turkulainen 2003. All rights reserved.
- * See the file COPYRIGHT for licensing information.
+ * Copyright (c) 2014 - Qeo LLC
+ *
+ * The source code form of this Qeo Open Source Project component is subject
+ * to the terms of the Clear BSD license.
+ *
+ * You can redistribute it and/or modify it under the terms of the Clear BSD
+ * License (http://directory.fsf.org/wiki/License:ClearBSD). See LICENSE file
+ * for more details.
+ *
+ * The Qeo Open Source Project also includes third party Open Source Software.
+ * See LICENSE file for more details.
+ *
+ * This file incorporates work covered by the following copyright and
+ * permission notice:
+ *
+ *   Copyright (c) Jarkko Turkulainen 2003. All rights reserved. 
+ *   See the 'sscep License' chapter in the file COPYRIGHT for copyright notice
+ *   and original licensing information.
  */
 
 
+#ifndef SSCEP_H_
+#define SSCEP_H_
+
 #include "conf.h"
-#include "cmd.h"
+#include "sscep_api.h"
+#include <qeo/log.h>
 
 #include <stdio.h>
+#include <stddef.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,12 +59,6 @@
 
 #define	VERSION	"20081211"
 
-/* SCEP operations */
-int operation_flag;
-#define	SCEP_OPERATION_GETCA	1
-#define	SCEP_OPERATION_ENROLL	3
-#define	SCEP_OPERATION_GETCERT	5
-#define	SCEP_OPERATION_GETCRL	7
 
 /* SCEP MIME headers */
 #define MIME_GETCA	"application/x-x509-ca-cert"
@@ -75,13 +88,8 @@ int operation_flag;
 #define	SCEP_REPLY_CERTREP	3
 #define	SCEP_REPLY_CERTREP_STR	"3"
 
-/* SCEP pkiStatus values (also used as SSCEP return values) */
-#define SCEP_PKISTATUS_SUCCESS		0
-#define SCEP_PKISTATUS_FAILURE		2
-#define SCEP_PKISTATUS_PENDING		3
 
 /* SSCEP return values (not in SCEP draft) */
-#define SCEP_PKISTATUS_ERROR		1 /* General error */
 #define SCEP_PKISTATUS_BADALG		70 /* BADALG failInfo */
 #define SCEP_PKISTATUS_BADMSGCHK	71 /* BADMSGCHK failInfo */
 #define SCEP_PKISTATUS_BADREQ		72 /* BADREQ failInfo */
@@ -114,49 +122,6 @@ int operation_flag;
 /* End of Global defines */
 
 
-/* Global variables */
-
-/* Program name */
-char *pname;
-
-/* Network timeout */
-int timeout;
-
-/* Certificates, requests, keys.. */
-X509 *cacert;
-X509 *encert;
-X509 *localcert;
-X509 *othercert;
-X509 *renewal_cert;
-X509_REQ *request;
-EVP_PKEY *rsa;
-EVP_PKEY *renewal_key;
-X509_CRL *crl;
-FILE *cafile;
-FILE *reqfile;
-FILE *otherfile;
-FILE *crlfile;
-
-/* Fingerprint, signing and encryption algorithms */
-EVP_MD *fp_alg;
-EVP_MD *sig_alg;
-EVP_CIPHER *enc_alg;
-
-/* OpenSSL OID handles */
-int nid_messageType;
-int nid_pkiStatus;
-int nid_failInfo;
-int nid_senderNonce;
-int nid_recipientNonce;
-int nid_transId;
-int nid_extensionReq;
-
-/* Global pkistatus */
-int pkistatus;
-
-/* End of Global variables */
-
-
 /* Structures */
 
 /* GETCertInital data structure */
@@ -173,7 +138,7 @@ struct http_reply {
 	int type;
 
 	/* Status */
-	int status;
+	long status;
 
 	/* Payload */
 	char *payload;
@@ -189,20 +154,16 @@ struct scep {
 	int request_type;
 	char *request_type_str;
 	int reply_type;
-	char *reply_type_str;
 
 	/* SCEP message status */
 	int pki_status;
-	char *pki_status_str;
 	int fail_info;
-	char *fail_info_str;
 
 	/* SCEP transaction attributes */
 	char *transaction_id;
-	unsigned char *sender_nonce;
+	char *sender_nonce;
 	int sender_nonce_len;
-	unsigned char *reply_recipient_nonce;
-	unsigned char *reply_sender_nonce;
+	char *reply_recipient_nonce;
 	int recipient_nonce_len;
 
 	/* Certificates */
@@ -213,7 +174,7 @@ struct scep {
 
 	/* Request */
 	PKCS7 *request_p7;
-	unsigned char *request_payload;	
+	char *request_payload;
 	int request_len;
 	pkcs7_issuer_and_subject *ias_getcertinit;
 	PKCS7_ISSUER_AND_SERIAL *ias_getcert;
@@ -221,88 +182,55 @@ struct scep {
 
 	/* Reply */
 	PKCS7 *reply_p7;
-	unsigned char *reply_payload;	
-	int reply_len;
+};
 
+struct sscep_ctx {
+    int nid_messageType;
+    int nid_pkiStatus;
+    int nid_failInfo;
+    int nid_senderNonce;
+    int nid_recipientNonce;
+    int nid_transId;
+    int nid_extensionReq;
+    int verbose;
+    int debug;
+    EVP_MD *fp_alg;
+    EVP_MD *sig_alg;
+    EVP_CIPHER *enc_alg;
 };
 /* End of structures */
 
 
 /* Functions */
-
-/* Print usage information */
-void usage(void);
-
-/* Send HTTP message */
-int send_msg (struct http_reply *, char *, char *, int, int);
-
-/* Catch SIGALRM */
-void catchalarm (int);
-
-/* Get config file parameter */
-char *get_string (char *);
-
-/* Report memory error */
-void error_memory(void);
-
-/* Initialize config file */
-void init_config(FILE *);
-
-/* Initialize SCEP layer */
-int init_scep(void);
-
-/* Read RSA private key file */
-void read_key(EVP_PKEY** key, char* filename);
-
-/* Read CA certificate file */
-void read_ca_cert(void);
-
-/* Read local certificate file */
-void read_cert(X509** cert, char* filename);
-
-/* Read certificate request and private key */
-void read_request(void);
-
-/* Write CRL */
-void write_crl(struct scep *);
-
-/* Write local certificate file */
-void write_local_cert(struct scep *);
-
-/* Write other certificate file */
-void write_other_cert(struct scep *);
-
-/* Write CA files */
-int write_ca_ra(struct http_reply *);
-
-/* Create new SCEP session */
-int new_transaction(struct scep *);
-
 /* Create self-signed certificate */
-int new_selfsigned(struct scep *);
+int new_selfsigned(struct scep *, struct sscep_ctx *ctx, struct sscep_operation_info *op_info);
 
 /* Get key fingerprint */
 char * key_fingerprint(X509_REQ *);
 
 /* PKCS#7 encode message */
-int pkcs7_wrap(struct scep *);
+int pkcs7_wrap(struct scep *, struct sscep_ctx *, struct sscep_operation_info *);
 
 /* PKCS#7 decode message */
-int pkcs7_unwrap(struct scep *);
+int pkcs7_unwrap(struct scep *s, struct sscep_ctx *ctx, struct sscep_operation_info *op_info, char* data, int datalen);
 
 /* Add signed string attribute */
-int add_attribute_string(STACK_OF(X509_ATTRIBUTE) *, int, char *);
+int add_attribute_string(STACK_OF(X509_ATTRIBUTE) *, int, char *, struct sscep_ctx *);
 
 /* Add signed octet attribute */
-int add_attribute_octet(STACK_OF(X509_ATTRIBUTE) *, int, char *, int);
+int add_attribute_octet(STACK_OF(X509_ATTRIBUTE) *, int, char *, int, struct sscep_ctx *);
 
 /* Find signed attributes */
-int get_signed_attribute(STACK_OF(X509_ATTRIBUTE) *, int, int, char **);
-int get_attribute(STACK_OF(X509_ATTRIBUTE) *, int, ASN1_TYPE **);
+int get_signed_attribute(STACK_OF(X509_ATTRIBUTE) *, int, int, char **, struct sscep_ctx *);
+int get_attribute(STACK_OF(X509_ATTRIBUTE) *, int, ASN1_TYPE **, struct sscep_ctx *);
 
 /* URL-endcode */
-char *url_encode (char *, size_t);
+char *url_encode (char *, ssize_t);
 
-/* End of Functions */
+/* Retrieve the ca cert */
+/* Send HTTP message */
+int send_msg (struct http_reply *, char *url, int operation, CURL *cctx, int verbose);
+int retrieve_local_cert(struct scep *s, cert_cb cb, void *cookie, struct sscep_ctx *, struct sscep_operation_info *op_info);
+int retrieve_ca_ra(struct http_reply *s, cert_cb cb, void* cookie, struct sscep_ctx *);
 
-
+#endif

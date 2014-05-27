@@ -1,8 +1,22 @@
-
 /*
- * sscep -- Simple SCEP client implementation
- * Copyright (c) Jarkko Turkulainen 2003. All rights reserved.
- * See the file COPYRIGHT for licensing information.
+ * Copyright (c) 2014 - Qeo LLC
+ *
+ * The source code form of this Qeo Open Source Project component is subject
+ * to the terms of the Clear BSD license.
+ *
+ * You can redistribute it and/or modify it under the terms of the Clear BSD
+ * License (http://directory.fsf.org/wiki/License:ClearBSD). See LICENSE file
+ * for more details.
+ *
+ * The Qeo Open Source Project also includes third party Open Source Software.
+ * See LICENSE file for more details.
+ *
+ * This file incorporates work covered by the following copyright and
+ * permission notice:
+ *
+ *   Copyright (c) Jarkko Turkulainen 2003. All rights reserved. 
+ *   See the 'sscep License' chapter in the file COPYRIGHT for copyright notice
+ *   and original licensing information.
  */
 
 
