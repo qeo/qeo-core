@@ -43,6 +43,9 @@ typedef enum {
 
 #define	DDS_ALL_STATUS		      0x0000ffffU
 
+#define	DDS_STATUS_MASK_NONE	      0x0U
+#define	DDS_STATUS_MASK_ALL	      DDS_ALL_STATUS
+
 typedef unsigned DDS_DomainId_t;
 
 typedef DDS_HANDLE DDS_InstanceHandle_t;
