@@ -1283,7 +1283,7 @@ static const QT_DESC qt_history = {
 
 
 /* Resource limits type functions. */
-/* -------------------------- */
+/* ------------------------------- */
 
 static int qt_resource_limits_valid (const void *src, int disc)
 {
@@ -1400,7 +1400,7 @@ static void qt_rd_lifecycle_dump (DDS_ReaderDataLifecycleQosPolicy *qp)
 	display_duration (&qp->autopurge_disposed_samples_delay);
 }
 
-#endif /* DDS_DEBUG */
+#endif
 
 static const QT_DESC qt_rd_lifecycle = {
 	qt_rd_lifecycle_valid,
@@ -2259,7 +2259,9 @@ static void qos_set (UniQos_t *dp, void *sp, QGROUP g)
 	memset (dp, 0, sizeof (UniQos_t));
 	for (qos = QP_MIN; qos < QP_MAX; qos++) {
 		ofs = qos_descs [qos]->offsets [g];
-		if (ofs == OFS_NU || qos == QP_TIME_BASED_FILTER) {
+		if (ofs == OFS_NU ||
+		    qos == QP_TIME_BASED_FILTER ||
+		    qos == QP_READER_DATA_LIFECYCLE) {
 			if (qos_descs [qos]->uni_ofs == OFS_NU)
 				continue;
 
@@ -2348,7 +2350,9 @@ static int qos_update (Qos_t **qpp, void *sp, QGROUP g)
 	prev_h = qos_hash ((unsigned char *) dp, sizeof (UniQos_t)) % MAX_HASH;
 	for (qos = QP_MIN; qos < QP_MAX; qos++) {
 		ofs = qos_descs [qos]->offsets [g];
-		if (ofs == OFS_NU || qos == QP_TIME_BASED_FILTER)
+		if (ofs == OFS_NU ||
+		    qos == QP_TIME_BASED_FILTER ||
+		    qos == QP_READER_DATA_LIFECYCLE)
 			continue;
 
 		type = qos_descs [qos]->type;

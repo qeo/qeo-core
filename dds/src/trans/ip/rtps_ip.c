@@ -55,6 +55,11 @@
 #include "ri_data.h"
 #include "ri_udp.h"
 #ifdef DDS_SECURITY
+#ifdef DDS_NATIVE_SECURITY
+#include "nsecplug/nsecplug.h"
+#else
+#include "msecplug/msecplug.h"
+#endif
 #include "ri_dtls.h"
 #endif
 #ifdef DDS_TCP
@@ -64,8 +69,6 @@
 #endif
 #endif
 #include "rtps_ip.h"
-
-/*#define DDS_ACT_LOG	** Do activation logging. */
 
 /*#define USE_SENDMSG	** Define this to use sendmsg() i.o. sendto(). */
 #if !defined (USE_SENDMSG) && defined (_WIN32)
@@ -206,11 +209,12 @@ static void rtps_scope (Config_t c, Scope_t *min, Scope_t *max, Scope_t dmin)
 
 #ifdef DDS_DYN_IP
 
-static void rtps_ipv4_addr_notify (void)
+static int rtps_ipv4_addr_notify (void)
 {
 	IP_KIND		i;
 	unsigned	n;
 	Domain_t	*dp;
+	int		ret2, ret = DDS_RETCODE_OK;
 
 	/*dbg_printf ("IPv4 addresses from dyn_ip\r\n:");
 	dbg_print_region (ipv4_proto.own, ipv4_proto.num_own * OWN_IPV4_SIZE, 0, 0);*/
@@ -231,21 +235,27 @@ static void rtps_ipv4_addr_notify (void)
 #ifdef DDS_TCP
 	rtps_tcp_addr_update_start (AF_INET);
 #endif
-	while ((dp = domain_next (&n, NULL)) != NULL)
-		rtps_participant_update (dp);
+	while ((dp = domain_next (&n, NULL)) != NULL) {
+		ret2 = rtps_participant_update (dp);
+		if (ret2)
+			ret = ret2;
+	}
 
 #ifdef DDS_TCP
 	rtps_tcp_addr_update_end (AF_INET);
 #endif
+	
+	return (ret);
 }
 
 #ifdef DDS_IPV6
 
-static void rtps_ipv6_addr_notify (void)
+static int rtps_ipv6_addr_notify (void)
 {
 	IP_KIND		i;
 	unsigned	n;
 	Domain_t	*dp;
+	int		ret2, ret = DDS_RETCODE_OK;
 
 	/*dbg_printf ("!!! IPv6 address changes !!!\r\n");
 
@@ -268,13 +278,22 @@ static void rtps_ipv6_addr_notify (void)
 #ifdef DDS_TCP
 	rtps_tcp_addr_update_start (AF_INET);
 #endif
-	while ((dp = domain_next (&n, NULL)) != NULL)
-		rtps_participant_update (dp);
-
+	while ((dp = domain_next (&n, NULL)) != NULL) {
+		ret2 = rtps_participant_update (dp);
+		if (ret2)
+			ret = ret2;
+	}
 #ifdef DDS_TCP
 	rtps_tcp_addr_update_end (AF_INET6);
 #endif
+
+	return (ret);
 }
+
+#endif
+#endif
+
+#ifdef DDS_IPV6
 
 static void rtps_update_mux_mode (void)
 {
@@ -308,7 +327,6 @@ static void rtps_update_mux_mode (void)
 	}
 }
 
-#endif
 #endif
 
 static int rtps_udp_suspended;
@@ -345,18 +363,8 @@ static void rtps_udp_mode_change (Config_t c)
 			act_printf (" -- no change\r\n");
 			return;
 	}
-#ifdef DDS_TCP
-	if (rtps_tcp_suspended)
-		ipv4_proto.tcp_mode = MODE_DISABLED;
-	else
-		ipv4_proto.tcp_mode = config_get_mode (DC_TCP_Mode, MODE_ENABLED);
-	act_print1 (", TCP mode=%d", ipv4_proto.tcp_mode);
-#endif
 #ifdef DDS_IPV6
 	ipv6_proto.udp_mode = ipv4_proto.udp_mode;
-#ifdef DDS_TCP
-	ipv6_proto.tcp_mode = ipv4_proto.tcp_mode;
-#endif
 	rtps_update_mux_mode ();
 #endif
 	act_print1 (", Mux mode=%d\r\n", rtps_mux_mode);
@@ -445,13 +453,7 @@ static void rtps_tcp_mode_change (Config_t c)
 			act_printf (" -- no change\r\n");
 			return;
 	}
-	if (rtps_udp_suspended)
-		ipv4_proto.udp_mode = MODE_DISABLED;
-	else
-		ipv4_proto.udp_mode = config_get_mode (DC_UDP_Mode, MODE_ENABLED);
-	act_print1 (", UDP mode=%d", ipv4_proto.udp_mode);
 #ifdef DDS_IPV6
-	ipv6_proto.udp_mode = ipv4_proto.udp_mode;
 	ipv6_proto.tcp_mode = ipv4_proto.tcp_mode;
 	rtps_update_mux_mode ();
 #endif
@@ -478,9 +480,11 @@ static void rtps_tcp_mode_change (Config_t c)
 		}
 	}
 #endif
+#ifdef DDS_DYN_IP
 	rtps_ipv4_addr_notify ();
 #ifdef DDS_IPV6
 	rtps_ipv6_addr_notify ();
+#endif
 #endif
 }
 
@@ -750,13 +754,16 @@ int rtps_ipv4_init (RMRXF    rxf,
 
 void rtps_ipv4_final (void)
 {
+#ifdef DDS_DYN_IP
 	const char	*env_str;
+#endif
 
 	act_printf ("rtps_ipv4_final()\r\n");
+#ifdef DDS_DYN_IP
 	env_str = config_get_string (DC_IP_Address, NULL);
 	if (!env_str || strcmp ("127.0.0.1", env_str) != 0)
 		di_detach (AF_INET);
-
+#endif
 	xfree (ipv4_proto.own);
 	ipv4_proto.own = NULL;
 	ipv4_proto.num_own = 0;
@@ -813,7 +820,9 @@ int rtps_ipv6_init (RMRXF    rxf,
 void rtps_ipv6_final (void)
 {
 	act_printf ("rtps_ipv6_final()\r\n");
+#ifdef DDS_DYN_IP
 	di_detach (AF_INET6);
+#endif
 	xfree (ipv6_proto.own);
 	ipv6_proto.own = NULL;
 	ipv6_proto.num_own = 0;
@@ -855,8 +864,10 @@ void rtps_ip_free_handle (unsigned h)
 	if (!h)
 		return;
 
-	h--;
+	/* Remove handle from all existing locators. */
+	locators_remove_handle (h);
 
+	h--;
 	ip [h] = NULL;
 	if (!--nlocators)
 		maxlocator = -1;
@@ -880,7 +891,8 @@ IP_CX *rtps_ip_alloc (void)
 		memset (cxp, 0, sizeof (IP_CX));
 
 #ifdef MSG_TRACE
-	cxp->trace = rtps_ip_dtrace;
+	if (cxp)
+	    cxp->trace = rtps_ip_dtrace;
 #endif
 	return (cxp);
 }
@@ -923,6 +935,7 @@ IP_CX *rtps_ip_lookup_peer (unsigned id, const Locator_t *lp)
 	for (i = 0, tp = ip; (int) i <= maxlocator; i++, tp++)
 		if ((cxp = *tp) != NULL &&
 		    (id == ~0U || id == cxp->id) &&
+		    cxp->has_dst_addr &&
 		    cxp->locator->locator.kind == lp->kind &&
 		    cxp->dst_port == lp->port &&
 		    !memcmp (cxp->dst_addr, lp->address, 16))
@@ -1407,17 +1420,9 @@ void dds_ssl_init (void)
 	if (dds_ssl_inits++)
 		return;
 
-	if (!dds_openssl_init_global)
-		goto bio_send;
+	DDS_SP_init_library ();
 
 	/* initialize openssl locking mechanism */
-	DDS_Security_set_library_lock ();
-
-	OpenSSL_add_ssl_algorithms ();
-
-#ifdef DDS_DEBUG
-	SSL_load_error_strings ();
-#endif
 
 	/* Doing a write() on an already closed TCP socket leads to a SIGPIPE
 	   which, by default, terminates your application. Because we're a
@@ -1429,8 +1434,7 @@ void dds_ssl_init (void)
 	   no direct option whatsoever to avoid the resulting signals. What we
 	   do here is we override the write function of the socket BIO with our
 	   own implementation, which uses send(). */
- bio_send:
-	bm = BIO_s_socket();
+ 	bm = BIO_s_socket();
 	bm->bwrite = ssl_sock_send;
 
 	rtps_dtls_init ();
@@ -1439,9 +1443,6 @@ void dds_ssl_init (void)
 void dds_ssl_finish (void)
 {
 	if (--dds_ssl_inits)
-		return;
-
-	if (!dds_openssl_init_global)
 		return;
 
 	rtps_dtls_finish ();
@@ -2161,11 +2162,15 @@ void rtps_ip_dump_cx (IP_CX *cxp, int extra)
 	}
 	if (rem && extra && cxp->locator->locator.handle != cxp->handle)
 		snprintf (bp, rem, "(!%u)", cxp->locator->locator.handle);
-	dbg_printf ("  %-20s %cfd:%d%c id:%u  ", buf, 
+	dbg_printf ("  %-20s %cfd:%d%c ", buf, 
 			(cxp->fd_owner) ? ' ' : '(', 
 			cxp->fd, 
-			(cxp->fd_owner) ? ' ' : ')', 
-			cxp->id);
+			(cxp->fd_owner) ? ' ' : ')');
+#ifdef DDS_IPV6
+	if ((cxp->locator->locator.kind & LOCATOR_KINDS_IPv4) == 0)
+		dbg_printf ("\r\n\t");
+#endif
+	dbg_printf ("    id:%u  ", cxp->id);
 	if (cxp->dst_forward)
 		dbg_printf ("rfwd:%u  ", cxp->dst_forward);
 	if ((cxp->locator->locator.flags & LOCF_DATA) != 0)
@@ -2217,37 +2222,35 @@ void rtps_ip_dump_cx (IP_CX *cxp, int extra)
 			}
 		}
 #endif /* DDS_TCP */
-		if (cxp->associated) {
+		if (cxp->has_dst_addr || cxp->has_prefix) {
 #ifdef DDS_TCP
 			if ((cxp->cx_type == CXT_TCP || 
 			     cxp->cx_type == CXT_TCP_TLS) &&
-			    cxp->dst_prefix.w [0] && 
-			    cxp->dst_prefix.w [1] &&
-			    cxp->dst_prefix.w [2])
+			    cxp->has_prefix)
 				dbg_printf ("\r\n\t  ");
 #endif /* DDS_TCP */
-			dbg_printf ("  dest:");
+			if (cxp->has_dst_addr) {
+				dbg_printf ("  dest:");
 #ifdef DDS_IPV6
-			if (family == AF_INET)
+				if (family == AF_INET)
 #endif
-				dbg_printf ("%u.%u.%u.%u:%u", 
-					cxp->dst_addr [12],
-					cxp->dst_addr [13],
-					cxp->dst_addr [14],
-					cxp->dst_addr [15],
-					cxp->dst_port);
+					dbg_printf ("%u.%u.%u.%u:%u", 
+						cxp->dst_addr [12],
+						cxp->dst_addr [13],
+						cxp->dst_addr [14],
+						cxp->dst_addr [15],
+						cxp->dst_port);
 #ifdef DDS_IPV6
-			else if (family == AF_INET6)
-				dbg_printf ("%s:%u",
-					inet_ntop (AF_INET6, cxp->dst_addr, bp, rem),
-					cxp->dst_port);
+				else if (family == AF_INET6)
+					dbg_printf ("%s:%u",
+						inet_ntop (AF_INET6, cxp->dst_addr, bp, rem),
+						cxp->dst_port);
 #endif
+				if (cxp->associated)
+					dbg_printf ("*");
+			}
 #ifdef DDS_TCP
-			if ((cxp->cx_type == CXT_TCP || 
-			     cxp->cx_type == CXT_TCP_TLS) &&
-			    cxp->dst_prefix.w [0] && 
-			    cxp->dst_prefix.w [1] &&
-			    cxp->dst_prefix.w [2])
+			if (cxp->has_prefix)
 				dbg_printf ("  prefix:%s",
 					guid_prefix_str (&cxp->dst_prefix, buf));
 #endif /* DDS_TCP */

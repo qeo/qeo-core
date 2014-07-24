@@ -59,6 +59,8 @@ typedef enum
 #define UUID_GENERATOR "/proc/sys/kernel/random/uuid"     
 #define LINUX_STORAGE_DIR ".qeo/"                               /*The general storage dir name*/
 #define LINUX_UUID_STORAGE_FILE "uuid"                          /*UUID storage path*/
+#define LINUX_CACERT_PATH "/etc/ssl/certs/"                     /*CA certificates location*/
+
 /*#######################################################################
  # STATIC FUNCTION PROTOTYPE
  ########################################################################*/
@@ -71,6 +73,8 @@ static qeo_platform_device_info _default_device_info;
 static bool _init;
 
 static char *_default_storage_path = NULL;
+static char *_default_cacert_file = NULL;
+static char *_default_cacert_path = NULL;
 
 /*#######################################################################
  # STATIC FUNCTION IMPLEMENTATION                                        #
@@ -144,6 +148,22 @@ static char* get_qeo_dir(void)
     return (char*)qeo_dir;
 }
 
+static void init_cacert_path(void)
+{
+    /* initialize CA certificate file (if any) */
+    _default_cacert_file = qeo_strdup_ret(getenv("QEO_CACERT_FILE"));
+    if (NULL != _default_cacert_file) {
+        qeo_log_i("CA certificates file is %s", _default_cacert_file);
+    }
+    else {
+        /* initialize CA certificate path (default if none) */
+        _default_cacert_path = qeo_strdup_ret(getenv("QEO_CACERT_PATH"));
+        if (NULL == _default_cacert_path) {
+            _default_cacert_path = qeo_strdup_ret(LINUX_CACERT_PATH);
+        }
+        qeo_log_i("CA certificates path is %s", _default_cacert_path);
+    }
+}
 
 static qeo_util_retcode_t default_free_device_info(qeo_platform_device_info* qeo_dev_info)
 {
@@ -371,9 +391,20 @@ const char *get_default_device_storage_path(void)
     return _default_storage_path;
 }
 
-void free_default_device_storage_path(void){
+void get_default_cacert_path(const char **ca_file,
+                             const char **ca_path)
+{
+    init_cacert_path();
+    *ca_file = _default_cacert_file;
+    *ca_path = _default_cacert_path;
+}
+
+void free_default_paths(void){
 
     free(_default_storage_path);
     _default_storage_path = NULL;
-
+    free(_default_cacert_file);
+    _default_cacert_file = NULL;
+    free(_default_cacert_path);
+    _default_cacert_path = NULL;
 }

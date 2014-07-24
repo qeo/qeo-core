@@ -18,6 +18,7 @@
 unsigned char *dcps_key_data_get (Topic_t          *tp,
 			          const void       *data,
 				  int              dynamic,
+				  int              secure,
 				  unsigned char    buf [16],
 				  size_t           *size,
 				  DDS_ReturnCode_t *ret);

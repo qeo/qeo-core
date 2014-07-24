@@ -28,10 +28,15 @@
 #include "random.h"
 #include "libx.h"
 #ifdef DDS_SECURITY
-#include "assert.h"
+#include "dds/dds_security.h"
+#ifdef DDS_NATIVE_SECURITY
+#include "nsecplug/nsecplug.h"
+#else
 #include "msecplug/msecplug.h"
-#include "../secplug/xmlparse.h"
-#include "../security/engine_fs.h"
+#include "assert.h"
+#include "../../plugins/secplug/xmlparse.h"
+#endif
+#include "../../plugins/security/engine_fs.h"
 #endif
 #include "cmdline.h"
 #include "dds/dds_dcps.h"
@@ -77,7 +82,7 @@ typedef struct shape_st SHAPE;
 struct shape_st {
 	SHAPE		*next;
 	SHAPE_TYPE	type;
-	char		color [128];
+	char		color [129];
 	Color_t		c;
 	long		cur_x;
 	long		cur_y;
@@ -120,6 +125,8 @@ unsigned		 strength;		/* Exclusive strength. */
 int			 white_bg;		/* Black-on-white. */
 int			 aborting;		/* Abort program if set. */
 int			 quit_done;		/* Quit when Tx/Rx done. */
+int			 sfile;			/* Security file. */
+char			 *sname;		/* Security filename. */
 unsigned		 domain_id;		/* Domain. */
 #ifdef DDS_SECURITY
 char		 	 *engine_id;		/* Engine id. */
@@ -167,6 +174,7 @@ void usage (void)
 	fprintf (stderr, "   -c <path>          Path of the certificate to use.\r\n");
 	fprintf (stderr, "   -k <path>          Path of the private key to use.\r\n");
 	fprintf (stderr, "   -z <realm>         The realm name.\r\n");
+	fprintf (stderr, "   -j <filename>      Specify a security.xml file.\r\n");
 #endif
 	fprintf (stderr, "   -t                 Trace transmitted/received info.\r\n");
 	fprintf (stderr, "   -b                 Black-on-white display i.o. White-on-black.\r\n");
@@ -362,6 +370,14 @@ int do_switches (int argc, const char **argv)
 					realm_name = malloc (strlen (arg_input) + 1);
 					strcpy (realm_name, arg_input);
 					break;
+			        case 'j':
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage ();
+					sname = malloc (strlen (arg_input) + 1);
+					strcpy (sname, arg_input);
+					sfile = 1;
+					break;
 #endif
 				case 't':
 					trace = 1;
@@ -396,7 +412,7 @@ int do_switches (int argc, const char **argv)
 }
 
 typedef struct shape_type_st {
-	char		color [128];
+	char		color [129];
 	int		x;
 	int		y;
 	int		shapesize;
@@ -406,7 +422,7 @@ typedef struct shape_type_st {
 
 static DDS_TypeSupport_meta shape_tsm [] = {
 	{ CDR_TYPECODE_STRUCT, TSMFLAG_KEY, "ShapeType", sizeof (struct shape_type_st), 0, 4, 0, NULL },
-	{ CDR_TYPECODE_CSTRING,TSMFLAG_KEY, "color", 128, offsetof (struct shape_type_st, color), 0, 0, NULL },
+	{ CDR_TYPECODE_CSTRING,TSMFLAG_KEY, "color", 129, offsetof (struct shape_type_st, color), 0, 0, NULL },
 	{ CDR_TYPECODE_LONG,   0, "x", 0, offsetof (struct shape_type_st, x), 0, 0, NULL },
 	{ CDR_TYPECODE_LONG,   0, "y", 0, offsetof (struct shape_type_st, y), 0, 0, NULL },
 	{ CDR_TYPECODE_LONG,   0, "shapesize", 0, offsetof (struct shape_type_st, shapesize), 0, 0, NULL }
@@ -1600,7 +1616,11 @@ static void enable_security (void)
 		fatal ("DDS_SP_set_policy() returned error (%s)!", DDS_error (error));
 
 #ifdef MSECPLUG_WITH_SECXML
-	if (!parse_xml ("security.xml"))
+	if (sfile) {
+		if (DDS_SP_parse_xml (sname))
+			fatal ("SP: no DDS security rules in '%s'!\r\n", sname);
+	}
+	else if (DDS_SP_parse_xml ("security.xml"))
 		fatal ("MSP: no DDS security rules in 'security.xml'!\r\n");
 #else
 	DDS_SP_add_domain();

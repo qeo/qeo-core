@@ -25,7 +25,7 @@ void thread_init (void);
 
 #define	lock_t			HANDLE
 
-#define LOCK_STATIC_INIT CreateMutex (NULL, 0, /*s*/NULL)
+#define LOCK_STATIC_INIT	CreateMutex (NULL, 0, /*s*/NULL)
 #define	lock_init_r(l,s)	((l = CreateMutex (NULL, 0, /*s*/NULL)) == NULL)
 #define	lock_init_nr(l,s)	((l = CreateMutex (NULL, 0, /*s*/NULL)) == NULL)
 #define	lock_try(l)		(WaitForSingleObject (l, 0) != WAIT_TIMEOUT)
@@ -83,7 +83,7 @@ int dds_cond_destroy (cond_t *cond);
 #include <errno.h>
 
 #define	lock_t			pthread_mutex_t
-#define LOCK_STATIC_INIT PTHREAD_MUTEX_INITIALIZER
+#define LOCK_STATIC_INIT	PTHREAD_MUTEX_INITIALIZER
 
 extern pthread_mutexattr_t	recursive_mutex;
 
@@ -144,7 +144,7 @@ void trc_lock_info (void);
 #elif defined (NO_LOCKS)
 
 #define	lock_t			int
-#define LOCK_STATIC_INIT 0
+#define LOCK_STATIC_INIT	0
 
 #define	lock_init_r(l,s)
 #define	lock_init_nr(l,s)

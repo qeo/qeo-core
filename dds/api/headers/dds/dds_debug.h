@@ -145,6 +145,7 @@ DDS_EXPORT void DDS_Debug_dump_static (
 	DDS_TypeSupport ts,
 	void *data,
 	int key_only,
+	int secure,
 	int field_names
 );
 
@@ -154,6 +155,7 @@ DDS_EXPORT void DDS_Debug_dump_dynamic (
 	DDS_DynamicTypeSupport ts,
 	DDS_DynamicData data,
 	int key_only,
+	int secure,
 	int field_names
 );
 

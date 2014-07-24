@@ -264,7 +264,7 @@ int rtps_locators_update (DomainId_t domain_id, unsigned id)
 	ARG_NOT_USED (domain_id)
 	ARG_NOT_USED (id)
 #endif
-   	return (DDS_RETCODE_OK);
+	return (DDS_RETCODE_OK);
 }
 
 /* rtps_locator_add -- Add an active locator. */

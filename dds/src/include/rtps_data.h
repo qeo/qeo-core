@@ -38,6 +38,7 @@
 #define	ST_HEARTBEAT_FRAG	0x13	/* HeartbeatFrag */
 #define	ST_DATA			0x15	/* Data */
 #define	ST_DATA_FRAG		0x16	/* DataFrag */
+#define	ST_SECURE		0x30	/* Secure */
 
 typedef uint32_t FragmentNumber_t;
 
@@ -58,6 +59,7 @@ typedef unsigned char SubmessageKind;
 #define	SMF_INLINE_QOS	0x02	/* In Data, DataFrag */
 #define	SMF_MULTICAST	0x02	/* In InfoReply */
 #define	SMF_INVALIDATE	0x02	/* In InfoTimestamp */
+#define	SMF_SINGLE	0x02	/* In Secure */
 #define	SMF_LIVELINESS	0x04	/* In Heartbeat */
 #define	SMF_KEY_DF	0x04	/* In DataFrag */
 #define	SMF_DATA	0x04	/* In Data */
@@ -68,7 +70,7 @@ typedef unsigned char SubmessageKind;
 typedef struct submsg_header_st {
 	SubmessageKind		id;
 	unsigned char		flags;
-	unsigned short		length;
+	uint16_t		length;
 } SubmsgHeader;
 
 typedef struct fragnr_set_st {
@@ -82,14 +84,21 @@ typedef struct acknack_smsg_st {
 	EntityId_t		writer_id;
 	SequenceNumberSet	reader_sn_state;
 	Count_t			count;
+#ifdef RTPS_PROXY_INST_TX
+	Count_t			instance_id;	/* Optional. */
+#endif
 } AckNackSMsg;
 
+#ifdef RTPS_PROXY_INST_TX
+#define MIN_ACKNACK_SIZE	(sizeof (AckNackSMsg) - sizeof (uint32_t))
+#else
 #define MIN_ACKNACK_SIZE	sizeof (AckNackSMsg)
+#endif
 #define MAX_ACKNACK_SIZE	(sizeof (AckNackSMsg) + sizeof (uint32_t) * 7)
 
 typedef struct data_smsg_st {
-	unsigned short		extra_flags;
-	unsigned short		inline_qos_ofs;
+	uint16_t		extra_flags;
+	uint16_t		inline_qos_ofs;
 	EntityId_t		reader_id;
 	EntityId_t		writer_id;
 	SequenceNumber_t	writer_sn;
@@ -101,14 +110,14 @@ typedef struct data_smsg_st {
 } DataSMsg;
 
 typedef struct data_frag_smsg_st {
-	unsigned short		extra_flags;
-	unsigned short		inline_qos_ofs;
+	uint16_t		extra_flags;
+	uint16_t		inline_qos_ofs;
 	EntityId_t		reader_id;
 	EntityId_t		writer_id;
 	SequenceNumber_t	writer_sn;
 	FragmentNumber_t	frag_start;
-	unsigned short		num_fragments;
-	unsigned short		frag_size;
+	uint16_t		num_fragments;
+	uint16_t		frag_size;
 	uint32_t		sample_size;
 
 	/* Optional fields:
@@ -133,7 +142,17 @@ typedef struct heartbeat_smsg_st {
 	SequenceNumber_t	first_sn;
 	SequenceNumber_t	last_sn;
 	Count_t			count;
+#ifdef RTPS_PROXY_INST_TX
+	Count_t			instance_id;	/* Optional */
+#endif
 } HeartbeatSMsg;
+
+#ifdef RTPS_PROXY_INST_TX
+#define	DEF_HB_SIZE	(sizeof (HeartbeatSMsg) - sizeof (uint32_t))
+#define	MAX_HB_SIZE	sizeof (HeartbeatSMsg)
+#else
+#define	DEF_HB_SIZE	sizeof (HeartbeatSMsg)
+#endif
 
 typedef struct heartbeat_frag_smsg_st {
 	EntityId_t		reader_id;
@@ -175,6 +194,11 @@ typedef struct nack_frag_smsg_st {
 	Count_t			count;
 } NackFragSMsg;
 
+typedef struct secure_smsg_st {
+	uint32_t		transform_kind;	  /* Type of transformation. */
+	unsigned char		transform_id [8]; /* Transformation Id. */
+} SecureSMsg;
+
 typedef struct submessage_st {
 	SubmsgHeader		shdr;
 	union {
@@ -189,6 +213,7 @@ typedef struct submessage_st {
 	  InfoSourceSMsg	info_source;
 	  InfoTimestampSMsg	info_timestamp;
 	  NackFragSMsg		nack_frag;
+	  SecureSMsg		secure;
 	  /* PAD : no data. */
 	} d;
 } Submessage;
@@ -266,7 +291,7 @@ struct rtps_msg_element_buf_st { /* 64-bit: 160(32+128), 32-bit: 116(20+96). */
 	RME		*next;		/* Next element. */
 	unsigned char	*data;		/* Data chunk pointer. */
 	DB		*db;		/* Data block pointer (if non-NULL). */
-	unsigned short	length;		/* Length of data chunk. */
+	uint16_t	length;		/* Length of data chunk. */
 	unsigned char	pad;		/* Amount the data was padded. */
 	unsigned char 	flags;		/* Various message element flags. */
 	SubmsgHeader	header;		/* Submessage header. */

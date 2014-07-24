@@ -133,6 +133,7 @@ DDS_TypeSupport DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 	PL_TypeSupport	*plp;
 	Type		*tp, *otp;
 	StructureType	*stp;
+	UnionType	*utp;
 	TypeLib		*lp, *def_lp;
 #ifdef META_LIST
 	TypeSupport_t	**np;
@@ -140,7 +141,7 @@ DDS_TypeSupport DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 #endif
 	const DDS_TypeSupport_meta *mp = tc;
 	size_t		size;
-	int		keys, fksize, dkeys, equal;
+	int		keys, fksize, dkeys, equal, dynamic;
 	int		oindex;
 	unsigned	oid;
 #ifndef CDR_ONLY
@@ -155,7 +156,10 @@ DDS_TypeSupport DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 	ctrc_printd (DCPS_ID, 0, (tc && tc->name) ? tc->name : NULL,
                                  (tc && tc->name) ? strlen (tc->name) : 0);
 
-	if (!tc || tc->tc != CDR_TYPECODE_STRUCT) {
+	if (!tc ||
+	    (tc->tc != CDR_TYPECODE_STRUCT &&
+	     tc->tc != CDR_TYPECODE_UNION && 
+	     tc->tc != CDR_TYPECODE_TYPE)) {
 		lock_release (type_lock);
 		return (NULL);
 	}
@@ -185,7 +189,6 @@ DDS_TypeSupport DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 #endif
 	lp = xt_lib_access (0);
 	if (!lp) {
-		xt_lib_release (NULL);
 		lock_release (type_lock);
 		return (NULL); 
 	}
@@ -201,18 +204,40 @@ DDS_TypeSupport DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 			return (NULL);
 		}
 	}
-	tp = tsm_create_struct_union (lp, &tc, &iflags);
-	if (!tp) {
-		xt_lib_release (lp);
-		lock_release (type_lock);
-		return (NULL); 
+	if (tc->tc == CDR_TYPECODE_STRUCT || tc->tc == CDR_TYPECODE_UNION) {
+		tp = tsm_create_struct_union (lp, &tc, &iflags);
+		if (!tp) {
+			xt_lib_release (lp);
+			lock_release (type_lock);
+			return (NULL); 
+		}
+		xt_type_finalize (tp,
+				  &size,
+				  (keys) ? &keys : NULL,
+				  &fksize,
+				  &dkeys,
+				  &dynamic);
+		tp->root = 1;
+		if (tp->kind == DDS_STRUCTURE_TYPE) {
+			stp = (StructureType *) tp;
+			stp->keys = (keys != 0);
+			stp->fksize = fksize;
+			stp->dkeys = dkeys;
+			stp->dynamic = dynamic;
+		}
+		else {
+			utp = (UnionType *) tp;
+			utp->keys = (keys != 0);
+			utp->fksize = fksize;
+			utp->dkeys = dkeys;
+			utp->dynamic = dynamic;
+		}
 	}
-	xt_type_finalize (tp, &size, (keys) ? &keys : NULL, &fksize, &dkeys);
-	stp = (StructureType *) tp;
-	stp->keys = (keys != 0);
-	stp->fksize = fksize;
-	stp->dkeys = dkeys;
-	if (oindex >= 0) {	/* Already existed, verify equality or exit! */
+	else
+		tp = tsm_create_typedef (lp, tc, &iflags);
+
+	/* If it already existed, verify equality! */
+	if (oindex >= 0) {
 		oid = def_lp->types [oindex];
 		otp = def_lp->domain->types [oid];
 		equal = xt_type_equal (tp, otp);
@@ -223,7 +248,6 @@ DDS_TypeSupport DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 			lock_release (type_lock);
 			return (NULL);
 		}
-
 		tp = otp;
 		lp = def_lp;
 		rcl_access (tp);
@@ -373,6 +397,24 @@ void DDS_DynamicType_free (DDS_TypeSupport ts)
 	xfree (ts);
 	lock_release (type_lock);
 	prof_stop (tc_dtype_free, 1);
+}
+
+/* Set a type reference to an actual type in the given meta. */
+
+void DDS_DynamicType_set_type (DDS_TypeSupport_meta *tc,
+			       unsigned offset,
+			       DDS_TypeSupport type)
+{
+	Type *tp;
+
+	if (type->ts_prefer == MODE_CDR)
+		tp = type->ts_cdr;
+	else if (type->ts_prefer == MODE_PL_CDR && !type->ts_pl->builtin)
+		tp = type->ts_pl->xtype;
+	else
+		return;
+
+	tsm_typeref_set_type (tc, offset, tp);
 }
 
 /* DDS_TypeSupport_data_free -- Free the memory used up by a data sample, using
@@ -571,7 +613,7 @@ void DDS_TypeSupport_dump_data (unsigned            indent,
 		cdr_dump_native (indent, dp + 4, ts->ts_cdr, 0, 0, names);
 		return;
 	}
-	printf ("unknown mode: %u\r\n", type);
+	dbg_printf ("unknown mode: %u\r\n", type);
 }
 
 void DDS_TypeSupport_dump_key (unsigned            indent,
@@ -579,18 +621,22 @@ void DDS_TypeSupport_dump_key (unsigned            indent,
 			       const void          *key,
 			       int                 native,
 			       int                 dynamic,
+			       int                 secure,
 			       int                 names)
 {
 	const unsigned char	*dp = (const unsigned char *) key;
 	PL_TypeSupport		*pl;
 	Type			*tp;
 	int			swap, msize;
+	char			buffer [32];
 
 	if (!ts || !ts->ts_keys)
 		return;
 
-	if (ts->ts_prefer == MODE_CDR)
+	if (ts->ts_prefer == MODE_CDR) {
 		tp = ts->ts_cdr;
+		pl = NULL;
+	}
 	else if (ts->ts_prefer == MODE_PL_CDR) {
 		pl = (PL_TypeSupport *) ts->ts_pl;
 		if (pl->builtin)
@@ -598,13 +644,15 @@ void DDS_TypeSupport_dump_key (unsigned            indent,
 		else
 			tp = pl->xtype;
 	}
-	else
+	else {
 		tp = NULL;
+		pl = NULL;
+	}
 	if (tp) {
 		if (native)
 			cdr_dump_native (indent, dp, tp, dynamic, 1, names);
 		else {
-			if (ts->ts_mkeysize && ts->ts_mkeysize <= 16) {
+			if (ts->ts_mkeysize && ts->ts_mkeysize <= 16 && !secure) {
 				swap = ENDIAN_CPU ^ ENDIAN_BIG;
 				msize = 1;
 			}
@@ -615,8 +663,14 @@ void DDS_TypeSupport_dump_key (unsigned            indent,
 			cdr_dump_cdr (indent, dp, 4, tp, 1, msize, swap, names);
 		}
 	}
+	else if (pl) {
+		if (pl->type == BT_Participant)
+			dbg_printf ("{guid_prefix=%s}", guid_prefix_str ((GuidPrefix_t *) key, buffer));
+		else
+			dbg_printf ("{guid=%s}", guid_str ((GUID_t *) key, buffer));
+	}
 	else
-		printf ("unknown mode: %u\r\n", ts->ts_prefer);
+		dbg_printf ("unknown mode: %u", ts->ts_prefer);
 }
 
 #endif
@@ -885,7 +939,7 @@ static DDS_ReturnCode_t DDS_DynamicTypeSupport_free (DDS_DynamicTypeSupport ts)
 	if (!stp) {
 		lock_release (type_lock);
 		return (DDS_RETCODE_BAD_PARAMETER);
-    }
+	}
 
 #ifdef META_LIST
 	ml_print1 ("DDS_DynamicTypeSupport_free (%s);\r\n", ts->ts_name);
@@ -1009,6 +1063,7 @@ DDS_ReturnCode_t DDS_MarshallData (void                *buffer,
 			           const TypeSupport_t *ts)
 {
 	unsigned char	*dp = buffer;
+	size_t		length;
 	DDS_ReturnCode_t ret;
 
 	if (!buffer || !data ||
@@ -1016,9 +1071,9 @@ DDS_ReturnCode_t DDS_MarshallData (void                *buffer,
 		return (DDS_RETCODE_BAD_PARAMETER);
 
 	if (ts->ts_prefer == MODE_CDR) {
-		ret = cdr_marshall (dp + 4, 4, data, ts->ts_cdr,
-							dynamic, 0, 0, 0);
-		if (ret)
+		length = cdr_marshall (dp + 4, 4, data, ts->ts_cdr,
+							dynamic, 0, 0, 0, &ret);
+		if (!length)
 			return (ret);
 
 		dp [0] = 0;
@@ -1030,9 +1085,9 @@ DDS_ReturnCode_t DDS_MarshallData (void                *buffer,
 			ret = pl_marshall (dp + 4, data, ts->ts_pl, 0, 0);
 		else
 #endif
-			ret = cdr_marshall (dp + 4, 4, data,
+			length = cdr_marshall (dp + 4, 4, data,
 					     ts->ts_pl->xtype, dynamic,
-					     0, 0, 0);
+					     0, 0, 0, &ret);
 		dp [0] = 0;
 		dp [1] = (MODE_PL_CDR << 1) | ENDIAN_CPU;
 	}
@@ -1049,9 +1104,9 @@ size_t DDS_UnmarshalledDataSize (DBW                 data,
 			         const TypeSupport_t *ts,
 			         DDS_ReturnCode_t    *error)
 {
-	unsigned char	*dp;
-	unsigned	type;
-	int		swap;
+	const unsigned char	*dp;
+	unsigned		type;
+	int			swap;
 
 	if (!ts || data.length < 8) {
 		if (error)
@@ -1068,7 +1123,7 @@ size_t DDS_UnmarshalledDataSize (DBW                 data,
 	if ((type >> 1) == MODE_CDR) {
 		if (ts->ts_cdr)
 			return (cdr_unmarshalled_size (data.data, 4, ts->ts_cdr,
-							       0, 0, swap, error));
+						       0, 0, swap, 0, error));
 		else if (error)
 			*error = DDS_RETCODE_UNSUPPORTED;
 	}
@@ -1084,8 +1139,8 @@ size_t DDS_UnmarshalledDataSize (DBW                 data,
 #endif
 		else
 			return (cdr_unmarshalled_size (data.data, 4,
-							     ts->ts_pl->xtype,
-							     0, 0, swap, error));
+						       ts->ts_pl->xtype,
+						       0, 0, swap, 0, error));
 	}
 	else if (error)
 		*error = DDS_RETCODE_UNSUPPORTED;
@@ -1100,10 +1155,10 @@ DDS_ReturnCode_t DDS_UnmarshallData (void                *buffer,
 				     DBW                 *data,
 				     const TypeSupport_t *ts)
 {
-	int		 swap;
-	unsigned char	 *dp;
-	unsigned	 type;
-	DDS_ReturnCode_t ret = DDS_RETCODE_OK;
+	int		 	swap;
+	const unsigned char	*dp;
+	unsigned		type;
+	DDS_ReturnCode_t	ret = DDS_RETCODE_OK;
 
 	dp = data->data;
 	type = dp [0] << 8 | dp [1];
@@ -1115,7 +1170,7 @@ DDS_ReturnCode_t DDS_UnmarshallData (void                *buffer,
 	if ((type >> 1) == MODE_CDR) {
 		if (ts->ts_cdr)
 			ret = cdr_unmarshall (buffer, DBW_PTR (*data), 4,
-					      ts->ts_cdr, 0, 0, swap);
+					      ts->ts_cdr, 0, 0, swap, 0);
 		else
 			ret = DDS_RETCODE_UNSUPPORTED;
 	}
@@ -1128,7 +1183,7 @@ DDS_ReturnCode_t DDS_UnmarshallData (void                *buffer,
 #endif
 		else
 			ret = cdr_unmarshall (buffer, DBW_PTR (*data), 4,
-					      ts->ts_pl->xtype, 0, 0, swap);
+					      ts->ts_pl->xtype, 0, 0, swap, 0);
 	}
 	else if ((type >> 1) == MODE_XML)
 		ret = DDS_RETCODE_UNSUPPORTED;
@@ -1193,9 +1248,11 @@ size_t DDS_KeySizeFromNativeData (const unsigned char *data,
 DDS_ReturnCode_t DDS_KeyFromNativeData (unsigned char       *key,
 					const void          *data,
 					int                 dynamic,
+					int                 secure,
 					const TypeSupport_t *ts)
 {
 	int			swap, msize;
+	size_t			length;
 	DDS_ReturnCode_t	ret;
 
 	prof_start (tc_k_g_nat);
@@ -1203,7 +1260,7 @@ DDS_ReturnCode_t DDS_KeyFromNativeData (unsigned char       *key,
 	if (!ts || !ts->ts_keys || !data || !key)
 		return (DDS_RETCODE_BAD_PARAMETER);
 
-	if (ts->ts_mkeysize && ts->ts_mkeysize <= 16) {
+	if (ts->ts_mkeysize && ts->ts_mkeysize <= 16 && !secure) {
 		swap = ENDIAN_CPU ^ ENDIAN_BIG;
 		msize = 1;
 	}
@@ -1212,19 +1269,24 @@ DDS_ReturnCode_t DDS_KeyFromNativeData (unsigned char       *key,
 		msize = 0;
 	}
 	if (ts->ts_prefer == MODE_CDR) {
-		ret = cdr_marshall (key, 4, data, ts->ts_cdr, 
-						dynamic, 1, msize, swap);
+		length = cdr_marshall (key, 4, data, ts->ts_cdr, 
+						dynamic, 1, msize, swap, &ret);
 		prof_stop (tc_k_g_nat, 1);
-		return (ret);
+		return ((length) ? DDS_RETCODE_OK : ret);
 	}
 	else if (ts->ts_prefer == MODE_PL_CDR) {
 #ifndef CDR_ONLY
 		if (ts->ts_pl->builtin)
 			ret = pl_marshall (key, data, ts->ts_pl, 1, 0);
-		else
+		else {
 #endif
-			ret = cdr_marshall (key, 4, data, ts->ts_pl->xtype, 
-						dynamic, 1, msize, swap);
+			length = cdr_marshall (key, 4, data, ts->ts_pl->xtype, 
+						dynamic, 1, msize, swap, &ret);
+			if (length)
+				ret = DDS_RETCODE_OK;
+#ifndef CDR_ONLY
+		}
+#endif
 		prof_stop (tc_k_g_nat, 1);
 		return (ret);
 	}
@@ -1235,6 +1297,7 @@ DDS_ReturnCode_t DDS_KeyFromNativeData (unsigned char       *key,
 
 DDS_ReturnCode_t DDS_KeyToNativeData (void                *data,
 				      int                 dynamic,
+				      int                 secure,
 				      const void          *key,
 				      const TypeSupport_t *ts)
 {
@@ -1255,7 +1318,7 @@ DDS_ReturnCode_t DDS_KeyToNativeData (void                *data,
 	}
 	else
 		ddrp = NULL;
-	if (ts->ts_mkeysize && ts->ts_mkeysize <= 16) {
+	if (ts->ts_mkeysize && ts->ts_mkeysize <= 16 && !secure) {
 		swap = ENDIAN_CPU ^ ENDIAN_BIG;
 		msize = 1;
 	}
@@ -1269,7 +1332,7 @@ DDS_ReturnCode_t DDS_KeyToNativeData (void                *data,
 							ts->ts_cdr, 1, 1, swap);
 		else
 			ret = cdr_unmarshall (data, key, 4,
-						 ts->ts_cdr, 1, msize, swap);
+						 ts->ts_cdr, 1, msize, swap, 0);
 		prof_stop (tc_k_p_nat, 1);
 	}
 	else if (ts->ts_prefer == MODE_PL_CDR) {
@@ -1281,10 +1344,10 @@ DDS_ReturnCode_t DDS_KeyToNativeData (void                *data,
 						  ts->ts_pl->xtype, 1, 1, swap);
 			else
 				ret = cdr_unmarshall (data, key, 4,
-					     ts->ts_pl->xtype, 1, msize, swap);
+					     ts->ts_pl->xtype, 1, msize, swap, 0);
 #ifndef CDR_ONLY
 		else
-			ret = DDS_RETCODE_UNSUPPORTED;
+			memcpy (data, key, (ts->ts_pl->type == BT_Participant) ? 12 : 16);
 #endif
 	}
 	else
@@ -1300,11 +1363,11 @@ size_t DDS_KeySizeFromMarshalled (DBW                 data,
 				  int                 key,
 				  DDS_ReturnCode_t    *error)
 {
-	unsigned char	*dp;
-	Type		*tp;
-	unsigned	type;
-	int		swap;
-	size_t		l;
+	const unsigned char	*dp;
+	const Type		*tp;
+	unsigned		type;
+	int			swap;
+	size_t			l;
 
 	prof_start (tc_k_s_marsh);
 	if (!ts || !ts->ts_keys) {
@@ -1375,13 +1438,15 @@ size_t DDS_KeySizeFromMarshalled (DBW                 data,
 DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char       *dst,
 					DBW                 data,
 					const TypeSupport_t *ts,
-					int                 key)
+					int                 key,
+					int                 secure)
 {
-	unsigned char	*dp;
-	Type		*tp;
-	unsigned	type;
-	int		swap, iswap, msize;
-	DDS_ReturnCode_t ret;
+	const unsigned char	*dp;
+	const Type		*tp;
+	unsigned		type;
+	int			swap, iswap, msize;
+	size_t			length;
+	DDS_ReturnCode_t	ret;
 
 	prof_start (tc_k_g_marsh);
 	if (!ts || !ts->ts_keys || data.length < 8)
@@ -1391,7 +1456,7 @@ DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char       *dst,
 	type = dp [0] << 8 | dp [1];
 	DBW_INC (data, 4);
 	iswap = (type & 1) ^ ENDIAN_CPU;
-	if (ts->ts_mkeysize && ts->ts_mkeysize <= 16) {
+	if (ts->ts_mkeysize && ts->ts_mkeysize <= 16 && !secure) {
 		swap = (type & 1) ^ ENDIAN_BIG;
 		msize = 1;
 	}
@@ -1411,6 +1476,10 @@ DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char       *dst,
 						       key, msize, swap, iswap);
 			prof_stop (tc_k_g_marsh, 1);
 			return (ret);
+		}
+		else if (ts->ts_pl && ts->ts_pl->builtin) {
+			memcpy (dst, data.data, ts->ts_mkeysize);
+			return (DDS_RETCODE_OK);
 		}
 		else
 			return (DDS_RETCODE_UNSUPPORTED);
@@ -1435,14 +1504,14 @@ DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char       *dst,
 	}
 	else if ((type >> 1) == MODE_RAW) {
 		if (ts->ts_cdr) {
-			if (ts->ts_mkeysize && ts->ts_mkeysize > 16)
+			if (ts->ts_mkeysize && (ts->ts_mkeysize > 16 || secure))
 				swap = 0;
 			else
 				swap = ENDIAN_CPU ^ ENDIAN_BIG;
-			ret = cdr_marshall (dst, 4, data.data, ts->ts_cdr, 0,
-								1, msize, swap);
+			length = cdr_marshall (dst, 4, data.data, ts->ts_cdr, 0,
+								1, msize, swap, &ret);
 			prof_stop (tc_k_g_marsh, 1);
-			return (ret);
+			return ((length) ? DDS_RETCODE_OK : ret);
 		}
 		else
 			return (DDS_RETCODE_UNSUPPORTED);
@@ -1459,6 +1528,7 @@ DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char       *dst,
 DDS_ReturnCode_t DDS_HashFromKey (unsigned char       hash [16],
 				  const unsigned char *key,
 				  size_t              key_size,
+				  int                 secure,
 				  const TypeSupport_t *ts)
 {
 	MD5_CONTEXT		mdc;
@@ -1473,7 +1543,7 @@ DDS_ReturnCode_t DDS_HashFromKey (unsigned char       hash [16],
 #endif
 
 	prof_start (tc_h_key);
-	if (ts->ts_mkeysize && ts->ts_mkeysize <= 16) {
+	if (ts->ts_mkeysize && ts->ts_mkeysize <= 16 && !secure) {
 		memcpy (hash, key, ts->ts_mkeysize);
 		for (i = ts->ts_mkeysize; i < 16; i++)
 			hash [i] = 0;
@@ -1484,12 +1554,19 @@ DDS_ReturnCode_t DDS_HashFromKey (unsigned char       hash [16],
 	dp = NULL;
 	if (ts->ts_prefer == MODE_CDR)
 		tp = ts->ts_cdr;
-	else if (ts->ts_prefer == MODE_PL_CDR && !ts->ts_pl->builtin)
-		tp = ts->ts_pl->xtype;
+	else if (ts->ts_prefer == MODE_PL_CDR)
+		if (ts->ts_pl->builtin)
+			tp = NULL;
+		else
+			tp = ts->ts_pl->xtype;
 	else
 		return (DDS_RETCODE_BAD_PARAMETER);
 
-	if (!ts->ts_mkeysize || ts->ts_mkeysize == key_size) {
+	if (!tp) {
+		n = key_size;
+		dp = (unsigned char *) key;
+	}
+	else if (!ts->ts_mkeysize || ts->ts_mkeysize == key_size) {
 		if (!swap)
 			dp = (unsigned char *) key;
 #if (KEY_HSIZE == 4)

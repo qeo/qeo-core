@@ -27,7 +27,7 @@ extern "C" {
 
 /* === Version Info ========================================================= */
 
-#define	TDDS_VERSION_MAJOR	3	/* Major version -> major API change. */
+#define	TDDS_VERSION_MAJOR	4	/* Major version -> major API change. */
 #define	TDDS_VERSION_MINOR	0	/* Minor version -> minor API change. */
 #define	TDDS_VERSION_REVISION	0	/* Revision -> updated when released. */
 
@@ -132,6 +132,14 @@ typedef struct {
 	unsigned max_dyn_types;
 	unsigned min_dyn_samples;
 	unsigned max_dyn_samples;
+	unsigned min_data_holders;
+	unsigned max_data_holders;
+	unsigned min_properties;
+	unsigned max_properties;
+	unsigned min_binary_properties;
+	unsigned max_binary_properties;
+	unsigned min_holder_sequences;
+	unsigned max_holder_sequences;
 	unsigned grow_factor;
 } DDS_PoolConstraints;
 

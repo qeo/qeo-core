@@ -37,9 +37,11 @@ typedef struct string_st {
 #if defined (BIGDATA) || (STRD_SIZE == 8)
 	size_t		length;		/* Octet String length. */
 	unsigned	users:30;	/* # of users of string. */
+#define	MAX_STR_REFS	0x3fffffffU
 #else
 	unsigned	length:16;	/* Octet String length. */
 	unsigned	users:14;	/* # of users of string. */
+#define	MAX_STR_REFS	0x3fffU
 #endif
 	unsigned	mutable:1;	/* String is changeable. */
 	unsigned	dynamic:1;	/* Data is dynamically allocated. */

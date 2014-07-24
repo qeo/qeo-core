@@ -16,6 +16,7 @@
 #define QEO_MGMT_CURL_UTIL_H_
 
 #include "qeo_mgmt_client_priv.h"
+#include "curl_util.h"
 
 #define QMGMTCLIENT_ACCEPT_HEADER_JSON "Accept: application/json"
 #define QMGMTCLIENT_CONTENT_TYPE_FWD "Content-Type: application/vnd.qeo.forwarders-v1+json"
@@ -41,7 +42,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_perform(CURL *ctx,
                                                      const char* url,
                                                      char *cid);
 
-qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get_with_cb(CURL *ctx,
+qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get_with_cb(qeo_mgmt_client_ctx_t *ctx,
                                                      const char* url,
                                                      char *header,
                                                      curl_write_callback data_cb,
@@ -56,13 +57,13 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get_with_cb(CURL *ctx,
  * \param[out] length The length of the resulting data.
  * \result
  */
-qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get(CURL *ctx,
+qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get(qeo_mgmt_client_ctx_t *ctx,
                                                      const char* url,
                                                      char *header,
                                                      char **data,
                                                      size_t *length);
 
-qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get_with_cb(CURL *ctx,
+qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get_with_cb(qeo_mgmt_client_ctx_t *ctx,
                                                      const char* url,
                                                      char *header,
                                                      qeo_mgmt_client_ssl_ctx_cb ssl_cb,
@@ -70,7 +71,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get_with_cb(CURL *ctx,
                                                      curl_write_callback data_cb,
                                                      void *write_cookie);
 
-qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get(CURL *ctx,
+qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get(qeo_mgmt_client_ctx_t *ctx,
                                                      const char* url,
                                                      char *header,
                                                      qeo_mgmt_client_ssl_ctx_cb ssl_cb,
@@ -78,7 +79,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get(CURL *ctx,
                                                      char **data,
                                                      size_t *length);
 
-qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_put(CURL *ctx,
+qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_put(qeo_mgmt_client_ctx_t *ctx,
                                                      const char* url,
                                                      char *header,
                                                      qeo_mgmt_client_ssl_ctx_cb ssl_cb,
@@ -87,5 +88,11 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_put(CURL *ctx,
                                                      size_t length);
 
 
+CURLcode qeo_mgmt_curl_util_set_opts(curl_opt_helper *opts,
+                                     int nropts,
+                                     qeo_mgmt_client_ctx_t* ctx);
+
+void qeo_mgmt_curl_util_shutdown_connections(qeo_mgmt_client_ctx_t* ctx);
+void qeo_mgmt_curl_util_clean_fd_list(qeo_mgmt_client_ctx_t* ctx);
 
 #endif /* QEO_MGMT_CURL_UTIL_H_ */

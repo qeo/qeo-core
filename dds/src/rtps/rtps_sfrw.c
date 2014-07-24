@@ -20,6 +20,7 @@
 #include "ctrace.h"
 #include "set.h"
 #include "list.h"
+#include "random.h"
 #include "dcps.h"
 #include "rtps_cfg.h"
 #include "rtps_data.h"
@@ -33,11 +34,17 @@
 #endif
 #include "rtps_sfrw.h"
 
+#ifdef RTPS_PROXY_INST
+static unsigned rtps_rr_insts;	/* Counts Remote Reader proxy instances. */
+#endif
+
+#define	BACKOFF_RESET_RL	4	/* If backoff > this: reset reply locators. */
+
 #if defined (RTPS_TRC_READER) || defined (RTPS_TRC_WRITER)
 
 /* sfx_dump_ccref -- Display a proxy node. */
 
-static void sfx_dump_ccref (CCREF *rp, int show_state)
+void sfx_dump_ccref (CCREF *rp, int show_state)
 {
 	const char	*state_str [] = {
 		"NEW", "REQ", "UNSENT", "UNDERWAY", "UNACKED",
@@ -81,9 +88,6 @@ static void sfw_dump_rr_state (RemReader_t *rrp)
 	log_printf (RTPS_ID, 0, "RR: Unsent=");
 	if (rrp->rr_unsent_changes)
 		sfx_dump_ccref (rrp->rr_unsent_changes, 0);
-	log_printf (RTPS_ID, 0, ", Requested=");
-	if (rrp->rr_requested_changes)
-		sfx_dump_ccref (rrp->rr_requested_changes, 0);
 	log_printf (RTPS_ID, 0, ", Unacked=%u\r\n", rrp->rr_unacked);
 	if (LIST_NONEMPTY (rrp->rr_changes)) {
 		log_printf (RTPS_ID, 0, "RR: Samples:");
@@ -119,7 +123,6 @@ static void sfw_rel_verify_ptr (RemReader_t *rrp, CCREF *p, int req)
 static void sfw_rel_check (RemReader_t *rrp)
 {
 	sfw_rel_verify_ptr (rrp, rrp->rr_unsent_changes, 0);
-	sfw_rel_verify_ptr (rrp, rrp->rr_requested_changes, 1);
 }
 
 #else
@@ -143,6 +146,15 @@ static void sfw_stop_heartbeats (WRITER *wp)
 	wp->rh_timer = NULL;
 }
 
+/* q_seqnr_info -- Get the sequence number range corresponding with a queue. */
+
+#define q_seqnr_info(list, min, max) if (list.head->relevant)			\
+					  min = list.head->u.c.change->c_seqnr; \
+				     else min = list.head->u.range.first;	\
+				     if (list.tail->relevant)			\
+					  max = list.tail->u.c.change->c_seqnr; \
+				     else max = list.tail->u.range.last
+
 /* sfw_send_heartbeat -- Send a Heartbeat message. */
 
 int sfw_send_heartbeat (WRITER *wp, int alive)
@@ -151,14 +163,16 @@ int sfw_send_heartbeat (WRITER *wp, int alive)
 	DiscoveredReader_t	*drp = NULL;
 	unsigned	 	nreaders, nwaiting;
 	int			no_mcast;
-	SequenceNumber_t 	snr_min, snr_max;
+	SequenceNumber_t 	snr_min, snr_max, min_mc, max_mc, min, max;
 #ifdef RTPS_FRAGMENTS
 	CCREF			*rp;
 	unsigned		n;
 #endif
-
+				
 	nreaders = nwaiting = 0;
 	no_mcast = 0;
+	memset (&min_mc, 0, sizeof (min_mc));
+	memset (&max_mc, 0, sizeof (max_mc));
 	LIST_FOREACH (wp->rem_readers, rrp) {
 		if (alive ||
 		    (rrp->rr_reliable &&
@@ -168,6 +182,15 @@ int sfw_send_heartbeat (WRITER *wp, int alive)
 			if (rrp->rr_no_mcast)
 				no_mcast = 1;
 			xrrp = rrp;
+			if (rrp->rr_changes.nchanges) {
+				q_seqnr_info (rrp->rr_changes, min, max);
+				/*log_printf (RTPS_ID, 0, "QS: min: %u.%u, max: %u.%u!\r\n", min.high, min.low, max.high, max.low);*/
+				if (SEQNR_ZERO (min_mc) || SEQNR_LT (min, min_mc))
+					min_mc = min;
+				if (SEQNR_ZERO (max_mc) || SEQNR_GT (max, max_mc))
+					max_mc = max;
+				/*log_printf (RTPS_ID, 0, "MS: min: %u.%u, max: %u.%u!\r\n", min_mc.high, min_mc.low, max_mc.high, max_mc.low);*/
+			}
 #ifdef RTPS_FRAGMENTS
 			if ((n = rrp->rr_nfrags) == 0)
 				continue;
@@ -179,13 +202,14 @@ int sfw_send_heartbeat (WRITER *wp, int alive)
 					continue;
 
 				rtps_msg_add_heartbeat_frag (rrp,
-							 drp,
-							 &rp->u.c.change->c_seqnr,
-							 rp->fragments->total);
+							     drp,
+							     &rp->u.c.change->c_seqnr,
+							     rp->fragments->total);
 				if (!--n)
 					break;
 			}
 #endif
+			
 		}
 	}
 	if (!alive && !nreaders) {
@@ -195,6 +219,7 @@ int sfw_send_heartbeat (WRITER *wp, int alive)
 
 	/* Needs to send a Heartbeat - get sequence numbers. */
 	hc_seqnr_info (wp->endpoint.endpoint->cache, &snr_min, &snr_max);
+	/*log_printf (RTPS_ID, 0, "C: min: %u.%u, max: %u.%u!\r\n", snr_min.high, snr_min.low, snr_max.high, snr_max.low);*/
 
 	/* If single destination or multicast possible, send single message. */
 	if (nreaders == 1 || (!no_mcast && nreaders > 1)) {
@@ -202,13 +227,17 @@ int sfw_send_heartbeat (WRITER *wp, int alive)
 			drp = NULL;
 
 		/* Send Heartbeat message on first waiting proxy. */
+		if (SEQNR_LT (min_mc, snr_min))
+			snr_min = min_mc;
+		if (SEQNR_LT (max_mc, snr_max))
+			snr_max = max_mc;
 		rtps_msg_add_heartbeat (xrrp, drp,
 				(alive) ? SMF_FINAL | SMF_LIVELINESS : 0,
 				&snr_min, &snr_max);
 		
-		if (wp->backoff > 1 && !info_reply_rxed ()) {
+		if (wp->backoff > BACKOFF_RESET_RL && !info_reply_rxed ()) {
 			lrloc_print ("RTPS: ExcessiveHB1: ");
-			proxy_reset_reply_locators (&xrrp->proxy);	/* Reselect path. */
+			proxy_reset_reply_locators (&xrrp->proxy); /* New path. */
 		}
 	}
 	else	/* Send to each individual destination. */
@@ -216,11 +245,16 @@ int sfw_send_heartbeat (WRITER *wp, int alive)
 			if (alive ||
 			    (rrp->rr_reliable &&
 			     rrp->rr_tstate == RRTS_ANNOUNCING)) {
+				if (!rrp->rr_changes.nchanges)
+					continue;
+
+				q_seqnr_info (rrp->rr_changes, min, max);
+				/*log_printf (RTPS_ID, 0, "Q: min: %u.%u, max: %u.%u!\r\n", min.high, min.low, max.high, max.low);*/
 				rtps_msg_add_heartbeat (rrp,
-					(DiscoveredReader_t *) rrp->rr_endpoint,
-					(alive) ? SMF_FINAL | SMF_LIVELINESS : 0,
-					&snr_min, &snr_max);
-				if (wp->backoff > 1 && !info_reply_rxed ()) {
+						(DiscoveredReader_t *) rrp->rr_endpoint,
+						(alive) ? SMF_FINAL | SMF_LIVELINESS : 0,
+						&min, &max);
+				if (wp->backoff > BACKOFF_RESET_RL && !info_reply_rxed ()) {
 					lrloc_print ("RTPS: ExcessiveHB2: ");
 					proxy_reset_reply_locators (&rrp->proxy);
 				}
@@ -234,6 +268,7 @@ static void sfw_heartbeat_to (uintptr_t user)
 {
 	WRITER		*wp = (WRITER *) user;
 	Writer_t	*w = (Writer_t *) (wp->endpoint.endpoint);
+	unsigned	n;
 
 	ctrc_printd (RTPS_ID, RTPS_SFW_HB_TO, &user, sizeof (user));
 	prof_start (rtps_rw_hb_to);
@@ -251,8 +286,13 @@ static void sfw_heartbeat_to (uintptr_t user)
 		if (wp->backoff < 7)
 			wp->backoff++;
 
+		if (wp->backoff > 1)
+			n = 1 << (1 + (fastrandn (wp->backoff)));
+		else
+			n = 1;
+
 		HEARTBEAT_TMR_START (wp, wp->rh_timer,
-				     wp->rh_period * (1 << wp->backoff),
+				     wp->rh_period * n,
 				     (uintptr_t) wp,
 				     sfw_heartbeat_to,
 				     &w->w_lock);
@@ -327,24 +367,54 @@ static void sfw_rel_send_alive (RemReader_t *rrp)
 	WRITER		*wp = rrp->rr_writer;
 	Writer_t	*w = (Writer_t *) (wp->endpoint.endpoint);
 	SequenceNumber_t snr_min, snr_max;
+#ifdef RTPS_HB_WAIT
+	unsigned	n;
+#endif
 
-	hc_seqnr_info (rrp->rr_writer->endpoint.endpoint->cache, &snr_min, &snr_max);
-	rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, 0, &snr_min, &snr_max);
+	hc_seqnr_info (w->w_cache, &snr_min, &snr_max);
+	if (SEQNR_GT (snr_min, snr_max)) {
+		snr_max = snr_min;
+		rtps_msg_add_heartbeat (rrp,
+					(DiscoveredReader_t *) rrp->rr_endpoint, 
+					SMF_FINAL | SMF_LIVELINESS,
+					&snr_min, &snr_max);
+		return;
+	}
+#ifdef RTPS_HB_WAIT
+	rtps_msg_add_heartbeat (rrp,
+				(DiscoveredReader_t *) rrp->rr_endpoint, 
+				0, &snr_min, &snr_max);
 	if (wp->rh_timer) {
 		HEARTBEAT_TMR_STOP (wp, wp->rh_timer);
 		if (wp->backoff < 7)
 			wp->backoff++;
-		if (wp->backoff > 1 && !info_reply_rxed ()) {
+		if (wp->backoff > BACKOFF_RESET_RL && !info_reply_rxed ()) {
 			lrloc_print ("RTPS: ExcessiveHBa: ");
 			proxy_reset_reply_locators (&rrp->proxy); /* Rechoose path. */
 		}
 
+		if (wp->backoff > 1)
+			n = 1 << (1 + (fastrandn (wp->backoff)));
+		else
+			n = 1;
+
 		HEARTBEAT_TMR_START (wp, wp->rh_timer,
-				     wp->rh_period * (1 << wp->backoff),
+				     wp->rh_period * n,
 				     (uintptr_t) wp,
 				     sfw_heartbeat_to,
 				     &w->w_lock);
 	}
+#else
+	if (rrp->rr_unsent_changes) {
+		if (wp->endpoint.push_mode) {
+			NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
+			if (!rrp->rr_active)
+				proxy_activate (&rrp->proxy);
+		}
+		else
+			sfw_announce (rrp, 1);
+	}
+#endif
 }
 
 #ifdef RTPS_W_WAIT_ALIVE
@@ -414,8 +484,10 @@ static void sfw_rel_start (RemReader_t *rrp)
 	NEW_RR_ASTATE (rrp, RRAS_WAITING, 1);
 	rrp->rr_nack_timer = NULL;
 	rrp->rr_unacked = 0;
-	SEQNR_INC (rrp->rr_new_snr);
 
+#ifdef RTPS_PROXY_INST
+	rrp->rr_loc_inst = ++rtps_rr_insts;
+#endif
 #ifdef RTPS_W_WAIT_ALIVE
 	/* Remote reader is not yet active. */
 	rrp->rr_peer_alive = 0;
@@ -429,19 +501,29 @@ static void sfw_rel_start (RemReader_t *rrp)
 #endif
 
 	/* Add existing cache entries to reader locator/proxy queue. */
-	hc_replay (rrp->rr_writer->endpoint.endpoint->cache,
-					proxy_add_change, (uintptr_t) rrp);
 	hc_seqnr_info (rrp->rr_writer->endpoint.endpoint->cache, &snr_min, &snr_max);
+	if (rrp->rr_endpoint->qos->qos.durability_kind) {
+		SEQNR_INC (rrp->rr_new_snr);
+		hc_replay (rrp->rr_writer->endpoint.endpoint->cache,
+					proxy_add_change, (uintptr_t) rrp);
+	}
+	else {
+		rrp->rr_new_snr = snr_max;
+		SEQNR_INC (rrp->rr_new_snr);
+	}
 #ifdef RTPS_INIT_HEARTBEAT
 	if (!rrp->rr_unsent_changes) {
 		rrp->rr_writer->backoff = 0;
-		rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, SMF_FINAL, &snr_min, &snr_max);
+		rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, SMF_FINAL, &snr_min, &snr_min);
 	}
 	else {
+#else
+	if (rrp->rr_unsent_changes) {
 #endif
 #ifdef RTPS_W_WAIT_ALIVE
+
 		/* Remote reader is not yet active. */
-		rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, 0, &snr_min, &snr_max);
+		/*rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, 0, &snr_min, &snr_max);*/
 		WALIVE_TMR_ALLOC (rrp);
 		rrp->rr_nack_timer = tmr_alloc ();
 		if (rrp->rr_nack_timer) {
@@ -451,18 +533,14 @@ static void sfw_rel_start (RemReader_t *rrp)
 		}
 		else
 #endif
-		     if (rrp->rr_unsent_changes) {
-			if (rrp->rr_writer->endpoint.push_mode) {
-				NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
-				if (!rrp->rr_active)
-					proxy_activate (&rrp->proxy);
-			}
-			else
-				sfw_announce (rrp, 1);
+		if (rrp->rr_writer->endpoint.push_mode) {
+			NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
+			if (!rrp->rr_active)
+				proxy_activate (&rrp->proxy);
 		}
-#ifdef RTPS_INIT_HEARTBEAT
+		else
+			sfw_announce (rrp, 1);
 	}
-#endif
 	prof_stop (rtps_rw_start, 1);
 	REL_CHECK (rrp);
 	RANGE_CHECK (&rrp->rr_changes, "sfw_rel_start");
@@ -540,19 +618,15 @@ static int sfw_rel_new_change (RemReader_t      *rrp,
 	}
 	if (!rrp->rr_unsent_changes)
 		rrp->rr_unsent_changes = rp;
-#ifdef RTPS_INIT_HEARTBEAT
-	if (rrp->rr_peer_alive || rrp->rr_unsent_changes) {
-#endif
-		if (state == CS_UNSENT) {
-			NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
-			if (!rrp->rr_active)
-				proxy_activate (&rrp->proxy);
-		}
-		else
-			sfw_announce (rrp, 0);
-#ifdef RTPS_INIT_HEARTBEAT
+
+	if (rrp->rr_peer_alive && state == CS_UNSENT) {
+		NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
+		if (!rrp->rr_active)
+			proxy_activate (&rrp->proxy);
 	}
-#endif
+	else if (rrp->rr_peer_alive)
+		sfw_announce (rrp, 0);
+
 	prof_stop (rtps_rw_new, 1);
 	DUMP_WRITER_STATE (rrp);
 	CACHE_CHECK (&rrp->rr_writer->endpoint, "sfw_rel_new_change");
@@ -593,6 +667,8 @@ static unsigned seqnr_delta (SequenceNumber_t *snr1, SequenceNumber_t *snr2)
 static int sfw_rel_send_data (RemReader_t *rrp)
 {
 	CCREF			*rp, *next_rp;
+	GuidPrefix_t		*prefix;
+	EntityId_t		*eid;
 	unsigned		delta, delta_next, n_urgent = 0;
 	int			error, gap_present = 0;
 	unsigned		n_gap_bits = 0; /* Prevents compiler warning! */
@@ -629,6 +705,7 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 #endif
 	gap_start.high = gap_start.low = 0;
 	gap_base.high = gap_base.low = 0;
+	rrp->rr_requested_changes = NULL;
 	for (; rrp->rr_changes.nchanges; ) {
 		PROF_INC (n);
 
@@ -654,7 +731,13 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 			}
 		}
 		else if (rrp->rr_astate == RRAS_REPAIRING) {
-			rp = rrp->rr_requested_changes;
+			if (!rrp->rr_requested_changes)
+				for (rp = LIST_HEAD (rrp->rr_changes);
+				     rp && rp->state != CS_REQUESTED;
+				     rp = LIST_NEXT (rrp->rr_changes, *rp))
+					;
+			else
+				rp = rrp->rr_requested_changes;
 			if (!rp) {
 				NEW_RR_ASTATE (rrp, RRAS_WAITING, 0);
 				break;
@@ -704,8 +787,17 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 #ifdef RTPS_FRAGMENTS
 				nfrags = rtps_frag_burst;
 #endif
+				if (drp && drp->dr_participant) {
+					prefix = &drp->dr_participant->p_guid_prefix;
+					eid = &drp->dr_entity_id;
+				}
+				else {
+					prefix = NULL;
+					eid = NULL;
+				}
 				error = rtps_msg_add_data (rrp,
-							   drp,
+							   prefix,
+							   eid,
 							   rp->u.c.change,
 							   rp->u.c.hci,
 							   !next_rp &&
@@ -964,6 +1056,92 @@ static CCREF *sfw_range_split (CCLIST           *list,
 	return (nrp);
 }
 
+#ifdef RTPS_PROXY_INST
+
+/* sfw_rel_reset -- A remote reader was restarted. */
+
+static void sfw_rel_reset (RemReader_t *rrp)
+{
+	/*SequenceNumber_t snr_min, snr_max;*/
+	Writer_t	 *w = (Writer_t *) (rrp->rr_writer->endpoint.endpoint);
+	CCREF		 *rp;
+
+	/* Reset states. */
+	NEW_RR_CSTATE (rrp, RRCS_INITIAL, 1);
+	NEW_RR_CSTATE (rrp, RRCS_READY, 0);
+	NEW_RR_TSTATE (rrp, RRTS_IDLE, 1);
+	NEW_RR_ASTATE (rrp, RRAS_WAITING, 1);
+
+	rrp->rr_unacked = 0;
+	memset (&rrp->rr_new_snr, 0, sizeof (SequenceNumber_t));
+
+#ifdef RTPS_W_WAIT_ALIVE
+
+	/* Remote reader is not yet active. */
+	rrp->rr_peer_alive = 0;
+#endif
+	rrp->rr_unsent_changes = rrp->rr_requested_changes = NULL;
+
+	/* Mark all unacked cache entries as unsent. */
+	LIST_FOREACH (rrp->rr_changes, rp)
+		if (rp->state == CS_REQUESTED ||
+		    rp->state == CS_UNDERWAY ||
+		    rp->state == CS_UNACKED) {
+			rp->state = CS_UNSENT;
+			if (!rrp->rr_unsent_changes)
+				rrp->rr_unsent_changes = rp;
+			rrp->rr_unacked++;
+		}
+
+	/* Add existing cache entries to reader locator/proxy queue. */
+	
+#ifdef RTPS_INIT_HEARTBEAT
+	if (!rrp->rr_unsent_changes) {
+		rrp->rr_writer->backoff = 0;
+		rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, SMF_FINAL, &snr_min, &snr_max);
+	}
+#endif
+#ifdef RTPS_W_WAIT_ALIVE
+	if (rrp->rr_unsent_changes) {
+
+		/* Remote reader is not yet active. */
+
+		/* Don't send Heartbeat yet .. leads to duplicate acks.
+		 * rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, 0, &snr_min, &snr_max);
+		 */
+		WALIVE_TMR_ALLOC (rrp);
+		rrp->rr_nack_timer = tmr_alloc ();
+		if (rrp->rr_nack_timer) {
+			tmr_init (rrp->rr_nack_timer, "RTPS-WAlive");
+			WALIVE_TMR_START (rrp, rrp->rr_nack_timer, WALIVE_TO,
+					   (uintptr_t) rrp, sfw_rel_alive_to, &w->w_lock);
+		}
+		else
+#endif
+		     if (rrp->rr_unsent_changes) {
+			if (rrp->rr_writer->endpoint.push_mode) {
+				NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
+				if (!rrp->rr_active)
+					proxy_activate (&rrp->proxy);
+			}
+			else
+				sfw_announce (rrp, 1);
+		}
+#ifdef RTPS_W_WAIT_ALIVE
+	}
+#endif
+}
+
+/* sfw_restart -- Restart a stateful reliable remote reader proxy . */
+
+void sfw_restart (RemReader_t *rrp)
+{
+	rrp->rr_loc_inst = ++rtps_rr_insts;
+	sfw_rel_reset (rrp);
+}
+
+#endif
+
 /* sfw_rel_acknack -- An ACKNACK was received from a remote reader. */
 
 static void sfw_rel_acknack (RemReader_t *rrp, AckNackSMsg *ap, int final)
@@ -974,6 +1152,9 @@ static void sfw_rel_acknack (RemReader_t *rrp, AckNackSMsg *ap, int final)
 	SequenceNumber_t snr, max, snr_min, snr_max;
 	Writer_t	*w = (Writer_t *) (rrp->rr_writer->endpoint.endpoint);
 	uint32_t	gap_bits [8];
+#ifdef RTPS_PROXY_INST_TX
+	Count_t		rem_proxy_inst;
+#endif
 	PROF_ITER	(n);
 
 	ctrc_printd (RTPS_ID, RTPS_SFW_REL_ACKNACK, &rrp, sizeof (rrp));
@@ -992,6 +1173,20 @@ static void sfw_rel_acknack (RemReader_t *rrp, AckNackSMsg *ap, int final)
 	/* Get count value. */
 	n_words = (ap->reader_sn_state.numbits + 31) >> 5;
 	i = ap->reader_sn_state.bitmap [n_words];
+#ifdef RTPS_PROXY_INST_TX
+	rem_proxy_inst = ap->reader_sn_state.bitmap [n_words + 1];
+	if (rem_proxy_inst) {
+		if (rrp->rr_rem_inst && rrp->rr_rem_inst != rem_proxy_inst) {
+
+			/* Remote reader has restarted! Reset the proxy. */
+			RR_SIGNAL (rrp, "REL-Peer-restart!");
+			sfw_rel_reset (rrp);
+		}
+		rrp->rr_rem_inst = rem_proxy_inst;
+	}
+/*#if defined (RTPS_PROXY_INST) && !defined (RTPS_PROXY_INST_TX)
+#endif*/
+#endif
 
 #ifdef RTPS_W_WAIT_ALIVE
 	if (!rrp->rr_peer_alive) { /* Valid ack, process it normally. */
@@ -1013,28 +1208,26 @@ static void sfw_rel_acknack (RemReader_t *rrp, AckNackSMsg *ap, int final)
 			NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
 			if (!rrp->rr_active)
 				proxy_activate (&rrp->proxy);
+			rrp->rr_last_ack = i;
 			return;
 		}
 	}
 #endif
-
-	/* If peer indicates it became alive, reply with a Heartbeat message. */
-	if (SEQNR_ZERO (ap->reader_sn_state.base) && 
-	    !ap->reader_sn_state.numbits) {
-		if (!final) {
-			sfw_rel_send_alive (rrp);
-			if (rrp->rr_changes.nchanges)
-				sfw_announce (rrp, 1);
-		}
-		return;
-	}
 
 	/* Ignore duplicate acks. */
 	if (i == rrp->rr_last_ack) {
 		RR_SIGNAL (rrp, "Ignore (count == rr_last_ack)");
 		return;
 	}
+
+	/* If peer indicates it became alive, reply with a Heartbeat message. */
 	rrp->rr_last_ack = i;
+	if (SEQNR_ZERO (ap->reader_sn_state.base) && 
+	    !ap->reader_sn_state.numbits) {
+		if (!final && rrp->rr_tstate == RRTS_IDLE)
+			sfw_rel_send_alive (rrp);
+		return;
+	}
 
 	/* Get the range of valid sequence numbers. */
 	hc_seqnr_info (rrp->rr_writer->endpoint.endpoint->cache, &snr_min, &snr_max);
@@ -1043,7 +1236,7 @@ static void sfw_rel_acknack (RemReader_t *rrp, AckNackSMsg *ap, int final)
 	/* Requested samples that are located between snr_min and the samples
 	   list invoke an immediate GAP, since they must be cleaned up gaps or
 	   already acknowledged samples.  If we don't send this GAP, the reader
-	   will be trapped in a blocked state  */
+	   will be trapped in a blocked state forever. */
 	if (ap->reader_sn_state.numbits) {
 		if (LIST_EMPTY (rrp->rr_changes)) {
 			snr = rrp->rr_new_snr;
@@ -1278,11 +1471,13 @@ static void sfw_rel_nackfrag (RemReader_t *rrp, NackFragSMsg *np)
 {
 	CCREF			*rp;
 	FragInfo_t		*fip;
+	GuidPrefix_t		*prefix;
+	EntityId_t		*eid;
 	SequenceNumber_t	snr;
 	unsigned		i, nf, start, n;
 	int			error;
 
-	ctrc_printd (RTPS_ID, RTPS_SFR_REL_NACKFRAG, &rrp, sizeof (rrp));
+	ctrc_printd (RTPS_ID, RTPS_SFW_REL_NACKFRAG, &rrp, sizeof (rrp));
 	STATS_INC (rrp->rr_nnackfrags);
 
 	RR_SIGNAL (rrp, "REL_NackFrag");
@@ -1336,6 +1531,14 @@ static void sfw_rel_nackfrag (RemReader_t *rrp, NackFragSMsg *np)
 
 	/* Sample found.  Send all requested fragments. */
 	nf = start = 0;
+	if (rrp->rr_endpoint && rrp->rr_endpoint->u.participant) {
+		prefix = &rrp->rr_endpoint->u.participant->p_guid_prefix;
+		eid = &rrp->rr_endpoint->entity_id;
+	}
+	else {
+		prefix = NULL;
+		eid = NULL;
+	}
 	for (i = np->frag_nr_state.base, n = 0;
 	     i <= fip->total && n < np->frag_nr_state.numbits;
 	     i++, n++) {
@@ -1349,7 +1552,8 @@ static void sfw_rel_nackfrag (RemReader_t *rrp, NackFragSMsg *np)
 			/* Send all fragments in [start..(start+nf)] */
 			/*log_printf (RTPS_ID, 0, "==> Sending fragments: %u*%u!\r\n", start, nf);*/
 			error = rtps_msg_add_data (rrp,
-						   (DiscoveredReader_t *) rrp->rr_endpoint,
+						   prefix,
+						   eid,
 						   rp->u.c.change,
 						   rp->u.c.hci,
 						   1,
@@ -1364,7 +1568,8 @@ static void sfw_rel_nackfrag (RemReader_t *rrp, NackFragSMsg *np)
 		/* Send all fragments in [start..(start+nf)] */
 		/*log_printf (RTPS_ID, 0, "==> Sending fragments: %u*%u!\r\n", start, nf);*/
 		rtps_msg_add_data (rrp,
-				   (DiscoveredReader_t *) rrp->rr_endpoint,
+				   prefix,
+				   eid,
 				   rp->u.c.change,
 				   rp->u.c.hci,
 				   1,
@@ -1478,11 +1683,19 @@ static void sfw_rel_rem_change (RemReader_t *rrp, Change_t *cp)
 	next_rp = LIST_NEXT (rrp->rr_changes, *rp);
 
 	/* Update sample pointers if necessary. */
-	if (rrp->rr_tstate == RRTS_PUSHING &&
-	    rrp->rr_unsent_changes == rp)
-		rrp->rr_unsent_changes = next_rp;
-	else if (rrp->rr_astate == RRAS_REPAIRING &&
-	         rrp->rr_requested_changes == rp) {
+	if (rrp->rr_unsent_changes == rp) {
+		for (nrp = next_rp;
+		     nrp;
+		     nrp = LIST_NEXT (rrp->rr_changes, *nrp))
+			if (nrp->relevant) {
+				rrp->rr_unsent_changes = nrp;
+				break;
+			}
+		if (!nrp)
+			rrp->rr_unsent_changes = NULL;
+	}
+	if (rrp->rr_astate == RRAS_REPAIRING &&
+	    rrp->rr_requested_changes == rp) {
 		for (nrp = next_rp;
 		     nrp;
 		     nrp = LIST_NEXT (rrp->rr_changes, *nrp))

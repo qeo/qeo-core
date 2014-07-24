@@ -106,7 +106,8 @@ typedef struct type_st {
 	unsigned	shared:1;	/* Collection elements are shared. */
 	unsigned	building:1;	/* Set while building the type. */
 	unsigned	extended:1;	/* Requires extended typecode. */
-	unsigned	scope:7;	/* Scope index. */
+	unsigned	root:1;		/* Root type definition. */
+	unsigned	scope:6;	/* Scope index. */
 	unsigned	nrefs:14;	/* # of type references. */
 	TypeId		id;		/* Unique type index in scope. */
 	AnnotationRef	*annotations;	/* Applied annotations. */
@@ -130,11 +131,13 @@ typedef struct structure_type_st {
 	Type		type;
 	size_t		size;
 	TypeId		base_type;
-	unsigned	nmembers:28;
+	unsigned	nmembers:26;
 	unsigned	keyed:1;	/* Some member fields have keys. */
+	unsigned	optional:1;	/* Some members are optional. */
 	unsigned	keys:1;		/* Final type: contains keys. */
 	unsigned	fksize:1;	/* Final type: fixed key size. */
 	unsigned	dkeys:1;	/* Final type: dynamic keys. */
+	unsigned	dynamic:1;	/* Final type: dynamic size. */
 	Member		member [1];
 } StructureType;
 
@@ -152,11 +155,12 @@ typedef struct union_member_st {
 typedef struct union_type_st {
 	Type		type;
 	size_t		size;
-	unsigned	nmembers:28;
+	unsigned	nmembers:26;
 	unsigned	keyed:1;	/* Some member fields have keys. */
 	unsigned	keys:1;		/* Final type: contains keys. */
 	unsigned	fksize:1;	/* Final type: fixed key size. */
 	unsigned	dkeys:1;	/* Final type: dynamic keys. */
+	unsigned	dynamic:1;	/* Final type: dynamic size. */
 	UnionMember	member [1];
 } UnionType;
 

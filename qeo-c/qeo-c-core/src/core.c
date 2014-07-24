@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <assert.h>
+#include <sys/time.h>
 
 #include <dds/dds_xtypes.h>
 #include <dds/dds_dreader.h>
@@ -29,11 +30,7 @@
 #include <dds/dds_seq.h>
 #include <dds/dds_security.h>
 #include <dds/dds_aux.h>
-#ifdef QEO_USE_DDS_NATIVE_SECURITY
 #include <nsecplug/nsecplug.h>
-#else
-#include <msecplug/msecplug.h>
-#endif
 
 #include <qeo/log.h>
 
@@ -41,7 +38,7 @@
 #include "config.h"
 #include "forwarder.h"
 #include "entity_store.h"
-#include "partitions.h"
+#include "user_data.h"
 #include "samplesupport.h"
 #include "core_util.h"
 #include "security.h"
@@ -61,7 +58,6 @@
         return QEO_EBADSTATE;   \
     }
 
-#define FACTORY_IS_SECURE(f) (f->domain_id != QEOCORE_OPEN_DOMAIN)
 
 const qeocore_domain_id_t QEOCORE_DEFAULT_DOMAIN = 0x80;
 const qeocore_domain_id_t QEOCORE_OPEN_DOMAIN = 0x01;
@@ -73,6 +69,7 @@ static qeocore_writer_t *_deviceinfo_writer = NULL;
 static int                _factory_allocs;
 static bool               _init_security_done = false;
 static qeo_factory_t     *_open_domain_factory = NULL;
+static int                _ownership_strength = 0;
 
 #ifdef __USE_GNU
 /* compile with -D_GNU_SOURCE */
@@ -85,6 +82,9 @@ static const pthread_mutex_t _def_mutex = PTHREAD_MUTEX_INITIALIZER;
 static const pthread_mutex_t _def_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
+/* dds domainparticipant lock */
+static pthread_mutex_t _dds_dp_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static const char* _open_domain_types[] =
     {"org.qeo.system.RegistrationRequest", "org.qeo.system.RegistrationCredentials", "org.qeo.system.DeviceId"};
 
@@ -94,7 +94,9 @@ static void factory_unlock(qeo_factory_t *factory);
 #ifndef NDEBUG
 static bool is_valid_factory(qeo_factory_t *factory);
 #endif
-static qeocore_domain_id_t get_domain_id(void);
+static qeocore_domain_id_t get_domain_id_closed(void);
+static qeocore_domain_id_t get_domain_id_open(void);
+#define FACTORY_IS_SECURE(f) (f->domain_id != get_domain_id_open())
 static void qeo_security_status(qeo_security_hndl   qeo_sec,
                                 qeo_security_state  status);
 static void on_qeo_security_authenticated(qeo_security_hndl qeo_sec,
@@ -164,25 +166,34 @@ static bool is_valid_factory(qeo_factory_t *factory)
 }
 #endif
 
-static qeocore_domain_id_t get_domain_id(void)
+static qeocore_domain_id_t get_domain_id_closed(void)
 {
     qeocore_domain_id_t id = QEOCORE_DEFAULT_DOMAIN;
-
-#ifdef DEBUG
-#define QEO_DOMAIN_ID_ENV_VAR    "QEO_DOMAIN_ID"
-    const char *s;
-
-    s = getenv(QEO_DOMAIN_ID_ENV_VAR);
-    if ((NULL != s) && ('\0' != *s)) {
-        char  *endp = NULL;
-        int   i;
-
-        i = strtol(s, &endp, 10);
-        if (('\0' == *endp)) {
-            id = i;
-        }
+#if defined(DEBUG) || defined(qeo_c_core_COVERAGE)
+    id = qeocore_parameter_get_number("DDS_DOMAIN_ID_CLOSED");
+    if (id == -1) {
+        //parameter not set, use default
+        id = QEOCORE_DEFAULT_DOMAIN;
+    }
+    if (id != QEOCORE_DEFAULT_DOMAIN) {
+        qeo_log_w("Using non-default domainId for closed domain: %d", id);
     }
 #endif
+
+    return id;
+}
+
+static qeocore_domain_id_t get_domain_id_open(void)
+{
+    qeocore_domain_id_t id = QEOCORE_OPEN_DOMAIN;
+#if defined(DEBUG) || defined(qeo_c_core_COVERAGE)
+    id = qeocore_parameter_get_number("DDS_DOMAIN_ID_OPEN");
+    if (id == -1) {
+        //parameter not set, use default
+        id = QEOCORE_OPEN_DOMAIN;
+    }
+#endif
+
     return id;
 }
 
@@ -192,6 +203,14 @@ static qeo_factory_t *create_factory(const qeo_identity_t *id)
     qeo_factory_t *factory  = NULL;
 
     do {
+        if (_ownership_strength == 0) {
+            struct timeval tv;
+            if (gettimeofday(&tv, NULL) != 0) {
+                qeo_log_e("Can't get timeofday");
+                break;
+            }
+            _ownership_strength = (tv.tv_sec * 1000) + (tv.tv_usec / 1000);
+        }
         if (_factory_allocs == 0) {
             if (QEO_OK != entity_store_init()) {
                 qeo_log_e("Failed to create entity store");
@@ -199,9 +218,7 @@ static qeo_factory_t *create_factory(const qeo_identity_t *id)
             }
             DDS_entity_name(DDS_ENTITY_NAME);
             DDS_set_generate_callback(calculate_member_id);
-#ifdef QEO_USE_DDS_NATIVE_SECURITY
-	    DDS_parameter_set("IP_NO_MCAST", "any");
-#endif
+            DDS_parameter_set("IP_NO_MCAST", "any");
         }
 
         if (_init_security_done == false && id != QEO_IDENTITY_OPEN) {
@@ -230,9 +247,12 @@ static qeo_factory_t *create_factory(const qeo_identity_t *id)
         factory->cond = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
 
         if (id == QEO_IDENTITY_DEFAULT) {
-            factory->domain_id = get_domain_id();
+            factory->domain_id = get_domain_id_closed();
         } else if (id == QEO_IDENTITY_OPEN ) {
-            factory->domain_id = QEOCORE_OPEN_DOMAIN;
+            factory->domain_id = get_domain_id_open();
+            if (factory->domain_id != QEOCORE_OPEN_DOMAIN) {
+                qeo_log_w("Using non-default domainId for open domain: %d", factory->domain_id);
+            }
             factory_lock(factory);
             factory->ready_to_destroy = true;
             pthread_cond_signal(&factory->cond);
@@ -281,17 +301,6 @@ static void destroy_factory(qeo_factory_t *factory)
     }
     factory_unlock(factory);
 
-    if (qeo_pol != NULL) {
-        if (qeo_security_policy_destruct(&qeo_pol) != QEO_OK) {
-            qeo_log_e("qeo_security_policy_destruct failed");
-        }
-    }
-    if (qeo_sec != NULL) {
-        if (qeo_security_destruct(&qeo_sec) != QEO_OK) {
-            qeo_log_e("qeo_security_destruct failed");
-        }
-    }
-
     /* Remove the device info writer */
     /* Question : why is this removed upon factory close while this is a static variable ?
      * Should be kept on factory level, no ?
@@ -305,17 +314,31 @@ static void destroy_factory(qeo_factory_t *factory)
 
     if (NULL != factory->dp) {
         DDS_DomainParticipant_delete_contained_entities(factory->dp);
+        lock(&_dds_dp_lock);
         DDS_DomainParticipantFactory_delete_participant(factory->dp);
+        unlock(&_dds_dp_lock);
     }
     free_identity(&(factory->qeo_id));
 
     factory_unlock(factory);
+
+    if (qeo_pol != NULL) {
+        if (qeo_security_policy_destruct(&qeo_pol) != QEO_OK) {
+            qeo_log_e("qeo_security_policy_destruct failed");
+        }
+    }
+    if (qeo_sec != NULL) {
+        if (qeo_security_destruct(&qeo_sec) != QEO_OK) {
+            qeo_log_e("qeo_security_destruct failed");
+        }
+    }
 
     free(factory);
 
     if (--_factory_allocs == 0) {
         qeo_security_policy_destroy();
         qeo_security_destroy();
+//        DDS_Security_cleanup_credentials();
         _init_security_done = false;
         entity_store_fini();
     }
@@ -383,11 +406,19 @@ static qeo_retcode_t init_factory(qeo_factory_t *factory, const qeocore_factory_
     return rc;
 }
 
+int qeocore_get_num_factories()
+{
+    return _factory_allocs;
+}
+
 static qeo_retcode_t create_domain_participant(qeo_factory_t *factory)
 {
     qeo_retcode_t rc = QEO_EFAIL;
 
+    lock(&_dds_dp_lock);
     factory->dp = DDS_DomainParticipantFactory_create_participant(factory->domain_id, NULL, NULL, 0);
+    assert(factory->dp != 0);
+    unlock(&_dds_dp_lock);
     qeo_log_dds_null("DDS_DomainParticipantFactory_create_participant", factory->dp);
     if (NULL != factory->dp) {
         factory->flags.initialized = 1;
@@ -550,15 +581,6 @@ static void on_qeo_security_authenticated(qeo_security_hndl qeo_sec, qeo_factory
         }
     }
 
-    if (success == true) {
-        /* policy redistribution is called without factory lock since it uses the core API which locks
-         * the factory to register the policy type, create readers and writers which lock the factory */
-        success = (QEO_OK == qeo_security_policy_start_redistribution(qeo_pol));
-        if (success == false) {
-            qeo_log_e("qeo_security_policy_start_redistribution() failed");
-        }
-    }
-
     if (id != NULL) {
         qeo_security_free_identity(&id);
     }
@@ -581,8 +603,8 @@ static void policy_update_cb(qeo_security_policy_hndl secpol)
     if (QEO_OK != qeo_security_policy_get_config(secpol, &cfg)) {
         qeo_log_e("qeo_security_policy_get_config failed");
     }
-    else if (QEO_OK != entity_store_update_partitions(cfg.factory)) {
-        qeo_log_e("Failed to update partitions");
+    else if (QEO_OK != entity_store_update_user_data(cfg.factory)) {
+        qeo_log_e("Failed to update userdata");
     }
 }
 
@@ -760,28 +782,14 @@ qeo_retcode_t qeocore_factory_set_local_tcp_port(qeo_factory_t *factory,
                                                  const char *local_port)
 {
     DDS_ReturnCode_t ddsrc = DDS_RETCODE_OK;
-#ifdef DEBUG
-    int no_security = qeocore_parameter_get_number("DDS_NO_SECURITY");
-#endif
 
     VALIDATE_NON_NULL(local_port);
-#ifdef DEBUG
-    if (no_security) {
+    if (NULL == getenv("TDDS_TCP_PORT")) {
+        /* set DDS TCP_SERVER to value from SMS if not overridden */
+        qeo_log_i("Set TCP port to %s", local_port);
         ddsrc = DDS_parameter_set("TCP_PORT", local_port);
         qeo_log_dds_rc("DDS_parameter_set TCP_PORT", ddsrc);
     }
-    else {
-#endif
-#ifdef QEO_USE_DDS_NATIVE_SECURITY
-        ddsrc = DDS_parameter_set("TCP_PORT", local_port);
-        qeo_log_dds_rc("DDS_parameter_set TCP_PORT", ddsrc);
-#else
-        ddsrc = DDS_parameter_set("TCP_SEC_PORT", local_port);
-        qeo_log_dds_rc("DDS_parameter_set TCP_SEC_PORT", ddsrc);
-#endif
-#ifdef DEBUG
-    }
-#endif
     return ddsrc_to_qeorc(ddsrc);
 }
 
@@ -789,30 +797,14 @@ qeo_retcode_t core_factory_set_tcp_server_no_lock(qeo_factory_t  *factory,
                                                   const char     *tcp_server)
 {
     DDS_ReturnCode_t ddsrc = DDS_RETCODE_OK;
-    int no_security = qeocore_parameter_get_number("DDS_NO_SECURITY");
 
-    VALIDATE_NON_NULL(factory);
     VALIDATE_NON_NULL(tcp_server);
-#ifdef QEO_USE_DDS_NATIVE_SECURITY
-    if (NULL == getenv("TDDS_TCP_SEC_SERVER") && !no_security) {
+    if (NULL == getenv("TDDS_TCP_SERVER")) {
+        /* set DDS TCP_SERVER to value from SMS if not overridden */
         qeo_log_i("Set TCP server to %s", tcp_server);
         ddsrc = DDS_parameter_set("TCP_SERVER", tcp_server);
         qeo_log_dds_rc("DDS_parameter_set TCP_SERVER", ddsrc);
     }
-#else
-    if (NULL == getenv("TDDS_TCP_SEC_SERVER") && !no_security) {
-        qeo_log_i("Set TCP server to %s", tcp_server);
-        ddsrc = DDS_parameter_set("TCP_SEC_SERVER", tcp_server);
-        qeo_log_dds_rc("DDS_parameter_set TCP_SEC_SERVER", ddsrc);
-    }
-#endif
-#ifdef DEBUG
-    if (NULL == getenv("TDDS_TCP_SERVER") && no_security) {
-        qeo_log_i("Set TCP server to %s", tcp_server);
-        ddsrc = DDS_parameter_set("TCP_SERVER", tcp_server);
-        qeo_log_dds_rc("DDS_parameter_set TCP_SERVER", ddsrc);
-    }
-#endif
 
     return ddsrc_to_qeorc(ddsrc);
 }
@@ -942,6 +934,7 @@ static void dwqos_from_type(DDS_Publisher     pub,
         qos->reliability.kind = DDS_RELIABLE_RELIABILITY_QOS;
         qos->durability.kind  = DDS_TRANSIENT_LOCAL_DURABILITY_QOS;
         qos->ownership.kind   = DDS_EXCLUSIVE_OWNERSHIP_QOS;
+        qos->ownership_strength.value = _ownership_strength;
     }
 }
 
@@ -1194,12 +1187,8 @@ static DDS_Publisher create_publisher(const qeo_factory_t *factory)
     if (FACTORY_IS_SECURE(factory)) {
         DDS_DomainParticipant_get_default_publisher_qos(factory->dp, &qos);
         qos.entity_factory.autoenable_created_entities = 0;
-        if (QEO_OK != partition_validate_disabled(&qos.partition.name, true)) {
-            qeo_log_e("partition_make_disabled failed");
-        }
         pub = DDS_DomainParticipant_create_publisher(factory->dp, &qos, NULL, 0);
         qeo_log_dds_null("DDS_DomainParticipant_create_publisher", pub);
-        DDS_StringSeq__clear(&qos.partition.name);
     } else {
         pub = DDS_DomainParticipant_create_publisher(factory->dp, NULL, NULL, 0);
     }
@@ -1280,7 +1269,7 @@ qeo_retcode_t core_enable_writer(qeocore_writer_t *writer)
     qeo_retcode_t rc = QEO_OK;
 
     if (FACTORY_IS_SECURE(writer->entity.factory)) {
-        rc = partition_update_writer(writer);
+        rc = writer_user_data_update(writer);
     }
     if (QEO_OK == rc) {
         DDS_ReturnCode_t ddsrc = DDS_RETCODE_OK;
@@ -1323,14 +1312,8 @@ static DDS_Subscriber create_subscriber(const qeo_factory_t *factory)
     if (FACTORY_IS_SECURE(factory)) {
         DDS_DomainParticipant_get_default_subscriber_qos(factory->dp, &qos);
         qos.entity_factory.autoenable_created_entities = 0;
-        if (QEO_OK != partition_validate_disabled(&qos.partition.name, false)) {
-            qeo_log_e("partition_make_disabled failed");
-        }
-        else {
-            sub = DDS_DomainParticipant_create_subscriber(factory->dp, &qos, NULL, 0);
-            qeo_log_dds_null("DDS_DomainParticipant_create_subscriber", sub);
-            DDS_StringSeq__clear(&qos.partition.name);
-        }
+        sub = DDS_DomainParticipant_create_subscriber(factory->dp, &qos, NULL, 0);
+        qeo_log_dds_null("DDS_DomainParticipant_create_subscriber", sub);
     }
     else {
         sub = DDS_DomainParticipant_create_subscriber(factory->dp, NULL, NULL, 0);
@@ -1438,7 +1421,7 @@ qeo_retcode_t core_enable_reader(qeocore_reader_t *reader)
     qeo_retcode_t rc = QEO_OK;
 
     if (FACTORY_IS_SECURE(reader->entity.factory)) {
-        rc = partition_update_reader(reader);
+        rc = reader_user_data_update(reader);
     }
     if (QEO_OK == rc) {
         DDS_ReturnCode_t ddsrc = DDS_RETCODE_OK;

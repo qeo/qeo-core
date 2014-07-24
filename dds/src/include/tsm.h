@@ -37,5 +37,18 @@ Type *tsm_create_struct_union (TypeLib                    *lp,
    On return it will be updated to indicate the dynamic aspects of the
    structure. */
 
+void tsm_typeref_set_type (DDS_TypeSupport_meta       *tsm,
+			   unsigned                   n,
+			   const Type                 *type);
+
+/* Substitute the TYPEREF field on the given offset into a TYPE field that
+   refer to the real type. */ 
+
+Type *tsm_create_typedef (TypeLib                    *lp,
+			  const DDS_TypeSupport_meta *tsm,
+			  unsigned                   *info_flags);
+
+/* Create a type that is a Typedef to an existing Structure or Union type. */
+
 #endif /* !__tsm_h_ */
 

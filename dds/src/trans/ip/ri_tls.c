@@ -40,6 +40,9 @@
 #include "openssl/ssl.h"
 #include "openssl/rand.h"
 #include "security.h"
+#ifdef DDS_NATIVE_SECURITY
+#include "sec_data.h"
+#endif
 #include "ri_data.h"
 #include "ri_tls.h"
 #include "ri_tcp.h"
@@ -108,7 +111,7 @@ static void trace_poll_states (char *state, int to, int fd, const char *func)
 #endif
 
 #ifdef TRACE_ENTER_FUNCTION
-#define trace_func() log_printf (RTPS_ID, 0, "Entering function %s.\r\n", __FUNCTION__);
+#define trace_func() log_printf (RTPS_ID, 0, "=== Entering function %s ===\r\n", __FUNCTION__);
 #else
 #define trace_func()
 #endif
@@ -199,7 +202,7 @@ static void tls_dump_openssl_error_stack (const char *msg)
 
 	log_printf (RTPS_ID, 0, "%s", msg);
 	while ((err = ERR_get_error_line_data (&file, &line, &data, &flags)))
-		log_printf (RTPS_ID, 0, "    err %lu @ %s:%d -- %s\n", err, file, line,
+		log_printf (RTPS_ID, 0, "    err %lu @ %s:%d -- %s\r\n", err, file, line,
 				ERR_error_string (err, buf));
 }
 
@@ -405,7 +408,11 @@ static SSL_CTX *create_ssl_tls_ctx (TLS_CX_SIDE purpose)
 {
 	SSL_CTX *ctx = NULL;
 	X509 *cert;
+#ifdef DDS_NATIVE_SECURITY
+	STACK_OF(X509) *ca_cert_list = NULL;
+#else
 	X509 *ca_cert_list[10];
+#endif
 	X509 *ca_cert_ptr = NULL;
 	int nbOfCA;
 	int j;
@@ -454,11 +461,18 @@ static SSL_CTX *create_ssl_tls_ctx (TLS_CX_SIDE purpose)
 	if (get_nb_of_CA_certificates (&nbOfCA, local_identity) ||
 	    nbOfCA == 0)
 		fatal_printf ("TLS: Did not find any trusted CA certificates");
-	
- 	get_CA_certificate_list (&ca_cert_list[0], local_identity);
+#ifdef DDS_NATIVE_SECURITY
+ 	get_CA_certificate_list (&ca_cert_list, local_identity);
+#else
+	get_CA_certificate_list (&ca_cert_list[0], local_identity);
+#endif
 			
 	for (j = 0; j < nbOfCA ; j++) {
-		ca_cert_ptr = ca_cert_list[j];
+#ifdef DDS_NATIVE_SECURITY
+		ca_cert_ptr = sk_X509_value (ca_cert_list, j);
+#else
+		ca_cert_ptr = ca_cert_list [j];
+#endif
 		X509_STORE_add_cert (SSL_CTX_get_cert_store (ctx), ca_cert_ptr);
 	}
 	
@@ -480,6 +494,13 @@ static SSL_CTX *create_ssl_tls_ctx (TLS_CX_SIDE purpose)
 		SSL_CTX_set_cookie_generate_cb (ctx, generate_cookie);
 		SSL_CTX_set_cookie_verify_cb (ctx, verify_cookie);
 	}
+
+#ifdef DDS_NATIVE_SECURITY
+	X509_free (cert);
+	sk_X509_pop_free (ca_cert_list, X509_free);
+	EVP_PKEY_free (privateKey);
+#endif
+
 	return (ctx);
 }
 
@@ -545,19 +566,18 @@ static TLS_CX *create_tls_ctx (int fd, TLS_CX_SIDE role)
 		}
 	}
 
-#ifdef __APPLE__
-    /* MSG_NOSIGNAL does not exist for Apple OS, but a equivalent socket option is available */
-    if (setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes)) < 0){
-        err_printf("%s: setsockopt()", __FUNCTION__);
-    }
-#endif
-
 	tls->fd = fd;
 	tls->state = SSL_NONE;
 	tls->ssl_pending_possible = 0;
 	tls->recv_msg = NULL;
 	tls->send_msg = NULL;
 
+#ifdef __APPLE__
+
+	/* MSG_NOSIGNAL does not exist for Apple OS, but a equivalent socket option is available */
+	if (setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes)) < 0)
+		err_printf("%s: setsockopt()", __FUNCTION__);
+#endif
 	SSL_set_fd (tls->ssl, fd);
 	return (tls);
  fail:
@@ -605,11 +625,14 @@ static TLS_CX *get_tls_ctx (IP_CX *cxp)
 	if (!tls) {
 		if (cxp->paired && cxp->fd == cxp->paired->fd) {
 			tls = cxp->paired->sproto;
-			if (!tls)
-				fatal_printf ("TLS: no valid tls ctx found for [%d] via shared", cxp->fd);
+			if (!tls) {
+				log_printf (RTPS_ID, 0, "TLS: no valid tls ctx found for [%d] via shared", cxp->fd);
+				tls = NULL;
+			}
 		}
 		else {
-			fatal_printf ("TLS: no valid tls ctx found for [%d]", cxp->fd);
+			/* this could happen on the ctrl channel when a write fails while also reading */
+			log_printf (RTPS_ID, 0, "TLS: no valid tls ctx found for [%d]", cxp->fd);
 			tls = NULL;
 		}
 	}
@@ -638,12 +661,18 @@ static void handle_pollout (IP_CX *cxp)
 	/* If WANT_WRITE then set POLLOUT = 1 and POLLIN = 0 */
 	if (tls->state == SSL_WRITE_WANT_WRITE || 
 	    tls->state == SSL_READ_WANT_WRITE) {
+#ifdef TRACE_STATE_CHANGES
+		log_printf (RTPS_ID, 0, "TLS: POLLOUT = 1, POLLIN = 0\r\n");
+#endif
 		pollout_on (cxp->fd);
 		pollin_off (cxp->fd);
 	}
 	/* If WANT_READ then set POLLOUT = 0 and POLLIN = 1 */
 	else if (tls->state == SSL_READ_WANT_READ ||
 		 tls->state == SSL_WRITE_WANT_READ) {
+#ifdef TRACE_STATE_CHANGES
+		log_printf (RTPS_ID, 0, "TLS: POLLOUT = 0, POLLIN = 1\r\n");
+#endif
 		pollout_off (cxp->fd);
 		pollin_on (cxp->fd);
 	}
@@ -656,6 +685,9 @@ static void handle_pollout (IP_CX *cxp)
 	}
 	/* Default POLLOUT = 0 and POLLIN = 1 */
 	else {
+#ifdef TRACE_STATE_CHANGES
+		log_printf (RTPS_ID, 0, "TLS: POLLOUT = 0, POLLIN = 1\r\n");
+#endif
 		pollout_off (cxp->fd);
 		pollin_on (cxp->fd);
 	}
@@ -759,7 +791,8 @@ static void tls_write_msg_fragment (IP_CX *cxp)
    Returns:
      0: success (the read(s) went well, msg not necessarilly complete).
     -1: Some problem with read (see ERRNO for details). Connection should most
-        probably be closed. */
+        probably be closed.
+    -2: The context is already deleted somewhere else, no double deletion. */
 static int tls_receive_message_fragment (IP_CX *cxp, TCP_MSG *msg)
 {
 	unsigned char	*dp;
@@ -770,8 +803,11 @@ static int tls_receive_message_fragment (IP_CX *cxp, TCP_MSG *msg)
 
 	trace_func ();
 
-	if (!tls)
+	if (!tls && cxp->fd)
 		return (-1);
+
+	if (!tls && !cxp->fd)
+		return (-2);
 
 	if (!msg->size) {
 		/* Start of a new message. Expect at least a message header */
@@ -857,7 +893,7 @@ continue_reading:
 
 static void tls_receive_message (IP_CX *cxp)
 {
-	TCP_MSG *recv_msg;
+	TCP_MSG *recv_msg = NULL;
 	int	r;
 	TLS_CX  *tls = get_tls_ctx (cxp);
 
@@ -881,8 +917,13 @@ try_next:
 	}
 	
 	r = tls_receive_message_fragment (cxp, tls->recv_msg);
-	if (r == -1)
+	if (r == -1) {
 		tls_cleanup_ctx (cxp);
+		return;
+	} else if (r == -2) {
+		log_printf (RTPS_ID, 0, "The context was already deleted, don't delete it again\r\n");
+		return;
+	}
 
 	else if (tls->recv_msg->used == tls->recv_msg->size) {
 		recv_msg = tls->recv_msg;
@@ -943,7 +984,6 @@ static void tls_socket_activity (SOCKET fd, short revents, void *arg)
 		return;
 	}
 	if ((revents & POLLOUT) != 0) {
-	
 		if (tls->state == SSL_WRITE_WANT_WRITE)
 			tls_write_msg_fragment (cxp);
 		else if (tls->state == SSL_READ_WANT_WRITE)
@@ -960,7 +1000,7 @@ static void tls_socket_activity (SOCKET fd, short revents, void *arg)
 		else if (tls->state == SSL_NONE)
 			tls_receive_message (cxp);
 		else
-			handle_pollout (cxp);		
+			handle_pollout (cxp);
 	}
 }
 
@@ -1174,7 +1214,7 @@ static void tls_close_pending_connection (TCP_FD *pp)
 #else
 	close (pp->fd);
 #endif
-	pp->fd = -1;
+	pp->fd = 0;
 	tls_pending_free (pp);
 }
 
@@ -1597,7 +1637,7 @@ void tls_stop_server (IP_CX *scxp)
 	if (close (scxp->fd))
 		warn_printf ("TCP: Could not close [%d]", scxp->fd);
 
-	scxp->fd = -1;
+	scxp->fd = 0;
 	scxp->fd_owner = 0;
 	log_printf (RTPS_ID, 0, "TCP: Secure server stopped.\r\n");
 	cleanup_ssl_tls_ctx ();
@@ -1675,7 +1715,7 @@ int tls_do_connect (TCP_CON_REQ_ST *p)
 					perror ("tls_connect: connect()");
 					log_printf (RTPS_ID, 0, "tls_connect: connect() failed - errno = %d.\r\n", ERRNO);
 					close (fd);
-					p->cxp->fd = -1;
+					p->cxp->fd = 0;
 					p->cxp->fd_owner = 0;
 					trace_server ("close", r, fd);
 				}
@@ -1717,7 +1757,7 @@ void tls_disconnect (IP_CX *cxp)
 #endif
 	trace_func ();
 
-	log_printf (RTPS_ID, 0, "TLS: sock_fd_remove_sock [%d] (%d)\r\n", cxp->fd, cxp->handle);
+	log_printf (RTPS_ID, 0, "TLS: disconnect [%d] (%d) (owner:%d)\r\n", cxp->fd, cxp->handle, cxp->fd_owner);
 
 	if (cxp->fd_owner)
 		sock_fd_remove_socket (cxp->fd);
@@ -1729,7 +1769,7 @@ void tls_disconnect (IP_CX *cxp)
 			return;
 		}
 	}
-	
+
 	if ((tls = (TLS_CX *) cxp->sproto) != NULL) {
 		cxp->sproto = NULL;
 		if (tls->ssl) {
@@ -1747,7 +1787,7 @@ void tls_disconnect (IP_CX *cxp)
 				case -1:
 				default:
 #ifdef TRACE_TLS_SPECIFIC
-					log_printf (RTPS_ID, 0, "TLS: socket [%d] not closed gracefully", cxp->fd);
+					log_printf (RTPS_ID, 0, "TLS: socket [%d] not closed gracefully\r\n", cxp->fd);
 #endif
 					break;
 				}
@@ -1761,7 +1801,7 @@ void tls_disconnect (IP_CX *cxp)
 				case -1:
 				default:
 #ifdef TRACE_TLS_SPECIFIC
-					log_printf (RTPS_ID, 0, "TLS: socket [%d] not closed gracefully", cxp->fd);
+					log_printf (RTPS_ID, 0, "TLS: socket [%d] not closed gracefully\r\n", cxp->fd);
 #endif
 					break;
 				}
@@ -1796,7 +1836,10 @@ void tls_disconnect (IP_CX *cxp)
 
 	log_printf (RTPS_ID, 0, "TLS: The socket [%d] (%d) is now closed\r\n", cxp->fd, cxp->handle);
 
-	cxp->fd = -1;
+	/*if (cxp->timer && tmr_active (cxp->timer))
+	  tmr_stop (cxp->timer);*/
+
+	cxp->fd = 0;
 	cxp->fd_owner = 0;
 	
 	if (next_p)
@@ -1840,6 +1883,9 @@ WR_RC tls_write_msg (IP_CX *cxp, unsigned char *msg, size_t len)
 
 	if (!tls) {
 		xfree (msg);
+		if (cxp && cxp->fd) {
+			sock_fd_remove_socket (cxp->fd);
+		}
 		return (WRITE_FATAL);
 	}
 	if (tls->send_msg) {

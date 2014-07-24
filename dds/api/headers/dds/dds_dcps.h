@@ -396,7 +396,7 @@ DDS_SEQUENCE(DDS_QosPolicyCount, DDS_QosPolicyCountSeq);
 /* === Builtin Topics ======================================================= */
 
 typedef struct {
-	DDS_BUILTIN_TOPIC_TYPE value [3]; 
+	DDS_BUILTIN_TOPIC_TYPE_NATIVE value [3];
 } DDS_BuiltinTopicKey_t;
 
 typedef struct {

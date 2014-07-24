@@ -18,6 +18,7 @@
 
 #include "list.h"
 #include "log.h"
+#include "prof.h"
 #include "error.h"
 #include "debug.h"
 #include "rtps_cfg.h"
@@ -31,9 +32,37 @@ void rtps_pool_dump (size_t sizes [])
 	print_pool_table (rtps_mem_blocks, (unsigned) MB_END, sizes);
 }
 
+#ifdef DDS_NATIVE_SECURITY
+
+static char *encrypt_str (int submsg, int payload, unsigned crypto)
+{
+	const char	*s, *encrypt_s [] = {
+		"none",
+		"HMAC_SHA1", "HMAC_SHA256",
+		"AES128_HMAC_SHA1", "AES256_HMAC_SHA256"
+	};
+	static char	buf [32];
+
+	if (submsg || payload) {
+		if (submsg)
+			s = "submessage";
+		else
+			s = "payload";
+		if (crypto && crypto <= 4)
+			sprintf (buf, "%s(%s)", s, encrypt_s [crypto]);
+		else
+			sprintf (buf, "%s(%u?)", s, crypto);
+	}
+	else
+		sprintf (buf, "none");
+	return (buf);
+}
+#endif
+
 static int endpoint_dump_fct (Skiplist_t *list, void *node, void *arg)
 {
 	Endpoint_t	*ep, **epp = (Endpoint_t **) node;
+	LocalEndpoint_t	*lep;
 	Domain_t	*dp = (Domain_t *) arg;
 	ENDPOINT	*rep;
 	READER		*rp;
@@ -74,10 +103,18 @@ static int endpoint_dump_fct (Skiplist_t *list, void *node, void *arg)
 			n += rrp->rr_changes.nchanges;
 	}
 	dbg_printf ("%u", n);
-	if ((ni = hc_total_instances (((LocalEndpoint_t *) ep)->cache)) >= 0)
+	lep = (LocalEndpoint_t *) ep;
+	if ((ni = hc_total_instances (lep->cache)) >= 0)
 		dbg_printf ("/%d", ni);
 	endpoint_names (rep, names);
 	dbg_printf ("\t%s/%s\r\n", names [0], names [1]);
+#ifdef DDS_NATIVE_SECURITY
+	if (lep->disc_prot || lep->submsg_prot || lep->payload_prot)
+		dbg_printf ("\t%sAccess control, %s discovery, Encryption: %s\r\n",
+			(!lep->access_prot) ? "No " : "",
+			(lep->disc_prot) ? "Secure" : "Normal",
+			encrypt_str (lep->submsg_prot, lep->payload_prot, lep->crypto_type));
+#endif
 	if (rep->is_reader) {
 		LIST_FOREACH (rp->rem_writers, rwp) {
 			dbg_printf ("\t\t\t    ->\tGUID: ");
@@ -137,7 +174,8 @@ void rtps_endpoints_dump (void)
 
 static void rtps_dump_change (Change_t *cp, int newline)
 {
-	static const char *kind_str [] = { "ALIVE", "DISPOSED", "UNREGISTERED"};
+	static const char *kind_str [] = { "ALIVE", "DISPOSED", 
+					   "UNREGISTERED", "ZOMBIE"};
 
 	dbg_printf ("\t[%p*%u:%s:h=%u,%d.%u]", (void *) cp,
 			cp->c_nrefs, kind_str [cp->c_kind],
@@ -236,7 +274,7 @@ static void endpoint_header (Domain_t *dp, Endpoint_t *ep)
 
 /* rtps_writer_proxy_dump -- Dump the ReaderLocator/Proxy contexts of a writer. */
 
-void rtps_writer_proxy_dump (WRITER *wp, RemReader_t *p)
+void rtps_writer_proxy_dump (WRITER *wp, DiscoveredReader_t *drp)
 {
 	RemReader_t	*rrp;
 	GUID_t		guid;
@@ -246,9 +284,12 @@ void rtps_writer_proxy_dump (WRITER *wp, RemReader_t *p)
 		return;
 	}
 	LIST_FOREACH (wp->rem_readers, rrp) {
-		if (p && p != rrp)
-			continue;
+		if (drp) {
+			if (drp != (DiscoveredReader_t *) rrp->rr_endpoint)
+				continue;
 
+			endpoint_header (rrp->rr_endpoint->u.participant->p_domain, &wp->endpoint.endpoint->ep);
+		}
 		if (wp->endpoint.stateful) {
 			dbg_printf ("    GUID: ");
 			guid.prefix = rrp->rr_endpoint->u.participant->p_guid_prefix;
@@ -261,11 +302,14 @@ void rtps_writer_proxy_dump (WRITER *wp, RemReader_t *p)
 			dbg_printf ("    ");
 			dbg_print_locator (&rrp->rr_locator->locator);
 		}
-		dbg_printf (" - \r\n\tInlineQoS=%d, Reliable=%d, Active=%d, Marshall=%d, MCast=%d\r\n",
+		dbg_printf (" - \r\n\tInlineQoS=%d, Reliable=%d, Active=%d, Marshall=%d, MCast=%d",
 				rrp->rr_inline_qos, rrp->rr_reliable,
 				rrp->rr_active, rrp->rr_marshall,
 				!rrp->rr_no_mcast);
-		dbg_printf ("\tStates (Control/Tx/Ack): %s/%s/%s\r\n",
+#ifdef DDS_SECURITY
+		dbg_printf (", Tunnel=%d", rrp->rr_tunnel);
+#endif
+		dbg_printf ("\r\n\tStates (Control/Tx/Ack): %s/%s/%s\r\n",
 				rtps_rr_cstate_str [rrp->rr_cstate],
 				rtps_rr_tstate_str [rrp->rr_tstate],
 				rtps_rr_astate_str [rrp->rr_astate]);
@@ -288,11 +332,15 @@ void rtps_writer_proxy_dump (WRITER *wp, RemReader_t *p)
 			}
 			else
 				dbg_printf (" not set\r\n");
-			dbg_printf ("\tNew: %u.%u", rrp->rr_new_snr.high, rrp->rr_new_snr.low);
+			dbg_printf ("\tLast: %u.%u", rrp->rr_new_snr.high, rrp->rr_new_snr.low);
 			if (rrp->rr_nack_timer && tmr_active (rrp->rr_nack_timer)) {
 				dbg_printf (", Nack-timer: ");
 				dbg_print_timer (rrp->rr_nack_timer);
 			}
+#ifdef RTPS_PROXY_INST
+			dbg_printf (", local=%u, remote=%u",
+					rrp->rr_loc_inst, rrp->rr_rem_inst);
+#endif
 			dbg_printf ("\r\n");
 		}
 #ifdef EXTRA_STATS
@@ -316,7 +364,7 @@ void rtps_writer_proxy_dump (WRITER *wp, RemReader_t *p)
 
 /* rtps_reader_proxy_dump -- Dump the Writer Proxy contexts of a reader. */
 
-static void rtps_reader_proxy_dump (READER *rp, RemWriter_t *p)
+static void rtps_reader_proxy_dump (READER *rp, DiscoveredWriter_t *dwp)
 {
 	RemWriter_t	*rwp;
 	GUID_t		guid;
@@ -326,18 +374,24 @@ static void rtps_reader_proxy_dump (READER *rp, RemWriter_t *p)
 		return;
 	}
 	LIST_FOREACH (rp->rem_writers, rwp) {
-		if (p && p != rwp)
-			continue;
+		if (dwp) {
+			if (dwp != (DiscoveredWriter_t *) rwp->rw_endpoint)
+				continue;
 
+			endpoint_header (rwp->rw_endpoint->u.participant->p_domain, &rp->endpoint.endpoint->ep);
+		}
 		dbg_printf ("    GUID: "); 
 		guid.prefix = rwp->rw_endpoint->u.participant->p_guid_prefix;
 		guid.entity_id = rwp->rw_endpoint->entity_id;
 		dbg_print_guid (&guid);
 		dbg_printf (" {%u}", rwp->rw_endpoint->entity.handle);
-		dbg_printf (" - \r\n\tReliable=%d, Active=%d, MCast=%d\r\n", 
+		dbg_printf (" - \r\n\tReliable=%d, Active=%d, MCast=%d", 
 				rwp->rw_reliable, rwp->rw_active,
 				!rwp->rw_no_mcast);
-		dbg_printf ("\tStates (Control/Ack): %s/%s\r\n",
+#ifdef DDS_SECURITY
+		dbg_printf (", Tunnel=%d", rwp->rw_tunnel);
+#endif
+		dbg_printf ("\r\n\tStates (Control/Ack): %s/%s\r\n",
 				rtps_rw_cstate_str [rwp->rw_cstate],
 				rtps_rw_astate_str [rwp->rw_astate]);
 		rtps_dump_cclist ("\tChanges: ", &rwp->rw_changes, NULL, NULL);
@@ -362,6 +416,10 @@ static void rtps_reader_proxy_dump (READER *rp, RemWriter_t *p)
 				dbg_printf (", Heartbeat-timer: ");
 				dbg_print_timer (rwp->rw_hbrsp_timer);
 			}
+#ifdef RTPS_PROXY_INST
+			dbg_printf (", LocalInst=%u, RemoteInst=%u",
+					rwp->rw_loc_inst, rwp->rw_rem_inst);
+#endif
 			dbg_printf ("\r\n");
 		}
 #ifdef EXTRA_STATS
@@ -383,10 +441,15 @@ static void rtps_reader_proxy_dump (READER *rp, RemWriter_t *p)
 	}
 }
 
+typedef struct proxy_attr_st {
+	Domain_t	*domain;
+	Endpoint_t	*rem_ep;
+} ProxyAttr_t;
+
 static int proxy_dump_fct (Skiplist_t *list, void *node, void *arg)
 {
-	Domain_t	*dp = (Domain_t *) arg;
 	Endpoint_t	*ep, **epp = (Endpoint_t **) node;
+	ProxyAttr_t	*pa = (ProxyAttr_t *) arg;
 	ENDPOINT	*rep;
 
 	ARG_NOT_USED (list)
@@ -399,11 +462,12 @@ static int proxy_dump_fct (Skiplist_t *list, void *node, void *arg)
 	if (rep->is_reader && !rep->stateful)
 		return (1);
 
-	endpoint_header (dp, ep);
+	if (!pa->rem_ep)
+		endpoint_header (pa->domain, ep);
 	if (rep->is_reader)
-		rtps_reader_proxy_dump ((READER *) rep, NULL);
+		rtps_reader_proxy_dump ((READER *) rep, (DiscoveredWriter_t *) pa->rem_ep);
 	else
-		rtps_writer_proxy_dump ((WRITER *) rep, NULL);
+		rtps_writer_proxy_dump ((WRITER *) rep, (DiscoveredReader_t *) pa->rem_ep);
 	return (1);
 }
 
@@ -414,6 +478,7 @@ void rtps_proxy_dump (Endpoint_t *e)
 	ENDPOINT	*ep;
 	Domain_t	*dp;
 	unsigned	index;
+	ProxyAttr_t	pa;
 
 	if (!e) {
 		index = 0;
@@ -422,7 +487,9 @@ void rtps_proxy_dump (Endpoint_t *e)
 			if (!dp)
 				break;
 
-			sl_walk (&dp->participant.p_endpoints, proxy_dump_fct, dp);
+			pa.domain = dp;
+			pa.rem_ep = NULL;
+			sl_walk (&dp->participant.p_endpoints, proxy_dump_fct, &pa);
 		}
 	}
 	else if (!entity_discovered (e->entity.flags)) {
@@ -441,9 +508,171 @@ void rtps_proxy_dump (Endpoint_t *e)
 		}
 	}
 	else {
-		dbg_printf ("Discovered reader/writer proxy dump not implemented yet ..\r\n");
-		/* ... TBC ... */
+		index = 0;
+		for (;;) {
+			dp = domain_next (&index, NULL);
+			if (!dp)
+				break;
+
+			pa.domain = dp;
+			pa.rem_ep = e;
+			sl_walk (&dp->participant.p_endpoints, proxy_dump_fct, &pa);
+		}
 	}
+}
+
+/* rtps_writer_proxy_restart -- Restart the Proxy contexts of a writer. */
+
+void rtps_writer_proxy_restart (WRITER *wp, DiscoveredReader_t *drp)
+{
+	RemReader_t	*rrp;
+
+	if (!wp->endpoint.stateful)
+		return;
+
+	if (!wp->rem_readers.head) {
+		dbg_printf ("No Reader%s contexts!\r\n", wp->endpoint.stateful ? " Proxy" : "Locator");
+		return;
+	}
+	LIST_FOREACH (wp->rem_readers, rrp) {
+		if (drp && drp != (DiscoveredReader_t *) rrp->rr_endpoint)
+			continue;
+
+		if (rrp->rr_reliable) {
+			if (drp) {
+				dbg_printf ("Restart ");
+				endpoint_header (rrp->rr_endpoint->u.participant->p_domain, &wp->endpoint.endpoint->ep);
+			}
+			dbg_printf ("\t\t\t    ->\tGUID: ");
+			dbg_print_guid_prefix (&rrp->rr_endpoint->u.participant->p_guid_prefix);
+			dbg_printf ("-");
+			dbg_print_entity_id (NULL, &rrp->rr_endpoint->entity_id);
+			dbg_printf (" {%u}\r\n", rrp->rr_endpoint->entity.handle);
+			rtps_matched_reader_restart ((Writer_t *) wp->endpoint.endpoint,
+						     (DiscoveredReader_t *) rrp->rr_endpoint);
+		}
+	}
+}
+
+/* rtps_reader_proxy_restart -- Restart the Proxy contexts of a reader. */
+
+void rtps_reader_proxy_restart (READER *rp, DiscoveredWriter_t *dwp)
+{
+	RemWriter_t	*rwp;
+
+	if (!rp->endpoint.stateful)
+		return;
+
+	if (!rp->rem_writers.head) {
+		dbg_printf ("No Reader proxy contexts!\r\n");
+		return;
+	}
+	LIST_FOREACH (rp->rem_writers, rwp) {
+		if (dwp && dwp != (DiscoveredWriter_t *) rwp->rw_endpoint)
+			continue;
+
+		if (rwp->rw_reliable) {
+			if (dwp) {
+				dbg_printf ("Restart ");
+				endpoint_header (rwp->rw_endpoint->u.participant->p_domain, &rp->endpoint.endpoint->ep);
+			}
+			dbg_printf ("\t\t\t    ->\tGUID: ");
+			dbg_print_guid_prefix (&rwp->rw_endpoint->u.participant->p_guid_prefix);
+			dbg_printf ("-");
+			dbg_print_entity_id (NULL, &rwp->rw_endpoint->entity_id);
+			dbg_printf (" {%u}\r\n", rwp->rw_endpoint->entity.handle);
+			rtps_matched_writer_restart ((Reader_t *) rp->endpoint.endpoint,
+						     (DiscoveredWriter_t *) rwp->rw_endpoint);
+		}
+	}
+}
+
+#ifdef RTPS_PROXY_INST
+
+static int proxy_restart_fct (Skiplist_t *list, void *node, void *arg)
+{
+	Endpoint_t	*ep, **epp = (Endpoint_t **) node;
+	ProxyAttr_t	*pa = (ProxyAttr_t *) arg;
+	ENDPOINT	*rep;
+
+	ARG_NOT_USED (list)
+
+	ep = *epp;
+	if (!ep->rtps)
+		return (1);
+
+	rep = (ENDPOINT *) ep->rtps;
+	if (!rep->stateful)
+		return (1);
+
+	if (!pa->rem_ep) {
+		dbg_printf ("Restart ");
+		endpoint_header (ep->u.subscriber->domain, ep);
+	}
+	if (rep->is_reader)
+		rtps_reader_proxy_restart ((READER *) rep, (DiscoveredWriter_t *) pa->rem_ep);
+	else
+		rtps_writer_proxy_restart ((WRITER *) rep, (DiscoveredReader_t *) pa->rem_ep);
+	return (1);
+}
+
+#endif
+
+/* rtps_proxy_restart -- Restart the proxy of an endpoint. */
+
+void rtps_proxy_restart (Endpoint_t *e)
+{
+#ifdef RTPS_PROXY_INST
+	ENDPOINT	*ep;
+	Domain_t	*dp;
+	unsigned	index;
+	ProxyAttr_t	pa;
+
+	if (!e) {
+		index = 0;
+		for (;;) {
+			dp = domain_next (&index, NULL);
+			if (!dp)
+				break;
+
+			pa.domain = dp;
+			pa.rem_ep = NULL;
+			sl_walk (&dp->participant.p_endpoints, proxy_restart_fct, &pa);
+		}
+	}
+	else if (!entity_discovered (e->entity.flags)) {
+		ep = e->rtps;
+		if (!ep || !ep->stateful) {
+			dbg_printf ("No such stateful reliable endpoint!\r\n");
+			return;
+		}
+		dbg_printf ("Restart ");
+		if (ep->is_reader) {
+			endpoint_header (e->u.subscriber->domain, e);
+			rtps_reader_proxy_restart ((READER *) ep, NULL);
+		}
+		else {
+			endpoint_header (e->u.publisher->domain, e);
+			rtps_writer_proxy_restart ((WRITER *) ep, NULL);
+		}
+	}
+	else {
+		index = 0;
+		for (;;) {
+			dp = domain_next (&index, NULL);
+			if (!dp)
+				break;
+
+			pa.domain = dp;
+			pa.rem_ep = e;
+			sl_walk (&dp->participant.p_endpoints, proxy_restart_fct, &pa);
+		}
+	}
+#else
+	ARG_NOT_USED (e)
+
+	dbg_printf ("Proxy restart is not supported in this build!\r\n");
+#endif
 }
 
 void rtps_cache_dump (Endpoint_t *e)

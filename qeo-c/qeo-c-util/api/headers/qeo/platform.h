@@ -34,6 +34,20 @@
 qeo_util_retcode_t qeo_platform_get_device_storage_path(const char* file_name, char** full_storage_path);
 
 /**
+ * Get the path to the CA certificates to be used for peer verification.
+ * At least one of the two arguments needs to be provided.
+ *
+ * \param[out] ca_file If not \c NULL this will be used to return the path of
+ *                     the file that contains a list of CA certificates in PEM
+ *                     format (if configured).
+ * \param[out] ca_path If not \c NULL this will be used to return the path of
+ *                     the directory containing CA certificates in PEM format
+ *                     (if configured).
+ */
+qeo_util_retcode_t qeo_platform_get_cacert_path(const char** ca_file,
+                                                const char** ca_path);
+
+/**
  * This function will set a key with it's value in the persistent storage framework
  *
  * \param[in] key the unique identifier of the data
@@ -50,5 +64,16 @@ qeo_util_retcode_t qeo_platform_set_key_value(const char *key, char *value);
  *
  */
 qeo_util_retcode_t qeo_platform_get_key_value(const char *key, char **value); 
+
+
+typedef struct qeo_der_certificate {
+    long size;
+    char* cert_data;
+} qeo_der_certificate;
+
+typedef qeo_util_retcode_t (*qeo_platform_custom_certificate_validator)(qeo_der_certificate*, int);
+
+qeo_util_retcode_t qeo_platform_set_custom_certificate_validator(qeo_platform_custom_certificate_validator validator_function);
+qeo_platform_custom_certificate_validator qeo_platform_get_custom_certificate_validator();
 
 #endif 

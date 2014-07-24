@@ -12,6 +12,20 @@
  * See LICENSE file for more details.
  */
 
+/*
+ * Copyright (c) 2014 - Qeo LLC
+ *
+ * The source code form of this Qeo Open Source Project component is subject
+ * to the terms of the Clear BSD license.
+ *
+ * You can redistribute it and/or modify it under the terms of the Clear BSD
+ * License (http://directory.fsf.org/wiki/License:ClearBSD). See LICENSE file
+ * for more details.
+ *
+ * The Qeo Open Source Project also includes third party Open Source Software.
+ * See LICENSE file for more details.
+ */
+
 /* pl_cdr.c -- Implements the PL-CDR marshalling/unmarshalling functions. */
 
 #include <stdio.h>
@@ -68,12 +82,12 @@ static void pl_cache_participant (const Participant_t *p)
 	p_data.lease_duration = p->p_domain->participant.p_lease_duration;
 #ifdef DDS_SECURITY
 	if (p->p_domain->security) {
-		p_data.identity = p->p_domain->identity;
-		p_data.permissions = p->p_domain->ptoken;
+		p_data.id_tokens = p->p_domain->participant.p_id_tokens;
+		p_data.p_tokens = p->p_domain->participant.p_p_tokens;
 	}
 	else {
-		p_data.identity = NULL;
-		p_data.permissions = 0;
+		p_data.id_tokens = NULL;
+		p_data.p_tokens = NULL;
 	}
 #endif
 	last_p = p;

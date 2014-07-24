@@ -99,7 +99,7 @@ static int data_container (DBW                   *wp,
 #else
 	CDR_TypeSupport_struct	*sp = (CDR_TypeSupport_struct *) *tp;
 #endif
-	unsigned char	*cp;
+	const unsigned char	*cp;
 
 	if (!is_struct (*tp))
 		return (BC_ERR_UNIMPL);
@@ -108,7 +108,6 @@ static int data_container (DBW                   *wp,
 		return (BC_ERR_INVDATA);
 
 	cp = wp->data;
-
 	if (prefixed) {
 		unsigned        	type;
 		DDS_ReturnCode_t	error;
@@ -180,10 +179,10 @@ typedef struct {
 	unsigned offset;
 } data_ptr_type;
 
-static unsigned char *data_ptr (DBW                   *wp,
-				const CDR_TypeSupport *tp,
-				unsigned              field,
-				data_ptr_type         *type)
+static const unsigned char *data_ptr (DBW                   *wp,
+				      const CDR_TypeSupport *tp,
+				      unsigned              field,
+				      data_ptr_type         *type)
 {
 #ifdef XTYPES_USED
 	StructureType		*sp = (StructureType *) tp;
@@ -192,8 +191,8 @@ static unsigned char *data_ptr (DBW                   *wp,
 #endif
 	unsigned        	prefix;
 	unsigned		n, left, ofs;
-	unsigned char		*cp;
-	DB			*bp;
+	const unsigned char	*cp;
+	const DB		*bp;
 	int 			swap = 0;
 	DDS_ReturnCode_t	error;
 

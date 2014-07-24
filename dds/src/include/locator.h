@@ -213,7 +213,8 @@ void locator_unref (LocatorNode_t *np);
 
 void locators_remove_handle (int h);
 
-/* Reset handle in all locators that are currently referring to it. */
+/* Reset the handle either in all locators (h == 0) or in all locators that are
+   currently referring to it. */
 
 struct sockaddr *loc2sockaddr (LocatorKind_t kind,
 			       uint32_t port,

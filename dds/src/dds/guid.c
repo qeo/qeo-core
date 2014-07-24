@@ -58,8 +58,10 @@ typedef struct dds_shm_st {
 	unsigned	cdd_domains [MAX_CDD_DOMAINS];	/* Domain Id for Central Discovery. */
 } DDS_SHM;
 
+#ifndef NOIPC
 static int	dds_sem;	/* DDS Semaphore. */
 static DDS_SHM	*dds_shm;	/* DDS Shared Memory. */
+#endif
 
 unsigned	dds_exec_env;		/* Execution Environment identifier. */
 unsigned	dds_participant_id;	/* Last used participant Id. */
@@ -328,6 +330,8 @@ void guid_restate_participant (unsigned pid)
 	sem_p (dds_sem);
 	dds_shm->pids [pid >> 5] |= (1 << (pid & 31));
 	sem_v (dds_sem);
+#else
+    ARG_NOT_USED(pid)
 #endif
 }
 
@@ -340,6 +344,8 @@ void guid_free_participant (unsigned pid)
 	sem_p (dds_sem);
 	dds_shm->pids [pid >> 5] &= ~(1 << (pid & 31));
 	sem_v (dds_sem);
+#else
+    ARG_NOT_USED(pid)
 #endif
 }
 
@@ -381,9 +387,12 @@ char *guid_prefix_str (const GuidPrefix_t *gp, char buffer [])
 
 char *guid_str (const GUID_t *g, char buffer [])
 {
+	size_t	l;
+
 	guid_prefix_str (&g->prefix, buffer);
-	buffer [27] = '-';
-	entity_id_str (&g->entity_id, &buffer [28]);
+	l = strlen (buffer);
+	buffer [l] = '-';
+	entity_id_str (&g->entity_id, &buffer [l + 1]);
 	return (buffer);
 }
 

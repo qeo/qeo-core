@@ -28,6 +28,7 @@
 #include "pool.h"
 #include "str.h"
 #include "error.h"
+#include "dds/dds_security.h"
 #include "dds/dds_dcps.h"
 #include "dds_data.h"
 #include "domain.h"
@@ -121,6 +122,10 @@ DDS_ReturnCode_t DDS_DataReader_set_qos (DDS_DataReader rp,
 		goto done;
 	}
 	ret = qos_reader_update (&rp->r_qos, qos);
+	if (!ret) {
+		rp->r_time_based_filter = qos->time_based_filter;
+		rp->r_data_lifecycle = qos->reader_data_lifecycle;
+	}
 
     done:
 	lock_release (rp->r_lock);
@@ -135,7 +140,7 @@ DDS_ReturnCode_t DDS_DataReader_set_qos (DDS_DataReader rp,
 #endif
 	if ((rp->r_flags & EF_ENABLED) != 0) {
 		hc_qos_update (rp->r_cache);
-		disc_reader_update (rp->r_topic->domain, rp);
+		disc_reader_update (rp->r_topic->domain, rp, 1, 0);
 	}
 #ifdef RW_LOCKS
 	lock_release (rp->r_lock);
@@ -373,7 +378,7 @@ static void *dcps_get_cdata_cdr (void                *bufp,
 
 	tp = ts->ts_cdr;
 #endif
-	alloc_size = cdr_unmarshalled_size (sdata, 4, tp, 0, 0, swap, NULL);
+	alloc_size = cdr_unmarshalled_size (sdata, 4, tp, 0, 0, swap, 0, NULL);
 	if (!alloc_size) {
 		log_printf (DCPS_ID, 0, "dds_get_cdata: cdr_unmarshalled_size failed (writer=%u)!\r\n", cp->c_writer);
 		/*log_print_region (RTPS_ID, 0, cp->c_data, cp->c_length, 1, 1);*/
@@ -412,7 +417,7 @@ static void *dcps_get_cdata_cdr (void                *bufp,
 		ddbp = NULL;
 		*auxp = dp;
 	}
-	*error = cdr_unmarshall (dp, sdata, 4, tp, 0, 0, swap);
+	*error = cdr_unmarshall (dp, sdata, 4, tp, 0, 0, swap, 0);
 	if (*error) {
 		log_printf (DCPS_ID, 0, "dds_get_cdata: error %d unmarshalling CDR data (writer=%u)!\r\n", *error, cp->c_writer);
 		/*log_print_region (RTPS_ID, 0, cp->c_data, cp->c_length, 1, 1);*/
@@ -953,11 +958,11 @@ DDS_ReturnCode_t dcps_reader_get (Reader_t              *rp,
 			case ALIVE:
 				ip->instance_state = DDS_ALIVE_INSTANCE_STATE;
 				break;
-			case ZOMBIE:
 			case NOT_ALIVE_DISPOSED:
 				ip->instance_state = DDS_NOT_ALIVE_DISPOSED_INSTANCE_STATE;
 				break;
 			case NOT_ALIVE_UNREGISTERED:
+			case ZOMBIE:
 				ip->instance_state = DDS_NOT_ALIVE_NO_WRITERS_INSTANCE_STATE;
 				break;
 		}
@@ -1853,6 +1858,7 @@ HCI handle_get (Topic_t          *tp,
 		Cache_t          *cp,
 		const void       *data,
 		int              dynamic,
+		int              secure,
 		InstanceHandle   *h,
 		DDS_ReturnCode_t *ret)
 {
@@ -1861,7 +1867,7 @@ HCI handle_get (Topic_t          *tp,
 	HCI			hci;
 	unsigned char		buf [16];
 
-	keys = dcps_key_data_get (tp, data, dynamic, buf, &size, ret);
+	keys = dcps_key_data_get (tp, data, dynamic, secure, buf, &size, ret);
 	if (!keys) {
 		hci = NULL;
 		*h = DDS_HANDLE_NIL;
@@ -1893,7 +1899,8 @@ DDS_InstanceHandle_t DDS_DataReader_lookup_instance (DDS_DataReader rp,
 	if (!reader_ptr (rp, 1, &ret))
 		return (DDS_HANDLE_NIL);
 
-	handle_get (rp->r_topic, &rp->r_cache, key_data, 0, &h, &ret);
+	handle_get (rp->r_topic, rp->r_cache, key_data, 0, 
+					ENC_DATA (&rp->r_lep), &h, &ret);
 	lock_release (rp->r_lock);
 	prof_stop (dcps_r_lookup, 1);
 	return ((DDS_InstanceHandle_t) h);

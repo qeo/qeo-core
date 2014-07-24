@@ -28,5 +28,6 @@
 const qeo_platform_device_info *get_default_device_info(void);
 void free_default_device_info(void);
 const char *get_default_device_storage_path(void);
-void free_default_device_storage_path(void);
+void get_default_cacert_path(const char **ca_file, const char **ca_path);
+void free_default_paths(void);
 #endif

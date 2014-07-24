@@ -26,7 +26,7 @@
 #include <inttypes.h>
 
 #include "security.h"
-#include "partition_string_list_node.h"
+#include "topic_participant_list_node.h"
 
 /*########################################################################
 #                                                                       #
@@ -36,7 +36,7 @@
 typedef struct qeo_security_policy *qeo_security_policy_hndl;
 
 typedef void (*qeo_security_policy_update_cb)(qeo_security_policy_hndl qeoSecPol);
-typedef void (*qeo_security_policy_update_partition_string_cb)(qeo_security_policy_hndl qeoSecPol,uintptr_t cookie ,const char *topic_name, unsigned int selector, struct partition_string_list_node *  partition_list);
+typedef void (*qeo_security_policy_update_fine_grained_rules_cb)(qeo_security_policy_hndl qeoSecPol,uintptr_t cookie ,const char *topic_name, unsigned int selector, struct topic_participant_list_node *read_participant_list, struct topic_participant_list_node *write_participant_list);
 
 typedef struct {
     qeo_security_hndl  sec;
@@ -74,6 +74,6 @@ qeo_retcode_t qeo_security_policy_start_redistribution(qeo_security_policy_hndl 
 qeo_retcode_t qeo_security_policy_refresh(qeo_security_policy_hndl qeoSecPol);
 
 /* Get partition strings */
-qeo_retcode_t qeo_security_policy_get_partition_strings(qeo_security_policy_hndl qeoSecPol, uintptr_t cookie, const char *topic_name, unsigned int selector_mask, qeo_security_policy_update_partition_string_cb update_cb);
+qeo_retcode_t qeo_security_policy_get_fine_grained_rules(qeo_security_policy_hndl qeoSecPol, uintptr_t cookie, const char *topic_name, unsigned int selector_mask, qeo_security_policy_update_fine_grained_rules_cb update_cb);
 
 #endif /* POLICY_H_ */

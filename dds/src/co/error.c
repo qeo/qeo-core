@@ -93,7 +93,7 @@ typedef struct log_action_st {
 	unsigned	actions;
 } LogAction_t;
 
-static char logname [32];
+static char logname [256];
 static Skiplist_t log_act_list;
 static unsigned cur_actions [] = {
 	LOG_ACTION, DEBUG_ACTION, WARN_ACTION, ERROR_ACTION, FATAL_ACTION
@@ -286,6 +286,18 @@ static int errlevel_to_syslog [] = {
 };
 #endif
 
+static void log_dir_change (Config_t c)
+{
+	const char	*dir;
+
+	ARG_NOT_USED (c)
+
+	if ((dir = config_get_string (DC_LogDir, NULL)) != NULL)
+		snprintf (logname, sizeof (logname), "%s/%s%u", dir, BASE_LOG_NAME, sys_pid ());
+	else
+		snprintf (logname, sizeof (logname), "%s%u", BASE_LOG_NAME, sys_pid ());
+}
+
 static void do_actions (ErrLevel_t level, 
 			unsigned   act_flags,
 			const char *name,
@@ -327,7 +339,7 @@ static void do_actions (ErrLevel_t level,
 		if (nl)
 			printf ("\r\n");
 	}
-#ifdef DDS_DEBUG
+#if defined (DDS_DEBUG) && !defined (CDR_ONLY)
 	if (level != EL_DEBUG && log_debug_count)
 		debug_log (args, nl);
 #endif
@@ -383,7 +395,8 @@ static void do_actions (ErrLevel_t level,
 #endif
 	if ((act_flags & ACT_LOG) != 0) {
 		if (logname [0] == '\0')
-			snprintf (logname, sizeof (logname), "%s%u", BASE_LOG_NAME, sys_pid ());
+			config_notify (DC_LogDir, log_dir_change);
+
 		if (openf (f, logname, "a")) {
 			gettimeofday (&tv, NULL);
 #ifdef _WIN32
@@ -462,7 +475,7 @@ void dbg_redirect_sk (SOCKET out_sk)
 }
 #endif
 
-#define	MAX_BUFFER	200
+#define	MAX_BUFFER	1024
 
 static char	log_buffer [MAX_BUFFER];
 static char	dbg_buffer [MAX_BUFFER];
@@ -470,20 +483,23 @@ static unsigned	log_length;
 static unsigned	dbg_length;
 static lock_t	log_lock;
 static lock_t	dbg_lock;
+#ifndef CDR_ONLY
+static cond_t   log_cond;
+static cond_t   dbg_cond;
+static thread_t log_thread;
+static thread_t dbg_thread;
+#endif
 
 static void buffer_output (ErrLevel_t level,
 			   unsigned   acts,
 			   char       *sbuf,
 			   char       *dbuf,
-			   unsigned   *lp,
-			   lock_t     *lockp)
+			   unsigned   *lp)
 {
 	char	*cp, *start;
 
 	for (cp = sbuf, start = sbuf;; )
 		if (*cp == '\r') {
-			if (!*lp)
-				lock_takef (*lockp);
 			*cp++ = '\0';
 			memcpy (&dbuf [*lp], start, cp - start + 1);
 			*lp += cp - start;
@@ -492,13 +508,10 @@ static void buffer_output (ErrLevel_t level,
 			dbuf [0] = '\0';
 			if (*cp == '\n')
 				cp++;
-			lock_releasef (*lockp);
 			start = cp;
 		}
 		else if (!*cp) {
 			if (cp != start) {
-				if (!*lp)
-					lock_takef (*lockp);
 				if (*lp + cp - start + 1 > MAX_BUFFER) {
 					do_actions (level, acts, NULL, dbuf, 1);
 					*lp = 0;
@@ -517,16 +530,37 @@ void dbg_printf (const char *fmt, ...)
 {
 	va_list		arg;
 	char		sbuf [256];
+#ifndef CDR_ONLY
 	static int	init_needed = 1;
 
 	if (init_needed) {
 		lock_init_r (dbg_lock, "dbg");
+		cond_init (dbg_cond);
 		init_needed = 0;
 	}
+#endif
 	va_start (arg, fmt);
 	vsnprintf (sbuf, sizeof (sbuf), fmt, arg);
 	va_end (arg);
-	buffer_output (EL_DEBUG, cur_actions [EL_DEBUG], sbuf, dbg_buffer, &dbg_length, &dbg_lock);
+
+#ifndef CDR_ONLY
+	lock_takef (dbg_lock);
+
+	/* Verify that the buffer is not in use by another thread. If it is, wait
+	 * until it signals it is done with it. */
+	while (dbg_thread && dbg_thread != thread_id ())
+		cond_wait (dbg_cond, dbg_lock); 
+
+	dbg_thread = thread_id ();
+#endif
+	buffer_output (EL_DEBUG, cur_actions [EL_DEBUG], sbuf, dbg_buffer, &dbg_length);
+#ifndef CDR_ONLY
+	if (dbg_length == 0) {
+		dbg_thread = 0;
+		cond_signal_all (dbg_cond);
+	}
+	lock_releasef (dbg_lock);
+#endif
 }
 
 #define	RC_BUFSIZE	128
@@ -626,13 +660,25 @@ void dbg_print_indent (unsigned peer, const char *name)
 
 void dbg_flush (void)
 {
+#ifndef CDR_ONLY
+	lock_takef (dbg_lock);
+	if (dbg_thread != thread_id()) {
+		lock_releasef (dbg_lock);
+		return;
+	}
+#endif
 	do_actions (EL_DEBUG, cur_actions [EL_DEBUG], NULL, dbg_buffer, 0);
 	if (!handle)
 		fflush (stdout);
 
 	dbg_length = 0;
 	dbg_buffer [0] = '\0';
+
+#ifndef CDR_ONLY
+	dbg_thread = 0;
+	cond_signal_all (dbg_cond);
 	lock_releasef (dbg_lock);
+#endif
 }
 
 
@@ -641,12 +687,15 @@ void log_printf (unsigned id, unsigned level, const char *fmt, ...)
 	va_list		arg;
 	unsigned	acts;
 	char		sbuf [256];
+#ifndef CDR_ONLY
 	static int	init_needed = 1;
 
 	if (init_needed) {
 		lock_init_r (log_lock, "log");
+		cond_init (log_cond);
 		init_needed = 0;
 	}
+#endif
 	acts = log_logged (id, level);
 	if (!acts)
 		return;
@@ -654,7 +703,27 @@ void log_printf (unsigned id, unsigned level, const char *fmt, ...)
 	va_start (arg, fmt);
 	vsnprintf (sbuf, sizeof (sbuf), fmt, arg);
 	va_end (arg);
-	buffer_output (EL_LOG, acts, sbuf, log_buffer, &log_length, &log_lock);
+
+#ifndef CDR_ONLY
+	lock_takef (log_lock);
+
+	/* Verify that the buffer is not in use by another thread. If it is wait
+	 * until it signals it is done with it. */
+	while (log_thread && log_thread != thread_id())
+		cond_wait (log_cond, log_lock); 
+
+	log_thread = thread_id ();
+#endif
+	buffer_output (EL_LOG, acts, sbuf, log_buffer, &log_length);
+
+#ifndef CDR_ONLY
+	if (log_length == 0) {
+		log_thread = 0;
+		cond_signal_all (log_cond);
+	}
+	
+	lock_releasef (log_lock);
+#endif
 }
 
 void log_print_region (unsigned   id,
@@ -679,13 +748,24 @@ void log_flush (unsigned id, unsigned level)
 {
 	unsigned	acts;
 
-	acts = log_logged (id, level);
-	if (acts) {
-		do_actions (EL_LOG, acts, NULL, log_buffer, 0);
-		log_buffer [0] = '\0';
-		log_length = 0;
+#ifndef CDR_ONLY
+	lock_takef (log_lock);
+	if (log_thread != thread_id()) {
+		lock_releasef (log_lock);
+		return;
 	}
+#endif
+	acts = log_logged (id, level);
+	if (acts)
+		do_actions (EL_LOG, acts, NULL, log_buffer, 0);
+
+	log_buffer [0] = '\0';
+	log_length = 0;
+#ifndef CDR_ONLY
+	log_thread = 0;
+	cond_signal_all (log_cond);
 	lock_releasef (log_lock);
+#endif
 }
 
 

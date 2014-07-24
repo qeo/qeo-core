@@ -186,12 +186,14 @@ size_t DDS_KeySizeFromNativeData (const unsigned char *data,
 DDS_ReturnCode_t DDS_KeyFromNativeData (unsigned char       *key,
 					const void          *data,
 				        int                 dynamic,
+					int                 secure,
 					const TypeSupport_t *ts);
 
 /* Extract the key fields from a non-marshalled native data sample (data). */
 
 DDS_ReturnCode_t DDS_KeyToNativeData (void                *data,
 				      int                 dynamic,
+				      int                 secure,
 				      const void          *key,
 				      const TypeSupport_t *ts);
 
@@ -207,13 +209,15 @@ size_t DDS_KeySizeFromMarshalled (DBW                 data,
 DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char       *dst,
 					DBW                 data,
 					const TypeSupport_t *ts,
-					int                 key);
+					int                 key,
+					int                 secure);
 
 /* Extract the key fields from a marshalled data/key sample. */
 
 DDS_ReturnCode_t DDS_HashFromKey (unsigned char       hash [16],
 				  const unsigned char *key,
 				  size_t              key_size,
+				  int                 secure,
 				  const TypeSupport_t *ts);
 
 /* Calculate the hash value from a key. */
@@ -249,6 +253,7 @@ void DDS_TypeSupport_dump_key (unsigned            indent,
 			       const void          *key,
 			       int                 native,
 			       int                 dynamic,
+			       int                 secure,
 			       int                 field_names);
 
 /* Dump CDR-formatted key data using the specified typecode. */

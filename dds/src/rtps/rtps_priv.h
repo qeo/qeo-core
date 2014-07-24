@@ -36,6 +36,7 @@ struct rtps_endpoint_st {
 	unsigned		limit_rx:1;	/* Limited # of rxed samples. */
 	unsigned		cfilter_rx:1;	/* Content filtered. */
 	unsigned		cache_acks:1;	/* Ack only if cache allows. */
+	unsigned		resends:1;	/* Stateless can resend. */
 	unsigned		tfilter_rx:1;	/* Time-based filter. */
 	unsigned		trace_frames:1;	/* Frame tracing. */
 	unsigned		trace_sigs:1;	/* Signal tracing. */
@@ -68,6 +69,7 @@ typedef struct receiver_st {
 	VendorId_t		src_vendor;
 	GuidPrefix_t		src_guid_prefix;
 	GuidPrefix_t		dst_guid_prefix;
+	int			have_prefix;
 	int			have_timestamp;
 	FTime_t			timestamp;
 	unsigned		n_uc_replies;
@@ -195,6 +197,7 @@ struct ccref_st {
 	CCREF		*prev;		/* Previous in list of changes. */
 	unsigned	state:8;	/* Current state in stateful mode. */
 	unsigned	relevant:1;	/* Change is relevant for transmit. */
+	unsigned	mcdata:1;	/* Multicasted destination. */
 	unsigned	ack_req:1;	/* Ack requested from cache. */
 #ifdef RTPS_FRAGMENTS
 	FragInfo_t	*fragments;	/* Fragment status information. */
@@ -242,7 +245,7 @@ struct proxy_st {
 	unsigned	id_prefix:1;
 	unsigned	ir_locs:1;
 #ifdef DDS_SECURITY
-	unsigned	secure:1;
+	unsigned	tunnel:1;
 #endif
 	unsigned	unacked:13;
 	CCLIST		changes;
@@ -253,6 +256,13 @@ struct proxy_st {
 	Proxy_t		*link;
 	Timer_t		*timer;
 	LocatorNode_t	*uc_dreply;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	unsigned	crypto;
+#endif
+#ifdef RTPS_PROXY_INST
+	uint32_t	loc_inst;
+	uint32_t	rem_inst;
+#endif
 #ifdef EXTRA_STATS
 	unsigned	nmsg;
 	unsigned	ndata;
@@ -314,7 +324,7 @@ struct rem_reader_st {
 #define	rr_no_mcast	   proxy.no_mcast
 #define	rr_ir_locs	   proxy.ir_locs
 #define	rr_id_prefix	   proxy.id_prefix
-#define	rr_secure	   proxy.secure
+#define	rr_tunnel	   proxy.tunnel
 #define	rr_unacked	   proxy.unacked
 #define	rr_nelements	   proxy.nelements;
 #define	rr_marshall	   proxy.marshall
@@ -326,6 +336,9 @@ struct rem_reader_st {
 #define	rr_link		   proxy.link
 #define	rr_nack_timer	   proxy.timer
 #define	rr_uc_dreply	   proxy.uc_dreply
+#define	rr_crypto	   proxy.crypto
+#define	rr_loc_inst	   proxy.loc_inst
+#define	rr_rem_inst	   proxy.rem_inst
 #define	rr_nmsg		   proxy.nmsg
 #define	rr_ndata	   proxy.ndata
 #define	rr_ngap		   proxy.ngap
@@ -438,8 +451,10 @@ struct rtps_writer_st {
 	Count_t		heartbeats;
 #define	slw_retries	heartbeats
 	Timer_t		*rh_timer;
-	unsigned	prio:29;
+	unsigned	prio:27;
 	unsigned	backoff:3;
+	unsigned	no_mcast:1;	/* Don't use multicast. */
+	unsigned	mc_marshall:1;	/* Marshall multicast. */
 };
 
 typedef enum rw_cstate_en {
@@ -475,7 +490,7 @@ struct rem_writer_st {
 #define	rw_no_mcast	   proxy.no_mcast
 #define	rw_blocked	   proxy.blocked
 #define	rw_ir_locs	   proxy.ir_locs
-#define	rw_secure	   proxy.secure
+#define	rw_tunnel	   proxy.tunnel
 #define	rw_changes	   proxy.changes
 #define	rw_endpoint	   proxy.endpoint
 #define	rw_next_guid	   proxy.next_guid
@@ -484,6 +499,9 @@ struct rem_writer_st {
 #define	rw_link		   proxy.link
 #define	rw_hbrsp_timer	   proxy.timer
 #define	rw_uc_dreply	   proxy.uc_dreply
+#define	rw_crypto	   proxy.crypto
+#define	rw_loc_inst	   proxy.loc_inst
+#define	rw_rem_inst	   proxy.rem_inst
 #define	rw_nmsg		   proxy.nmsg
 #define	rw_ndata	   proxy.ndata
 #define	rw_ngap		   proxy.ngap
@@ -644,6 +662,120 @@ enum mem_block_en {
 extern MEM_DESC_ST	rtps_mem_blocks [MB_END];  /* Memory used by RTPS. */
 extern size_t		rtps_mem_size;		/* Total memory allocated. */
 extern const char	*rtps_mem_names [];	/* Names of memory blocks. */
+
+#ifdef PROFILE
+EXT_PROF_PID (rtps_w_create)
+EXT_PROF_PID (rtps_w_delete)
+EXT_PROF_PID (rtps_w_new)
+EXT_PROF_PID (rtps_w_remove)
+EXT_PROF_PID (rtps_w_urgent)
+EXT_PROF_PID (rtps_w_write)
+EXT_PROF_PID (rtps_w_dispose)
+EXT_PROF_PID (rtps_w_unregister)
+EXT_PROF_PID (rtps_w_rloc_add)
+EXT_PROF_PID (rtps_w_rloc_rem)
+EXT_PROF_PID (rtps_w_proxy_add)
+EXT_PROF_PID (rtps_w_proxy_rem)
+EXT_PROF_PID (rtps_w_resend)
+EXT_PROF_PID (rtps_w_update)
+EXT_PROF_PID (rtps_do_changes)
+EXT_PROF_PID (rtps_send_msgs)
+EXT_PROF_PID (rtps_r_create)
+EXT_PROF_PID (rtps_r_delete)
+EXT_PROF_PID (rtps_r_proxy_add)
+EXT_PROF_PID (rtps_r_proxy_rem)
+EXT_PROF_PID (rtps_r_unblock)
+EXT_PROF_PID (rtps_rx_msgs)
+EXT_PROF_PID (rtps_rx_data)
+EXT_PROF_PID (rtps_rx_gap)
+EXT_PROF_PID (rtps_rx_hbeat)
+EXT_PROF_PID (rtps_rx_acknack)
+EXT_PROF_PID (rtps_rx_inf_ts)
+EXT_PROF_PID (rtps_rx_inf_rep)
+EXT_PROF_PID (rtps_rx_inf_dst)
+EXT_PROF_PID (rtps_rx_inf_src)
+EXT_PROF_PID (rtps_rx_data_frag)
+EXT_PROF_PID (rtps_rx_nack_frag)
+EXT_PROF_PID (rtps_rx_hbeat_frag)
+EXT_PROF_PID (rtps_tx_data)
+EXT_PROF_PID (rtps_tx_gap)
+EXT_PROF_PID (rtps_tx_hbeat)
+EXT_PROF_PID (rtps_tx_acknack)
+EXT_PROF_PID (rtps_tx_inf_ts)
+EXT_PROF_PID (rtps_tx_inf_rep)
+EXT_PROF_PID (rtps_tx_inf_dst)
+EXT_PROF_PID (rtps_tx_inf_src)
+EXT_PROF_PID (rtps_pw_start)
+EXT_PROF_PID (rtps_pw_new)
+EXT_PROF_PID (rtps_pw_send)
+EXT_PROF_PID (rtps_pw_rem)
+EXT_PROF_PID (rtps_pw_finish)
+EXT_PROF_PID (rtps_bw_start)
+EXT_PROF_PID (rtps_bw_new)
+EXT_PROF_PID (rtps_bw_send)
+EXT_PROF_PID (rtps_bw_rem)
+EXT_PROF_PID (rtps_bw_finish)
+EXT_PROF_PID (rtps_rw_start)
+EXT_PROF_PID (rtps_rw_new)
+EXT_PROF_PID (rtps_rw_send)
+EXT_PROF_PID (rtps_rw_rem)
+EXT_PROF_PID (rtps_rw_finish)
+EXT_PROF_PID (rtps_rw_acknack)
+EXT_PROF_PID (rtps_rw_hb_to)
+EXT_PROF_PID (rtps_rw_alive_to)
+EXT_PROF_PID (rtps_rw_nresp_to)
+EXT_PROF_PID (rtps_br_start)
+EXT_PROF_PID (rtps_br_data)
+EXT_PROF_PID (rtps_br_finish)
+EXT_PROF_PID (rtps_rr_start)
+EXT_PROF_PID (rtps_rr_data)
+EXT_PROF_PID (rtps_rr_finish)
+EXT_PROF_PID (rtps_rr_gap)
+EXT_PROF_PID (rtps_rr_hbeat)
+EXT_PROF_PID (rtps_rr_alive_to)
+EXT_PROF_PID (rtps_rr_do_ack)
+EXT_PROF_PID (rtps_rr_proc)
+#endif
+
+#ifdef CTRACE_USED
+
+enum {
+	RTPS_W_CREATE, RTPS_W_DELETE,
+	RTPS_W_N_CHANGE, RTPS_W_RM_CHANGE,
+	RTPS_W_URG_CHANGE, RTPS_W_ALIVE,
+	RTPS_W_WRITE, RTPS_W_DISPOSE, RTPS_W_UNREG,
+	RTPS_W_RLOC_ADD, RTPS_W_RLOC_REM,
+	RTPS_W_PROXY_ADD, RTPS_W_PROXY_REMOVE,
+	RTPS_W_RESEND, RTPS_W_UPDATE,
+	RTPS_SCH_W_PREP, RTPS_SCH_RDR, RTPS_SCH_TX, RTPS_SCH_TXD,
+	RTPS_R_CREATE, RTPS_R_DELETE,
+	RTPS_R_PROXY_ADD, RTPS_R_PROXY_REMOVE,
+	RTPS_R_UNBLOCK,
+	RTPS_RX_MSGS,
+	RTPS_RX_DATA, RTPS_RX_GAP, RTPS_RX_HBEAT, RTPS_RX_ACKNACK,
+	RTPS_RX_INFO_TS, RTPS_RX_INFO_REPLY, RTPS_RX_INFO_DEST, RTPS_RX_INFO_SRC,
+	RTPS_RX_DFRAG, RTPS_RX_NACK_FRAG, RTPS_RX_HBEAT_FRAG,
+	RTPS_TX_DATA, RTPS_TX_GAP, RTPS_TX_HBEAT, RTPS_TX_ACKNACK,
+	RTPS_TX_INFO_TS, RTPS_TX_INFO_REPLY, RTPS_TX_INFO_DEST, RTPS_TX_INFO_SRC,
+	RTPS_TX_NACK_FRAG, RTPS_TX_HBEAT_FRAG,
+	RTPS_SLW_BE_START, RTPS_SLW_BE_NEW,
+	RTPS_SLW_BE_SEND, RTPS_SLW_BE_REM, RTPS_SLW_BE_FINISH,
+	RTPS_SFW_BE_START, RTPS_SFW_BE_NEW,
+	RTPS_SFW_BE_SEND, RTPS_SFW_BE_REM, RTPS_SFW_BE_FINISH,
+	RTPS_SFW_REL_START, RTPS_SFW_REL_NEW,
+	RTPS_SFW_REL_SEND, RTPS_SFW_REL_REM, RTPS_SFW_REL_FINISH,
+	RTPS_SFW_REL_ACKNACK, RTPS_SFW_REL_NACKFRAG,
+	RTPS_SFW_HB_TO, RTPS_SFW_ALIVE_TO, RTPS_SFW_NACK_RSP_TO,
+	RTPS_SFR_BE_START, RTPS_SFR_BE_DATA, RTPS_SFR_BE_FINISH,
+	RTPS_SFR_REL_START, RTPS_SFR_REL_DATA, RTPS_SFR_REL_FINISH,
+	RTPS_SFR_REL_GAP, RTPS_SFR_REL_HBEAT, RTPS_SFR_REL_HBFRAG, 
+	RTPS_SFR_ALIVE_TO, RTPS_SFR_REL_DO_ACK,
+	RTPS_SFR_PROCESS
+};
+
+extern const char *rtps_fct_str [];
+
+#endif /* CTRACE_USED */
 
 #endif /* !__rtps_priv_h_ */
 

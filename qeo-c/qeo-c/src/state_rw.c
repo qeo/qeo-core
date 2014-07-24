@@ -106,17 +106,15 @@ qeo_retcode_t qeo_state_reader_foreach(const qeo_state_reader_t *reader,
                 rc = qeocore_reader_read(r, &filter, data);
                 if (QEO_OK == rc) {
                     filter.instance_handle = qeocore_data_get_instance_handle(data);
-                    action = cb(qeocore_data_get_data(data), userdata);
                     if (QEO_ITERATE_CONTINUE == action) {
-                        qeocore_data_reset(data);
-                        continue;
+                        action = cb(qeocore_data_get_data(data), userdata);
                     }
+                    qeocore_data_reset(data);
                 }
                 else if (QEO_ENODATA == rc) {
                     rc = QEO_OK;
+                    break;
                 }
-                /* QEO_ENODATA or ITERATE_ABORT or error */
-                break;
             }
             qeocore_data_free(data);
         }

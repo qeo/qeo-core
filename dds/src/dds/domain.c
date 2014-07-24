@@ -40,6 +40,10 @@
 #include "vtc.h"
 #include "xtypes.h"
 #endif
+#ifdef DDS_NATIVE_SECURITY
+#include "sec_data.h"
+#include "sec_c_std.h"
+#endif
 #include "dds/dds_types.h"
 #include "dds/dds_aux.h"
 
@@ -427,16 +431,6 @@ Domain_t *domain_create (DomainId_t id)
 	handle_assign (&dp->participant.p_entity);
 	dp->participant.p_domain = dp;
 	dp->domain_id = id;
-	dp->participant_id = guid_new_participant (
-					&dp->participant.p_guid_prefix,
-					dp->domain_id);
-
-	if (dp->participant_id == ILLEGAL_PID) {
-		handle_unassign (&dp->participant.p_entity, 1);
-		mds_pool_free (&mem_blocks [MB_DOMAIN], dp);
-		return (NULL);
-	}
-
 	dp->participant.p_builtins = 0;
 	locator_list_init (dp->participant.p_def_ucast);
 	locator_list_init (dp->participant.p_def_mcast);
@@ -889,7 +883,7 @@ Topic_t *topic_create (Participant_t *pp,
 	TopicType_t	**typepp, *typep;
 	int		new_type, new_topic;
 #ifdef LOCK_TRACE
-	char		lock_str [48];
+	char		*lock_str;
 #endif
 
 	/* Check if topic with that name already exists in the domain. */
@@ -975,7 +969,8 @@ Topic_t *topic_create (Participant_t *pp,
 	tp->readers = NULL;
 	tp->writers = NULL;
 #ifdef LOCK_TRACE
-	sprintf (lock_str, "#%u:T:%s", entity_handle (tp->fh), topic_name);
+	lock_str = malloc (strlen (topic_name) + 16);
+	sprintf (lock_str, "#%u:T:%s", entity_handle (&tp->entity), topic_name);
 #endif
 	lock_init_nr (tp->lock, lock_str);
 	tp->filters = NULL;
@@ -1131,7 +1126,7 @@ FilteredTopic_t *filtered_topic_create (Domain_t   *dp,
 {
 	FilteredTopic_t	*ftp, **tpp;
 #ifdef LOCK_TRACE
-	char		lock_str [48];
+	char		*lock_str;
 #endif
 	int		new;
 
@@ -1159,7 +1154,8 @@ FilteredTopic_t *filtered_topic_create (Domain_t   *dp,
 	ftp->topic.readers = NULL;
 	ftp->topic.writers = NULL;
 #ifdef LOCK_TRACE
-	sprintf (lock_str, "#%u:FT:%s", entity_handle (ftp->topic.fh), name);
+	lock_str = malloc (strlen (name) + 16);
+	sprintf (lock_str, "#%u:FT:%s", entity_handle (&ftp->topic.entity), name);
 #endif
 	lock_init_nr (ftp->topic.lock, lock_str);
 	memset (&ftp->topic.listener, 0, sizeof (ftp->topic.listener));
@@ -1600,9 +1596,12 @@ Endpoint_t *endpoint_create (Participant_t    *pp,
 			wp = (Writer_t *) ep;
 #ifdef WRITER_LOCKS
 #ifdef LOCK_TRACE
-			sprintf (lock_str, "#%lu:W", entity_handle (wp->w_fh));
+			sprintf (lock_str, "#%lu:W", entity_handle (&wp->w_entity));
 #endif
 			lock_init_nr (wp->w_lock, lock_str);
+#endif
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+			wp->w_crypto = 0;
 #endif
 			wp->w_status = 0;
 			wp->w_condition = NULL;
@@ -1615,9 +1614,12 @@ Endpoint_t *endpoint_create (Participant_t    *pp,
 			rp = (Reader_t *) ep;
 #ifdef READER_LOCKS
 #ifdef LOCK_TRACE
-			sprintf (lock_str, "#%lu:R", entity_handle (rp->r_fh));
+			sprintf (lock_str, "#%lu:R", entity_handle (&rp->r_entity));
 #endif
 			lock_init_nr (rp->r_lock, lock_str);
+#endif
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+			rp->r_crypto = 0;
 #endif
 			rp->r_status = 0;
 			rp->r_conditions = NULL;
@@ -1965,8 +1967,7 @@ RemPrefix_t *prefix_lookup (Domain_t           *dp,
 	RemPrefix_t	*p;
 
 	LIST_FOREACH (dp->prefixes, p)
-		if (!memcmp (&p->prefix, prefix, GUIDPREFIX_SIZE) &&
-		    p->locator.port)
+		if (!memcmp (&p->prefix, prefix, GUIDPREFIX_SIZE) && p->locators)
 			return (p);
 
 	return (NULL);
@@ -1984,19 +1985,26 @@ void prefix_cache (Domain_t           *dp,
 
 	log_printf (RTPS_ID, 0, "prefix_cache(): %s from %s.\r\n", guid_prefix_str (prefix, gbuf), locator_str (src));*/
 	LIST_FOREACH (dp->prefixes, p)
-		if (!memcmp (&p->prefix, prefix, GUIDPREFIX_SIZE)) {
-			p->locator = *src;
-			return;
-		}
+		if (!memcmp (&p->prefix, prefix, GUIDPREFIX_SIZE))
+			goto found;
 
 	p = mds_pool_alloc (&mem_blocks [MB_PREFIX]);
 	if (!p)
 		return;
 
 	p->prefix = *prefix;
-	p->locator = *src;
-
+	p->locators = NULL;
 	LIST_ADD_TAIL (dp->prefixes, *p);
+
+    found:
+	locator_list_add (&p->locators,
+			  src->kind,
+			  src->address,
+			  src->port,
+			  src->scope_id,
+			  src->scope,
+			  src->flags,
+			  src->sproto);
 }
 
 /* prefix_forget -- Remove a cached prefix. */
@@ -2007,6 +2015,8 @@ void prefix_forget (RemPrefix_t *p)
 
 	log_printf (RTPS_ID, 0, "prefix_forget(): %s\r\n", guid_prefix_str (&p->prefix, gbuf));*/
 	LIST_REMOVE (0, *p);
+	if (p->locators)
+		locator_list_delete_list (&p->locators);
 	mds_pool_free (&mem_blocks [MB_PREFIX], p);
 }
 
@@ -2357,6 +2367,46 @@ static void print_transports (unsigned protocols)
 	}
 }
 
+#ifdef DDS_NATIVE_SECURITY
+
+void token_dump (unsigned indent, DDS_Token *tp, unsigned nusers, int pem)
+{
+	unsigned char	*dp;
+	unsigned	i;
+
+	dbg_print_indent (indent, NULL);
+	dbg_printf ("%s", tp->class_id);
+	if (nusers != 1)
+		dbg_printf (" (*%u)", nusers);
+	dbg_printf (":\r\n");
+	if (pem) {
+		for (i = 0, dp = DDS_SEQ_DATA (*tp->binary_value1);
+		     i < DDS_SEQ_LENGTH (*tp->binary_value1);
+		     i++, dp++) {
+			dbg_printf ("%c", *dp);
+		}
+	}
+	else {
+		dbg_print_indent (indent + 1, NULL);
+		for (i = 0, dp = DDS_SEQ_DATA (*tp->binary_value1);
+		     i < DDS_SEQ_LENGTH (*tp->binary_value1);
+		     i++, dp++)
+			dbg_printf ("%02x", *dp);
+	}
+	dbg_printf ("\r\n");
+}
+
+static void print_tokens (unsigned indent, const char *name, Token_t *p)
+{
+	Token_t		*tp;
+
+	dbg_print_indent (indent, NULL);
+	dbg_printf ("%s tokens:\r\n", name);
+	for (tp = p; tp; tp = tp->next)
+		token_dump (indent + 1, tp->data, tp->nusers, 0);
+}
+
+#endif
 #endif
 
 /* dbg_print_participant_info -- Display peer/own participant information. */
@@ -2372,6 +2422,17 @@ static void dump_participant_info (int                 peer,
 	unsigned	l;
 #endif
 	int		comma;
+#ifdef DDS_NATIVE_SECURITY
+	static const char *hs_state_str [] = {
+		"Authenticated",
+		"Failed",
+		"PendingRetry",
+		"PendingHandshakeRequest",
+		"PendingHandshakeMessage",
+		"OkFinalMessage",
+		"PendingChallengeMessage"
+	};
+#endif
 
 	indent = peer + 1;
 	dbg_print_indent (indent, "GUID prefix");
@@ -2387,7 +2448,7 @@ static void dump_participant_info (int                 peer,
 	dbg_printf ("\r\n");
 	if (pp->p_vendor_id [0] == VENDORID_H_TECHNICOLOR &&
 	    pp->p_vendor_id [1] == VENDORID_L_TECHNICOLOR) {
-		dbg_print_indent (indent, "TDDS version");
+		dbg_print_indent (indent, "Technicolor DDS version");
 		dbg_printf ("%u.%u-%u", pp->p_sw_version >> 24,
 					(pp->p_sw_version >> 16) & 0xff,
 					pp->p_sw_version & 0xffff);
@@ -2411,9 +2472,20 @@ static void dump_participant_info (int                 peer,
 				print_transports (pp->p_sec_caps >> 16);
 			}
 		}
+#ifdef DDS_NATIVE_SECURITY
+		dbg_printf ("\r\n");
+		dbg_print_indent (indent, "Authorisation");
+		dbg_printf ("%s", hs_state_str [pp->p_auth_state]);
+#endif
 		dbg_printf ("\r\n");
 #endif
 	}
+#ifdef DDS_NATIVE_SECURITY
+	if (pp->p_id_tokens)
+		print_tokens (indent, "Identity", pp->p_id_tokens);
+	if (pp->p_p_tokens)
+		print_tokens (indent, "Permission", pp->p_p_tokens);
+#endif
 	if (pp->p_entity_name) {
 		dbg_print_indent (indent, "Entity name");
 		dbg_printf ("%s\r\n", str_ptr (pp->p_entity_name));
@@ -2465,7 +2537,7 @@ static void dump_participant_info (int                 peer,
 			dump_locators (indent, "Default Multicast", pp->p_def_mcast);
 #ifdef DDS_SECURITY
 		if (pp->p_sec_locs)
-			dump_locators (indent, "Secure Communication", pp->p_sec_locs);
+			dump_locators (indent, "Secure Tunnel", pp->p_sec_locs);
 #endif
 	}
 	dbg_print_indent (indent, "Manual Liveliness");
@@ -2515,7 +2587,7 @@ static void dump_participant_info (int                 peer,
 			if ((pp->p_builtins & (1 << i)) == 0)
 				continue;
 
-			s = rtps_builtin_topic_names [i];
+			s = rtps_builtin_endpoint_names [i];
 			if (s)
 				l = strlen (s);
 			else
@@ -2569,9 +2641,11 @@ static int dump_peer (Skiplist_t *list, void *p, void *arg)
 	}
 	dbg_printf ("\r\n");
 	dump_participant_info (1, pp, dump_flags);
-	dbg_printf ("\t\tTimer = ");
-	dbg_print_timer (&pp->p_timer);
-	dbg_printf ("\r\n");
+	if (tmr_active (&pp->p_timer)) {
+		dbg_printf ("\t\tTimer = ");
+		dbg_print_timer (&pp->p_timer);
+		dbg_printf ("\r\n");
+	}
 	return (1);
 }
 
@@ -2584,7 +2658,7 @@ void dump_domain (Domain_t *dp, unsigned flags)
 	Participant_t	**p;
 #ifdef DDS_SECURITY
 	static const char *sec_mode [] = {
-		"Unclassified", "Confidential", "Secret", "Top Secret"
+		"Unclassified", "Confidential", "Secret", "Top-Secret"
 	};
 #endif
 	lock_take (dp->lock);
@@ -2594,11 +2668,18 @@ void dump_domain (Domain_t *dp, unsigned flags)
 				dp->participant.p_handle);
 	dump_participant_info (0, &dp->participant, flags);
 #ifdef DDS_SECURITY
-	dbg_printf ("\tDomain security level: ");
+	dbg_printf ("\tSecurity: level=");
 	if (dp->security <= 3)
-		dbg_printf ("%s\r\n", sec_mode [dp->security]);
+		dbg_printf ("%s", sec_mode [dp->security]);
 	else
-		dbg_printf ("%u\r\n", dp->security);
+		dbg_printf ("%u", dp->security);
+#ifdef DDS_NATIVE_SECURITY
+	dbg_printf (", access=%s", (dp->access_protected) ? "enforce" : "any");
+	dbg_printf (", RTPS=%s", (dp->rtps_protected) ? "encrypt" : "clear");
+	if (dp->rtps_protected)
+		dbg_printf ("(%s)", (dp->rtps_protected > 4) ? "?" : crypt_std_str [dp->rtps_protected]);
+#endif
+	dbg_printf ("\r\n");
 #endif
 	if ((flags & (DDF_TYPES_L | DDF_TYPES_R)) != 0) {
 		dbg_printf ("\tTypes:");
@@ -2634,7 +2715,7 @@ void dump_domain (Domain_t *dp, unsigned flags)
 			dbg_printf ("\t\t[");
 			dbg_print_guid_prefix (&prp->prefix);
 			dbg_printf (", ");
-			dbg_print_locator (&prp->locator);
+			dump_locators (0, "Prefix locators", prp->locators);
 			dbg_printf ("]\r\n");
 		}
 	}

@@ -15,6 +15,7 @@
 /* rtps_clist.c -- Implements a number of change list manipulations. */
 
 #include "error.h"
+#include "prof.h"
 #include "list.h"
 #include "rtps_data.h"
 #include "rtps_priv.h"

@@ -22,7 +22,7 @@
 
 #include "entity_store.h"
 #include "list.h"
-#include "partitions.h"
+#include "user_data.h"
 
 /*#######################################################################
 #                       TYPES SECTION                                   #
@@ -50,17 +50,17 @@ static list_t *_store = NULL;
 #                   STATIC FUNCTION IMPLEMENTATION                      #
 ########################################################################*/
 
-static list_iterate_action_t update_partitions(void *data,
-                                               uintptr_t userdata)
+static list_iterate_action_t update_user_data(void *data,
+                                              uintptr_t userdata)
 {
     entity_t *entity = (entity_t *)data;
     qeo_retcode_t rc = QEO_OK;
 
     if (entity->flags.is_writer) {
-        rc = partition_update_writer((qeocore_writer_t *)entity);
+        rc = writer_user_data_update((qeocore_writer_t *)entity);
     }
     else {
-        rc = partition_update_reader((qeocore_reader_t *)entity);
+        rc = reader_user_data_update((qeocore_reader_t *)entity);
     }
     if (QEO_OK != rc) {
         qeo_log_e("Failed to update policy for %s", entity->flags.is_writer ? "writer" : "reader");
@@ -78,11 +78,13 @@ qeo_retcode_t entity_store_init(void)
 
     LOCK;
     if (NULL != _store) {
+        qeo_log_e("bad state: already initialized");
         rc = QEO_EBADSTATE;
     }
     else {
         _store = list_new();
         if (NULL == _store) {
+            qeo_log_e("not enough memory to create entity_store");
             rc = QEO_ENOMEM;
         }
     }
@@ -124,19 +126,20 @@ qeo_retcode_t entity_store_fini(void)
         _store = NULL;
     }
     else {
+        qeo_log_e("entity_store_fini failed");
         rc = QEO_EBADSTATE;
     }
     UNLOCK;
     return rc;
 }
 
-qeo_retcode_t entity_store_update_partitions(const qeo_factory_t *factory)
+qeo_retcode_t entity_store_update_user_data(const qeo_factory_t *factory)
 {
     qeo_retcode_t rc = QEO_EBADSTATE;
 
     LOCK;
     if (NULL != _store) {
-        rc = list_foreach(_store, update_partitions, (uintptr_t)factory);
+        rc = list_foreach(_store, update_user_data, (uintptr_t)factory);
     }
     UNLOCK;
     return rc;

@@ -249,4 +249,10 @@ typedef void (*qeocore_exit_cb)(void);
  */
 void qeocore_atexit(const qeocore_exit_cb cb);
 
+/** 
+ * Get the number of factories currently created 
+ */ 
+int qeocore_get_num_factories(); 
+
+
 #endif /* QEOCORE_FACTORY_H_ */

@@ -40,6 +40,9 @@
 #include "openssl/ssl.h"
 #include "openssl/rand.h"
 #include "security.h"
+#ifdef DDS_NATIVE_SECURITY
+#include "sec_data.h"
+#endif
 #include "rtps_ip.h"
 #include "ri_data.h"
 #include "ri_dtls.h"
@@ -260,7 +263,7 @@ static void rtps_dtls_dump_openssl_error_stack (const char *msg)
 
 	log_printf (RTPS_ID, 0, "%s", msg);
 	while ((err = ERR_get_error_line_data (&file, &line, &data, &flags)))
-		log_printf (RTPS_ID, 0, "    err %lu @ %s:%d -- %s\n", err, file, line,
+		log_printf (RTPS_ID, 0, "    err %lu @ %s:%d -- %s\r\n", err, file, line,
 				ERR_error_string (err, buf));
 }
 
@@ -740,12 +743,15 @@ static void rtps_dtls_receive (IP_CX *cxp)
 static void rtps_dtls_complete_pending_cx (IP_CX *pcxp, int fd)
 {
 	IP_CX 		*scx;
-	char		sa_buf[SA_LENGTH];
+	char		sa_buf [SA_LENGTH];
 	socklen_t	sa_len = SA_LENGTH;
+	struct sockaddr *sap;
 
-	getsockname (fd, (struct sockaddr *) sa_buf, &sa_len);
-	if (((struct sockaddr*)sa_buf)->sa_family == AF_INET) {
+	sap = (struct sockaddr *) sa_buf;
+	getsockname (fd, sap, &sa_len);
+	if (sap->sa_family == AF_INET) {
 		struct sockaddr_in *sa = (struct sockaddr_in *) sa_buf;
+
 		for (scx = dtls_v4_servers; scx; scx = scx->next) {
 			if (!memcmp(&scx->locator->locator.address [12], &sa->sin_addr, 4)
 				&& (scx->locator->locator.port == ntohs(sa->sin_port)))
@@ -753,8 +759,9 @@ static void rtps_dtls_complete_pending_cx (IP_CX *pcxp, int fd)
 		}
 	}
 #ifdef DDS_IPV6
-	else if (((struct sockaddr*)sa_buf)->sa_family == AF_INET6) {
+	else if (sap->sa_family == AF_INET6) {
 		struct sockaddr_in6 *sa = (struct sockaddr_in6 *) sa_buf;
+
 		for (scx = dtls_v6_servers; scx; scx = scx->next) {
 			if (!memcmp(scx->locator->locator.address, &sa->sin6_addr, 16)
 				&& (scx->locator->locator.port == ntohs(sa->sin6_port)))
@@ -762,9 +769,8 @@ static void rtps_dtls_complete_pending_cx (IP_CX *pcxp, int fd)
 		}
 	}
 #endif
-	else {
+	else
 		scx = NULL;
-	}
 
 	if (!scx)
 		return;
@@ -1033,7 +1039,11 @@ static SSL_CTX *rtps_dtls_create_dtls_ctx (DTLS_CX_SIDE purpose)
 	SSL_CTX			*ctx;
 
 	X509 *cert;
+#ifdef DDS_NATIVE_SECURITY
+	STACK_OF(X509) *ca_cert_list = NULL;
+#else
 	X509 *ca_cert_list[10];
+#endif
 	X509 *ca_cert_ptr = NULL;
 	int nbOfCA;
 	int j;
@@ -1084,11 +1094,19 @@ static SSL_CTX *rtps_dtls_create_dtls_ctx (DTLS_CX_SIDE purpose)
 			
 	if (nbOfCA == 0)
 		fatal_printf("DTLS: Did not find any trusted CA certificates");
-	
- 	get_CA_certificate_list (&ca_cert_list[0], local_identity);
+
+#ifdef DDS_NATIVE_SECURITY
+	get_CA_certificate_list (&ca_cert_list, local_identity);
+#else
+	get_CA_certificate_list (&ca_cert_list[0], local_identity);
+#endif
 			
 	for (j = 0; j < nbOfCA ; j++) {
-		ca_cert_ptr = ca_cert_list[j];
+#ifdef DDS_NATIVE_SECURITY
+		ca_cert_ptr = sk_X509_value (ca_cert_list, j);
+#else
+		ca_cert_ptr = ca_cert_list [j];
+#endif
 		X509_STORE_add_cert (SSL_CTX_get_cert_store (ctx), ca_cert_ptr);
 	}
 	
@@ -1114,6 +1132,11 @@ static SSL_CTX *rtps_dtls_create_dtls_ctx (DTLS_CX_SIDE purpose)
 
 	rtps_dtls_trace_openssl_fsm (ctx);
 
+#ifdef DDS_NATIVE_SECURITY
+	X509_free (cert);
+	sk_X509_pop_free (ca_cert_list, X509_free);
+	EVP_PKEY_free (privateKey);
+#endif
 	return (ctx);
 }
 
@@ -1228,11 +1251,11 @@ static IP_CX *rtps_dtls_new_ip_cx (unsigned id, Locator_t *locator, DTLS_CX_SIDE
 	/* Set remote address parameters */
 	memcpy (cxp->dst_addr, locator->address, 16);
 	cxp->dst_port = locator->port;
-
+	cxp->has_dst_addr = 1;
+	cxp->associated = 1;
 	cxp->id = id;
 	cxp->cx_type = CXT_UDP_DTLS;
 	cxp->cx_mode = ICM_DATA;
-	cxp->associated = 1;
 	cxp->cx_side = (side == DTLS_SERVER) ? ICS_SERVER : ICS_CLIENT;
 	cxp->cx_state = CXS_CLOSED;
 	cxp->p_state = TDS_WCXOK;

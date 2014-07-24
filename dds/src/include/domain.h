@@ -28,6 +28,9 @@
 #include "cache.h"
 #include "dds_data.h"
 #include "dds/dds_dcps.h"
+#ifdef DDS_NATIVE_SECURITY
+#include "sec_data.h"
+#endif
 
 #ifndef MAX_DOMAINS
 #define	MAX_DOMAINS	4	/* Max. # of supported domains. */
@@ -398,5 +401,12 @@ void topic_dump (Domain_t *dp, const char *name, unsigned flags);
 
 /* Dump the topic contents. */
 
+#ifdef DDS_SECURITY
+
+void token_dump (unsigned indent, DDS_Token *tp, unsigned nusers, int pem);
+
+/* Dump a security token. */
+
+#endif
 #endif /* !__domain_h_ */
 

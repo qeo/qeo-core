@@ -71,7 +71,7 @@ typedef struct group_s {
  */
 static parameter_t fwd_parameters[] = {
     {QEOCORE_GROUP_TYPE_FWD, "LOC_SRV_MIN_TIMEOUT", QEOCORE_PAR_TYPE_NUMBER, {.num = 30000}},
-    {QEOCORE_GROUP_TYPE_FWD, "LOC_SRV_MAX_TIMEOUT", QEOCORE_PAR_TYPE_NUMBER, {.num = 600000}},
+    {QEOCORE_GROUP_TYPE_FWD, "LOC_SRV_MAX_TIMEOUT", QEOCORE_PAR_TYPE_NUMBER, {.num = 2147483647}},
     {QEOCORE_GROUP_TYPE_FWD, "WAIT_LOCAL_FWD", QEOCORE_PAR_TYPE_NUMBER, {.num = 2000}},
     {QEOCORE_GROUP_TYPE_FWD, "DISABLE_LOCATION_SERVICE", QEOCORE_PAR_TYPE_NUMBER, {.num = 0}},
     {QEOCORE_GROUP_TYPE_FWD, "DISABLE_FORWARDING", QEOCORE_PAR_TYPE_NUMBER, {.num = 0}},
@@ -83,6 +83,8 @@ static parameter_t fwd_parameters[] = {
  */
 static parameter_t dds_parameters[] = {
     {QEOCORE_GROUP_TYPE_DDS, "NO_SECURITY", QEOCORE_PAR_TYPE_NUMBER, {.num = 0}},
+    {QEOCORE_GROUP_TYPE_DDS, "DOMAIN_ID_CLOSED", QEOCORE_PAR_TYPE_NUMBER, {.num = -1}},
+    {QEOCORE_GROUP_TYPE_DDS, "DOMAIN_ID_OPEN", QEOCORE_PAR_TYPE_NUMBER, {.num = -1}},
 };
 #define NBR_DDS_PARAMETERS  (sizeof(dds_parameters) / sizeof(parameter_t))
 

@@ -27,6 +27,7 @@
 #include "dds/dds_dcps.h"
 #include "dds_data.h"
 #include "dds.h"
+#include "prof.h"
 #include "dcps_priv.h"
 #include "pid.h"
 #include "disc.h"

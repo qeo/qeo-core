@@ -87,11 +87,11 @@ typedef enum {
 		   is returned.  Otherwise, the data will be in native format
 		   and 1 is returned. */
 
-int vtc_validate (unsigned char *vtc,
-		  size_t        length,
-		  unsigned      *ofs,
-		  int           swap,
-		  int           ext)
+int vtc_validate (const unsigned char *vtc,
+		  size_t              length,
+		  unsigned            *ofs,
+		  int                 swap,
+		  int                 ext)
 {
 	unsigned	i, j, c;
 	size_t		pofs, mleft;
@@ -959,7 +959,7 @@ TypeSupport_t *vtc_type (TypeLib *lp, unsigned char *vtc)
 	if (!tp)
 		return (NULL);
 
-	xt_type_finalize (tp, &size, &keys, &fksize, &dkeys);
+	xt_type_finalize (tp, &size, &keys, &fksize, &dkeys, NULL);
 	ofs = 8;
 	GSTR (name, name_len, vtc, ofs);
 	dds_ts = xmalloc (sizeof (TypeSupport_t) + name_len);

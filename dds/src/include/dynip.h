@@ -20,7 +20,7 @@
 #include "sys.h"
 #include "ipfilter.h"
 
-typedef void (*DI_NOTIFY) (void);
+typedef int (*DI_NOTIFY) (void);
 
 /* Notification callback for address changes. */
 

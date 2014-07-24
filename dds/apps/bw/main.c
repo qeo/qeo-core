@@ -21,6 +21,17 @@
 #include <ctype.h>
 #include "libx.h"
 #include "thread.h"
+#ifdef DDS_SECURITY
+#include "dds/dds_security.h"
+#ifdef DDS_NATIVE_SECURITY
+#include "nsecplug/nsecplug.h"
+#else
+#include "msecplug/msecplug.h"
+#include "assert.h"
+#include "../secplug/xmlparse.h"
+#endif
+#include "../security/engine_fs.h"
+#endif
 #include "dds/dds_dcps.h"
 #include "dds/dds_debug.h"
 #include "dds/dds_aux.h"
@@ -46,6 +57,12 @@ int			forever;		/* Repeat when test done. */
 int			histogram;		/* Display histogram. */
 int			verbose;		/* Verbose if set. */
 int			quit;			/* Quit program. */
+#ifdef DDS_SECURITY
+char                    *engine_id;		/* Engine id. */
+char                    *cert_path;		/* Certificates path. */
+char                    *key_path;		/* Private key path. */
+char                    *realm_name;		/* Realm name. */
+#endif
 DDS_DomainParticipant	part;
 DDS_Topic		cmd_topic;
 DDS_Topic		status_topic;
@@ -101,20 +118,26 @@ void usage (void)
 	fprintf (stderr, "Usage: bw [switches]\r\n");
 	fprintf (stderr, "\r\n");
 	fprintf (stderr, "Switches:\r\n");
-	fprintf (stderr, "   -c		Act as a consumer.\r\n");
-	fprintf (stderr, "   -p		Act as a producer.\r\n");
-	fprintf (stderr, "   -cp|pc	Both producer and consumer (default).\r\n");
-	fprintf (stderr, "   -n <nrdrs>	# of consumers in test (default=1).\r\n");
-	fprintf (stderr, "   -t <time>	Test time in seconds (default=5s).\r\n");
-	fprintf (stderr, "   -s <size>	Data sample size in bytes (1..32768, default=1).\r\n");
-	fprintf (stderr, "   -b <count>	Max. # of samples per burst (1..1000, default=16).\r\n");
-	fprintf (stderr, "   -d <usec>	Max. delay in us between data bursts (default=100us).\r\n");
-	fprintf (stderr, "   -r		Reliable operation (default=Best-Effort).\r\n");
-	fprintf (stderr, "   -k <hist>	# of samples to keep in history (default=ALL).\r\n");
-	fprintf (stderr, "   -g		Display histogram of received samples in time.\r\n");
-	fprintf (stderr, "   -f		Repeat tests forever.\r\n");
-	fprintf (stderr, "   -v		Verbose: log overall functionality\r\n");
-	fprintf (stderr, "   -vv  	Extra verbose: log detailed functionality.\r\n");
+	fprintf (stderr, "   -o         Act as a consumer.\r\n");
+	fprintf (stderr, "   -p         Act as a producer.\r\n");
+	fprintf (stderr, "   -op|po     Both producer and consumer (default).\r\n");
+	fprintf (stderr, "   -n <nrdrs> # of consumers in test (default=1).\r\n");
+	fprintf (stderr, "   -t <time>  Test time in seconds (default=5s).\r\n");
+	fprintf (stderr, "   -s <size>  Data sample size in bytes (1..32768, default=1).\r\n");
+	fprintf (stderr, "   -b <count> Max. # of samples per burst (1..1000, default=16).\r\n");
+	fprintf (stderr, "   -d <usec>  Max. delay in us between data bursts (default=100us).\r\n");
+	fprintf (stderr, "   -r         Reliable operation (default=Best-Effort).\r\n");
+	fprintf (stderr, "   -q <hist>  # of samples to keep in history (default=ALL).\r\n");
+	fprintf (stderr, "   -g         Display histogram of received samples in time.\r\n");
+	fprintf (stderr, "   -f         Repeat tests forever.\r\n");
+#ifdef DDS_SECURITY
+	fprintf (stderr, "   -e <name>  Pass the name of the engine.\r\n");
+	fprintf (stderr, "   -c <path>  Path of the certificate to use.\r\n");
+	fprintf (stderr, "   -k <path>  Path of the private key to use.\r\n");
+	fprintf (stderr, "   -z <realm> The realm name.\r\n");
+#endif
+	fprintf (stderr, "   -v         Verbose: log overall functionality\r\n");
+	fprintf (stderr, "   -vv        Extra verbose: log detailed functionality.\r\n");
 	exit (1);
 }
 
@@ -140,6 +163,25 @@ int get_num (const char **cpp, unsigned *num, unsigned min, unsigned max)
 	return (1);
 }
 
+#ifdef DDS_SECURITY
+
+int get_str (const char **cpp, const char **name)
+{
+	const char	*cp = *cpp;
+
+	while (isspace (*cp))
+		cp++;
+
+	*name = cp;
+	while (*cp)
+		cp++;
+
+	*cpp = cp;
+	return (1);
+}
+
+#endif
+
 #define	INC_ARG()	if (!*cp) { i++; cp = argv [i]; }
 
 /* do_switches -- Command line switch decoder. */
@@ -148,7 +190,9 @@ int do_switches (int argc, const char **argv)
 {
 	int		i;
 	const char	*cp;
-
+#ifdef DDS_SECURITY
+	const char      *arg_input;
+#endif
 	progname = argv [0];
 	for (i = 1; i < argc; i++) {
 		cp = argv [i];
@@ -157,7 +201,7 @@ int do_switches (int argc, const char **argv)
 
 		while (*cp) {
 			switch (*cp++) {
-				case 'c':
+				case 'o':
 					reader = 1;
 					break;
 				case 'p':
@@ -191,7 +235,7 @@ int do_switches (int argc, const char **argv)
 				case 'r':
 					reliable = 1;
 					break;
-				case 'k':
+				case 'q':
 					INC_ARG()
 					if (!get_num (&cp, &history, 1, ~0))
 						usage ();
@@ -202,6 +246,37 @@ int do_switches (int argc, const char **argv)
 				case 'g':
 					histogram = 1;
 					break;
+#ifdef DDS_SECURITY
+			        case 'e':
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage ();
+					engine_id = malloc (strlen (arg_input) + 1);
+					strcpy (engine_id, arg_input);
+					break;
+			        case 'c':
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage ();
+					cert_path = malloc (strlen (arg_input) + 1);
+					strcpy (cert_path, arg_input);
+					break;
+			        case 'k':
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage ();
+					key_path = malloc (strlen (arg_input) + 1);
+					strcpy (key_path, arg_input);
+
+					break;
+			        case 'z':
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage ();
+					realm_name = malloc (strlen (arg_input) + 1);
+					strcpy (realm_name, arg_input);
+					break;
+#endif
 				case 'v':
 					verbose = 1;
 					if (*cp == 'v') {
@@ -888,6 +963,69 @@ void *bw_do_reader (void *args)
 	return (NULL);
 }
 
+#ifdef DDS_SECURITY
+
+#define fail_unless     assert
+
+static void enable_security (void)
+{
+	DDS_Credentials		credentials;
+	DDS_ReturnCode_t	error;
+#ifdef MSECPLUG_WITH_SECXML
+	/*int dhandle, thandle;*/
+#endif
+	error = DDS_SP_set_policy ();
+	if (error)
+		fatal ("DDS_SP_set_policy() returned error (%s)!", DDS_error (error));
+
+#ifdef MSECPLUG_WITH_SECXML
+	if (DDS_SP_parse_xml ("security.xml"))
+		fatal ("SP: no DDS security rules in 'security.xml'!\r\n");
+#else
+	DDS_SP_add_domain();
+	if (!realm_name)
+		DDS_SP_add_participant ();
+	else 
+		DDS_SP_set_participant_access (DDS_SP_add_participant (), strcat(realm_name, "*"), 2, 0);
+#endif
+	if (!cert_path || !key_path)
+		fatal ("Error: you must provide a valid certificate path and a valid private key path\r\n");
+
+	if (engine_id) {
+		DDS_SP_init_engine (engine_id, init_engine_fs);
+		credentials.credentialKind = DDS_ENGINE_BASED;
+		credentials.info.engine.engine_id = engine_id;
+		credentials.info.engine.cert_id = cert_path;
+		credentials.info.engine.priv_key_id = key_path;
+	}
+	else {
+		credentials.credentialKind = DDS_FILE_BASED;
+		credentials.info.filenames.private_key_file = key_path;
+		credentials.info.filenames.certificate_chain_file = cert_path;
+	}
+
+	error = DDS_Security_set_credentials ("Technicolor Bandwidth Tester", &credentials);
+}
+
+static void cleanup_security (void)
+{
+	/* Cleanup security submodule. */
+	DDS_SP_access_db_cleanup ();
+	DDS_SP_engine_cleanup ();
+
+	/* Cleanup malloc-ed memory. */
+	if (engine_id)
+		free (engine_id);
+	if (cert_path)
+		free (cert_path);
+	if (key_path)
+		free (key_path);
+	if (realm_name)
+		free (realm_name);
+}
+
+#endif
+
 int main (int argc, const char *argv [])
 {
 	DDS_PoolConstraints	reqs;
@@ -909,6 +1047,10 @@ int main (int argc, const char *argv [])
 	DDS_set_pool_constraints (&reqs);
 	DDS_entity_name ("Technicolor Bandwidth Tester");
 
+#ifdef DDS_SECURITY
+	if (cert_path || key_path || engine_id)
+		enable_security ();
+#endif
 #ifdef DDS_DEBUG
 	if (isatty (STDIN_FILENO)) {
 		DDS_Debug_start ();
@@ -1050,6 +1192,10 @@ int main (int argc, const char *argv [])
 	if (verbose)
 		printf ("DDS Participant deleted\r\n");
 
+#ifdef DDS_SECURITY
+	if (cert_path || key_path || engine_id)
+		cleanup_security ();
+#endif
 	return (0);
 }
 

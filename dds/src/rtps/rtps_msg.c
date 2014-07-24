@@ -24,6 +24,9 @@
 #include "pid.h"
 #include "xcdr.h"
 #include "dds.h"
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+#include "sec_crypto.h"
+#endif
 #include "rtps_cfg.h"
 #include "rtps_data.h"
 #include "rtps_priv.h"
@@ -104,9 +107,9 @@ static RME *new_proxy_element (Proxy_t *pp, int new_message)
 /* rtps_msg_add_info_destination -- Add an INFO_DEST submessage to an existing
 				    message for a remote Reader/Writer. */
 
-static int rtps_msg_add_info_destination (Proxy_t      *pp,
-					  RME          *mep,
-				          GuidPrefix_t *prefix)
+static int rtps_msg_add_info_destination (Proxy_t            *pp,
+					  RME                *mep,
+				          const GuidPrefix_t *prefix)
 {
 	InfoDestinationSMsg	*dp;
 
@@ -179,11 +182,11 @@ static RME *rtps_msg_append_mep (RME *prev_mep)
 	return (mep);
 }
 
-static void add_proxy_elements (Proxy_t      *pp,
-				RME          *mep,
-				unsigned     size,
-				int          ts_on_split,
-				GuidPrefix_t *prefix)
+static void add_proxy_elements (Proxy_t            *pp,
+				RME                *mep,
+				unsigned           size,
+				int                ts_on_split,
+				const GuidPrefix_t *prefix)
 {
 	RMBUF		*mp = pp->tail;
 	RME		*new_mep, *last_mep, *ts_mep, *id_mep;
@@ -316,9 +319,10 @@ static RME *rtps_msg_add_info_ts (RemReader_t *rrp, FTime_t *ftime)
 			submessage element to an existing message. */
 
 int rtps_msg_add_data (RemReader_t        *rrp,
-		       DiscoveredReader_t *reader,
+		       const GuidPrefix_t *prefix,
+		       const EntityId_t   *eid,
 		       Change_t           *cp,
-		       HCI                hci,
+		       const HCI          hci,
 		       int                push
 #ifdef RTPS_FRAGMENTS
 		     , unsigned           first,
@@ -343,13 +347,25 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 	FTime_t			ftime, *ftimep;
 	DDS_GUIDSeq		guid_seq;
 	GUID_t			guids [MAX_DW_DESTS];
-	unsigned		remain, ofs, dlen, clen, fofs, nqospars = 0;
+	unsigned		remain, ofs, dlen, clen, kh, fofs, nqospars = 0;
 #ifdef RTPS_FRAGMENTS
 	unsigned		f;
 	size_t			tfsize;
 #endif
 	size_t			dsize;
 	int			i, add_time_on_split = 0;
+	Type			*tp;
+#ifdef DDS_NATIVE_SECURITY
+	DBW			dbw;
+	unsigned char		*xp;
+	DB			*ndbp, *kdbp;
+	size_t			nlength;
+	DDS_ReturnCode_t	ret;
+	String_t		enc_key_str;
+#ifdef MAX_KEY_BUFFER
+	unsigned char		key_buffer [MAX_KEY_BUFFER];
+#endif
+#endif
 
 	ep = rrp->rr_writer->endpoint.endpoint;
 
@@ -365,8 +381,8 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 	}
 
 	/* Add an InfoDestination element if this is not a multicast message. */
-	if (reader && reader->dr_participant) {
-		rtps_msg_add_info_destination (&rrp->proxy, mep, &reader->dr_participant->p_guid_prefix);
+	if (prefix) {
+		rtps_msg_add_info_destination (&rrp->proxy, mep, prefix);
 		rrp->rr_id_prefix = 1;
 		msize = mep->length + sizeof (SubmsgHeader);
 		mep = rtps_msg_append_mep (first_mep);
@@ -408,22 +424,78 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 	ts = ep->ep.topic->type->type_support;
 	if (ts->ts_keys &&
 	    !hc_inst_info (hci, &hp, &kp)) {
-		if (kp)
+		if (kp && cp->c_kind != ALIVE) {
 			key_size = str_len (kp);
-		else
+
+#ifdef DDS_NATIVE_SECURITY
+			if (ep->payload_prot) {
+#ifdef MAX_KEY_BUFFER
+				if (key_size + 4 < MAX_KEY_BUFFER) {
+					xp = key_buffer;
+					dbw.dbp = kdbp = NULL;
+				}
+				else
+#endif
+				     {
+
+					/* Allocate a temporary key data DB. */
+					kdbp = db_alloc_data (key_size + 4, 1);
+					if (!kdbp) {
+						str_unref (kp);
+						kp = NULL;
+						goto no_key_data;
+					}
+					dbw.dbp = kdbp;
+					xp = kdbp->data;
+				}
+				dbw.data = xp;
+				dbw.left = dbw.length = key_size + 4;
+				*xp++ = 0;
+				*xp++ = (MODE_CDR << 1) | ENDIAN_CPU;
+				*xp++ = 0;
+				*xp++ = 0;
+				memcpy (xp, str_ptr (kp), key_size);
+				str_unref (kp);
+
+				/* Encrypt key fields. */
+				ndbp = sec_encode_serialized_data (&dbw,
+								   ep->crypto,
+								   &nlength,
+								   &ret);
+				if (kdbp)
+					db_free_data (kdbp);
+				if (!ndbp) {
+					log_printf (RTPS_ID, 0, "rtps_msg_add_data: no memory for encrypted key fields.\r\n");
+					kp = NULL;
+					goto no_key_data;
+				}
+				enc_key_str.length = key_size = nlength;
+				enc_key_str.users = MAX_STR_REFS - 1;
+				enc_key_str.mutable = 1;
+				enc_key_str.dynamic = 0;
+				enc_key_str.u.dp = (char *) ndbp->data;
+				kp = &enc_key_str;
+				kh = 0;
+			}
+			else
+#endif
+				kh = 4;
+		}
+		else {
 			key_size = ts->ts_mkeysize;
+			kh = 4;
+		}
 	}
 	else {
 		hp = NULL;
 		kp = NULL;
 		key_size = 0;
+		kh = 0;
 	}
 	if (cp->c_kind == ALIVE)
 		dsize = cp->c_length;
-	else if (ep->ep.entity_id.id [3] != 0xc2)
-		dsize = key_size;
 	else
-		dsize = 16;
+		dsize = key_size + kh;
 #ifdef RTPS_FRAGMENTS
 	if (first)
 		fofs = first * rtps_frag_size;
@@ -461,9 +533,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 						    first_mep,
 						    msize,
 						    add_time_on_split,
-						    (reader && reader->dr_participant) ? 
-						    	&reader->dr_participant->p_guid_prefix : 
-							NULL);
+						    prefix);
 				first_mep = NULL;
 			}
 			tfsize = dlen;
@@ -489,7 +559,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 #endif
 			mep->header.id = ST_DATA;
 		mep->header.flags = SMF_CPU_ENDIAN;
-		if (!reader)
+		if (!prefix)
 			rrp->rr_tail->element.flags |= RME_MCAST;
 
 		/* Add extra DATA submessage fields. */
@@ -501,7 +571,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 			mep->length = sizeof (DataFragSMsg);
 			dfp->extra_flags = 0;
 			dfp->inline_qos_ofs = sizeof (DataFragSMsg) - 4;
-			dfp->reader_id = entity_id_unknown;
+			dfp->reader_id = (eid) ? *eid : entity_id_unknown;
 			dfp->writer_id = ep->ep.entity_id;
 			dfp->writer_sn = cp->c_seqnr;
 			dfp->frag_start = f;
@@ -517,7 +587,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 			mep->length = sizeof (DataSMsg);
 			dp->extra_flags = 0;
 			dp->inline_qos_ofs = sizeof (DataSMsg) - 4;
-			dp->reader_id = entity_id_unknown;
+			dp->reader_id = (eid) ? *eid : entity_id_unknown;
 			dp->writer_id = ep->ep.entity_id;
 			dp->writer_sn = cp->c_seqnr;
 			remain = MAX_ELEMENT_DATA - sizeof (DataSMsg);
@@ -526,7 +596,6 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 		}
 		if (!fofs) {
 #endif
-
 			/* Add some inline QoS parameters (HashKey, StatusInfo, DirectedWrite)
 			   if necessary for correct operation.
 			   Note: by design, there is always room for these PIDs, as well
@@ -589,7 +658,6 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 				remain -= QOS_DATA_LENGTH; /* -> sizeof (QoS data) */;
 			}
 #endif
-
 			if (nqospars) {
 				n = pid_finish (mep->d + ofs);
 				if (n > 0) {
@@ -625,7 +693,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 				if (!data_mep) {
 					if (kp)
 						str_unref (kp);
-
+					kp = NULL;
 					goto no_mem;
 				}
 				rcl_access (cp->c_db);
@@ -653,8 +721,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 				kp = NULL;
 			}
 		}
-		else if (ep->ep.entity_id.id [3] != 0xc2) {
-
+		else {
 			/* Add serializedKey submessage element. */
 #ifdef RTPS_FRAGMENTS
 			if (dsize > rtps_frag_size)
@@ -662,30 +729,31 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 			else
 #endif
 				mep->header.flags |= SMF_KEY;
-			mep->length += 4;
-			mep->header.length += 4;
-			mep->d [ofs++] = 0;
-			mep->d [ofs++] = (MODE_CDR << 1) | ENDIAN_CPU;
-			mep->d [ofs++] = 0;
-			mep->d [ofs++] = 0;
-			remain -= 4;
+
+			/* Add marshalling header if needed. */
+			if (!fofs && kh) {
+				mep->length += 4;
+				mep->header.length += 4;
+				mep->d [ofs++] = 0;
+				mep->d [ofs++] = (MODE_CDR << 1) | ENDIAN_CPU;
+				mep->d [ofs++] = 0;
+				mep->d [ofs++] = 0;
+				remain -= 4;
+				dlen -= 4;
+				kh = 0;
+			}
 
 			/* Check if key data fits directly in rest of buffer. */
 	 		if (dlen <= remain) { /* Fits! */
+				tp= (ts->ts_prefer == MODE_CDR) ? ts->ts_cdr: ts->ts_pl->xtype;
 
 				/* Just copy change data. */
-				if (kp) {
-					memcpy (mep->d + ofs, str_ptr (kp) + fofs, dlen);
-					str_unref (kp);
-					kp = NULL;
-				}
-				else if (ENDIAN_CPU == ENDIAN_BIG && ts->ts_fksize)
+				if (kp)
+					memcpy (mep->d + ofs, str_ptr (kp) + fofs - kh, dlen);
+				else if (!tp || (ENDIAN_CPU == ENDIAN_BIG && ts->ts_fksize))
 					memcpy (mep->d + ofs, hp + fofs, dlen);
 				else {
-					cdr_key_fields (mep->d + ofs, 4, hp, 4 + fofs,
-							(ts->ts_prefer == MODE_CDR) ?
-									ts->ts_cdr:
-									ts->ts_pl->xtype,
+					cdr_key_fields (mep->d + ofs, 4, hp, 4 + fofs, tp,
 							1, 1, ENDIAN_CPU ^ ENDIAN_BIG, 0);
 					while (clen < dlen)
 						mep->d [ofs + clen++] = 0;
@@ -695,14 +763,17 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 			else {	/* Doesn't fit :-(  Needs extra container! */
 				data_mep = rtps_msg_append_mep (mep);
 				if (!data_mep) {
-					str_unref (kp);
+					if (kp) {
+						str_unref (kp);
+						kp = NULL;
+					}
 					log_printf (RTPS_ID, 0, "rtps_msg_add_data: no memory for extra key element.\r\n");
 					goto no_key_data;
 				}
 				if (!kp || (kp && dlen <= MAX_ELEMENT_DATA)) {
 					data_mep->data = data_mep->d;
 					memcpy (data_mep->data,
-						(kp) ? str_ptr (kp) + fofs: (char *) hp->hash + fofs,
+						(kp) ? str_ptr (kp) + fofs - kh : (char *) hp->hash + fofs,
 						dlen);
 					if (kp) {
 						str_unref (kp);
@@ -713,7 +784,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 					np = (NOTIF_DATA *) data_mep->d;
 					np->type = NT_STR_FREE;
 					np->arg = kp;
-					data_mep->data = (unsigned char *) str_ptr (kp) + fofs;
+					data_mep->data = (unsigned char *) str_ptr (str_ref (kp)) + fofs;
 					data_mep->db = NULL;
 				}
 				data_mep->length = dlen;
@@ -732,9 +803,8 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 			STATS_INC (rrp->rr_ndata);
 
 			/* Add submessages to message. */
-			add_proxy_elements (&rrp->proxy, first_mep, msize, add_time_on_split,
-						(reader && reader->dr_participant) ?
-						&reader->dr_participant->p_guid_prefix : NULL);
+			add_proxy_elements (&rrp->proxy, first_mep, msize,
+						add_time_on_split, prefix);
 
 #ifdef RTPS_FRAGMENTS
 			break;
@@ -755,11 +825,12 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 			mep->pad = dlen - clen;
 		TX_DATA_FRAG (rrp->rr_writer, dfp, mep->header.flags);
 		STATS_INC (rrp->rr_ndatafrags);
-		add_proxy_elements (&rrp->proxy, first_mep, msize, add_time_on_split, 
-					(reader && reader->dr_participant) ?
-					&reader->dr_participant->p_guid_prefix : NULL);
+		add_proxy_elements (&rrp->proxy, first_mep, msize, 
+					add_time_on_split, prefix);
 	}
 #endif
+	if (kp)
+		str_unref (kp);
 
 	/* Don't force sending DATA immediately - a DATA message can still be
 	   combined with other packets, such as DATA, GAP and HEARTBEAT. */
@@ -776,16 +847,17 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 
 /* rtps_msg_add_gap -- Add a GAP submessage element to an existing message. */
 
-int rtps_msg_add_gap (RemReader_t        *rrp,
-		      DiscoveredReader_t *reader,
-		      SequenceNumber_t   *start,
-		      SequenceNumber_t   *base,
-		      unsigned           n_bits,
-		      uint32_t           *bits,
-		      int                push)
+int rtps_msg_add_gap (RemReader_t              *rrp,
+		      const DiscoveredReader_t *reader,
+		      const SequenceNumber_t   *start,
+		      const SequenceNumber_t   *base,
+		      unsigned                 n_bits,
+		      uint32_t                 *bits,
+		      int                      push)
 {
 	GapSMsg		*dp;
 	RME		*mep, *first_mep;
+	const GuidPrefix_t	*prefix;
 	unsigned	n_bytes, msize;
 
 	/* Get a new submessage element header. */
@@ -794,9 +866,10 @@ int rtps_msg_add_gap (RemReader_t        *rrp,
 		log_printf (RTPS_ID, 0, "rtps_msg_add_gap: no memory for submessage elements.\r\n");
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
+
 	if (reader && reader->dr_participant) {
-		rtps_msg_add_info_destination (&rrp->proxy, mep,
-					       &reader->dr_participant->p_guid_prefix);
+		prefix = &reader->dr_participant->p_guid_prefix;
+		rtps_msg_add_info_destination (&rrp->proxy, mep, prefix);
 		msize = mep->length + sizeof (SubmsgHeader);
 		mep = rtps_msg_append_mep (mep);
 		if (!mep) {
@@ -804,9 +877,10 @@ int rtps_msg_add_gap (RemReader_t        *rrp,
 			return (DDS_RETCODE_OUT_OF_RESOURCES);
 		}
 	}
-	else
+	else {
+		prefix = NULL;
 		msize = 0;
-
+	}
 	ctrc_begind (RTPS_ID, RTPS_TX_GAP, &rrp->rr_writer->endpoint.endpoint->ep.entity_id, sizeof (EntityId_t));
 	ctrc_contd (start, sizeof (SequenceNumber_t));
 	ctrc_contd (base, sizeof (SequenceNumber_t));
@@ -832,9 +906,7 @@ int rtps_msg_add_gap (RemReader_t        *rrp,
 	msize += mep->length + sizeof (SubmsgHeader);
 
 	/* Add submessage to message. */
-	add_proxy_elements (&rrp->proxy, first_mep, msize, 0, 
-				(reader && reader->dr_participant) ? 
-				&reader->dr_participant->p_guid_prefix : NULL);
+	add_proxy_elements (&rrp->proxy, first_mep, msize, 0, prefix);
 
 	STATS_INC (rrp->rr_ngap);
 
@@ -851,14 +923,15 @@ int rtps_msg_add_gap (RemReader_t        *rrp,
 
 /* rtps_msg_add_heartbeat -- Add a HEARTBEAT submessage to an RTPS message. */
 
-int rtps_msg_add_heartbeat (RemReader_t        *rrp,
-			    DiscoveredReader_t *reader,
-			    unsigned           flags,
-			    SequenceNumber_t   *min_seqnr,
-			    SequenceNumber_t   *max_seqnr)
+int rtps_msg_add_heartbeat (RemReader_t              *rrp,
+			    const DiscoveredReader_t *reader,
+			    unsigned                 flags,
+			    const SequenceNumber_t   *min_seqnr,
+			    const SequenceNumber_t   *max_seqnr)
 {
 	HeartbeatSMsg	*dp;
 	RME		*first_mep, *mep;
+	GuidPrefix_t	*prefix;
 	unsigned	msize;
 
 	/* Get a new submessage element header. */
@@ -869,8 +942,9 @@ int rtps_msg_add_heartbeat (RemReader_t        *rrp,
 	}
 
 	/* Prepend with an INFO_DESTINATION if this is not a multicast. */
-	if (reader && reader->dr_participant) { 
-		rtps_msg_add_info_destination (&rrp->proxy, mep, &reader->dr_participant->p_guid_prefix);
+	if (reader && reader->dr_participant) {
+		prefix = &reader->dr_participant->p_guid_prefix;
+		rtps_msg_add_info_destination (&rrp->proxy, mep, prefix);
 		msize = mep->length;
 		mep = rtps_msg_append_mep (mep);
 		if (!mep) {
@@ -878,9 +952,10 @@ int rtps_msg_add_heartbeat (RemReader_t        *rrp,
 			return (DDS_RETCODE_OUT_OF_RESOURCES);
 		}
 	}
-	else
+	else {
+		prefix = NULL;
 		msize = 0;
-
+	}
 	ctrc_begind (RTPS_ID, RTPS_TX_HBEAT, &rrp->rr_writer->endpoint.endpoint->ep.entity_id, sizeof (EntityId_t));
 	ctrc_contd (min_seqnr, sizeof (SequenceNumber_t));
 	ctrc_contd (max_seqnr, sizeof (SequenceNumber_t));
@@ -890,23 +965,34 @@ int rtps_msg_add_heartbeat (RemReader_t        *rrp,
 	mep->flags |= RME_HEADER;
 	mep->header.id = ST_HEARTBEAT;
 	mep->header.flags = SMF_CPU_ENDIAN;
-	if (!reader)
+	if (!prefix)
 		rrp->rr_tail->element.flags |= RME_MCAST;
 	mep->header.flags |= flags & (SMF_FINAL | SMF_LIVELINESS);
 
 	/* Add extra HEARTBEAT submessage fields. */
 	mep->data = mep->d;
 	dp = (HeartbeatSMsg *) mep->d;
-	mep->length = mep->header.length = sizeof (HeartbeatSMsg);
+	mep->length = mep->header.length = DEF_HB_SIZE;
 	dp->reader_id = (reader) ? reader->dr_entity_id : entity_id_unknown;
 	dp->writer_id = rrp->rr_writer->endpoint.endpoint->ep.entity_id;
 	dp->first_sn = *min_seqnr;
 	dp->last_sn = *max_seqnr;
 	dp->count = ++rrp->rr_writer->heartbeats;
+#ifdef RTPS_PROXY_INST_TX
+	if (reader &&
+	    reader->dr_participant &&
+	    reader->dr_participant->p_vendor_id [0] == VENDORID_H_TECHNICOLOR &&
+	    reader->dr_participant->p_vendor_id [1] == VENDORID_L_TECHNICOLOR &&
+	    reader->dr_participant->p_sw_version >= RTPS_PROXY_INST_VERSION) {
+		mep->length += 4;
+		mep->header.length += 4;
+		dp->instance_id = rrp->rr_loc_inst;
+	}
+#endif
 	msize += mep->length + sizeof (SubmsgHeader);
 
 	/* Add submessage to message. */
-	add_proxy_elements (&rrp->proxy, first_mep, msize, 0, NULL);
+	add_proxy_elements (&rrp->proxy, first_mep, msize, 0, prefix);
 
 	STATS_INC (rrp->rr_nheartbeat);
 
@@ -921,15 +1007,16 @@ int rtps_msg_add_heartbeat (RemReader_t        *rrp,
 
 /* rtps_msg_add_acknack -- Add an ACKNACK submessage to an RTPS message. */
 
-int rtps_msg_add_acknack (RemWriter_t        *rwp,
-			  DiscoveredWriter_t *writer,
-			  int                final,
-			  SequenceNumber_t   *base,
-			  unsigned           nbits,
-			  uint32_t           bitmaps [])
+int rtps_msg_add_acknack (RemWriter_t              *rwp,
+			  const DiscoveredWriter_t *writer,
+			  int                      final,
+			  const SequenceNumber_t   *base,
+			  unsigned                 nbits,
+			  const uint32_t           bitmaps [])
 {
 	AckNackSMsg	*dp;
 	RME		*mep, *first_mep;
+	GuidPrefix_t	*prefix;
 	unsigned	n, msize;
 
 	first_mep = mep = new_proxy_element (&rwp->proxy, RTPS_COMBINE);
@@ -937,7 +1024,11 @@ int rtps_msg_add_acknack (RemWriter_t        *rwp,
 		log_printf (RTPS_ID, 0, "rtps_msg_add_acknack: no memory for first submessage element.\r\n");
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
-	rtps_msg_add_info_destination (&rwp->proxy, mep, &writer->dw_participant->p_guid_prefix);
+	if (writer && writer->dw_participant)
+		prefix = &writer->dw_participant->p_guid_prefix;
+	else
+		prefix = NULL;
+	rtps_msg_add_info_destination (&rwp->proxy, mep, prefix);
 	msize = mep->length + sizeof (SubmsgHeader);
 	mep = rtps_msg_append_mep (first_mep);
 	if (!mep) {
@@ -968,10 +1059,19 @@ int rtps_msg_add_acknack (RemWriter_t        *rwp,
 	dp->reader_sn_state.numbits = nbits;
 	memcpy (dp->reader_sn_state.bitmap, bitmaps, n);
 	dp->reader_sn_state.bitmap [n >> 2] = ++rwp->rw_reader->acknacks;
+#ifdef RTPS_PROXY_INST_TX
+	if (writer->dw_participant->p_vendor_id [0] == VENDORID_H_TECHNICOLOR &&
+	    writer->dw_participant->p_vendor_id [1] == VENDORID_L_TECHNICOLOR &&
+	    writer->dw_participant->p_sw_version >= RTPS_PROXY_INST_VERSION) {
+		mep->length += 4;
+		mep->header.length += 4;
+		dp->reader_sn_state.bitmap [(n >> 2) + 1] = rwp->rw_loc_inst;
+	}
+#endif
 	msize += mep->length + sizeof (SubmsgHeader);
 
 	/* Add submessage to message. */
-	add_proxy_elements (&rwp->proxy, first_mep, msize, 0, NULL);
+	add_proxy_elements (&rwp->proxy, first_mep, msize, 0, prefix);
 
 	STATS_INC (rwp->rw_nacknack);
 
@@ -988,13 +1088,14 @@ int rtps_msg_add_acknack (RemWriter_t        *rwp,
 
 /* rtps_msg_add_heartbeat_frag -- Add a HEARTBEAT_FRAG submessage to an RTPS msg. */
 
-int rtps_msg_add_heartbeat_frag (RemReader_t        *rrp,
-				 DiscoveredReader_t *reader,
-				 SequenceNumber_t   *seqnr,
-				 unsigned           last_frag)
+int rtps_msg_add_heartbeat_frag (RemReader_t              *rrp,
+				 const DiscoveredReader_t *reader,
+				 const SequenceNumber_t   *seqnr,
+				 unsigned                 last_frag)
 {
 	HeartbeatFragSMsg	*dp;
 	RME			*first_mep, *mep;
+	GuidPrefix_t		*prefix;
 	unsigned		msize;
 
 	/* Get a new submessage element header. */
@@ -1005,8 +1106,9 @@ int rtps_msg_add_heartbeat_frag (RemReader_t        *rrp,
 	}
 
 	/* Prepend with an INFO_DESTINATION if this is not a multicast. */
-	if (reader && reader->dr_participant) { 
-		rtps_msg_add_info_destination (&rrp->proxy, mep, &reader->dr_participant->p_guid_prefix);
+	if (reader && reader->dr_participant) {
+		prefix = &reader->dr_participant->p_guid_prefix;
+		rtps_msg_add_info_destination (&rrp->proxy, mep, prefix);
 		msize = mep->length;
 		mep = rtps_msg_append_mep (mep);
 		if (!mep) {
@@ -1014,12 +1116,14 @@ int rtps_msg_add_heartbeat_frag (RemReader_t        *rrp,
 			return (DDS_RETCODE_OUT_OF_RESOURCES);
 		}
 	}
-	else
+	else {
+		prefix = NULL;
 		msize = 0;
+	}
 
 	ctrc_begind (RTPS_ID, RTPS_TX_HBEAT_FRAG, &rrp->rr_writer->endpoint.endpoint->ep.entity_id, sizeof (EntityId_t));
 	ctrc_contd (seqnr, sizeof (SequenceNumber_t));
-	ctrc_contd (last_frag, sizeof (unsigned));
+	ctrc_contd (&last_frag, sizeof (unsigned));
 	ctrc_endd ();
 
 	/* Setup submessage header. */
@@ -1041,7 +1145,7 @@ int rtps_msg_add_heartbeat_frag (RemReader_t        *rrp,
 	msize += mep->length + sizeof (SubmsgHeader);
 
 	/* Add submessage to message. */
-	add_proxy_elements (&rrp->proxy, first_mep, msize, 0, NULL);
+	add_proxy_elements (&rrp->proxy, first_mep, msize, 0, prefix);
 
 	STATS_INC (rrp->rr_nheartbeatfrags);
 
@@ -1056,15 +1160,16 @@ int rtps_msg_add_heartbeat_frag (RemReader_t        *rrp,
 
 /* rtps_msg_add_nack_frag -- Add a NACK_FRAG submessage to an RTPS msg. */
 
-int rtps_msg_add_nack_frag (RemWriter_t        *rwp,
-			    DiscoveredWriter_t *writer,
-			    SequenceNumber_t   *seqnr,
-			    FragmentNumber_t   base,
-			    unsigned           nbits,
-			    uint32_t           bitmaps [])
+int rtps_msg_add_nack_frag (RemWriter_t              *rwp,
+			    const DiscoveredWriter_t *writer,
+			    const SequenceNumber_t   *seqnr,
+			    FragmentNumber_t         base,
+			    unsigned                 nbits,
+			    const uint32_t           bitmaps [])
 {
 	NackFragSMsg	*dp;
 	RME		*first_mep, *mep;
+	GuidPrefix_t	*prefix;
 	unsigned	n, msize;
 
 	/* Get a new submessage element header. */
@@ -1075,7 +1180,8 @@ int rtps_msg_add_nack_frag (RemWriter_t        *rwp,
 	}
 
 	/* Prepend with an INFO_DESTINATION. */
-	rtps_msg_add_info_destination (&rwp->proxy, mep, &writer->dw_participant->p_guid_prefix);
+	prefix = &writer->dw_participant->p_guid_prefix;
+	rtps_msg_add_info_destination (&rwp->proxy, mep, prefix);
 	msize = mep->length + sizeof (SubmsgHeader);
 	mep = rtps_msg_append_mep (mep);
 	if (!mep) {
@@ -1085,7 +1191,7 @@ int rtps_msg_add_nack_frag (RemWriter_t        *rwp,
 
 	ctrc_begind (RTPS_ID, RTPS_TX_NACK_FRAG, &rwp->rw_reader->endpoint.endpoint->ep.entity_id, sizeof (EntityId_t));
 	ctrc_contd (seqnr, sizeof (SequenceNumber_t));
-	ctrc_contd (base, sizeof (SequenceNumber_t));
+	ctrc_contd (&base, sizeof (SequenceNumber_t));
 	ctrc_contd (&nbits, sizeof (nbits));
 	ctrc_endd ();
 
@@ -1110,7 +1216,7 @@ int rtps_msg_add_nack_frag (RemWriter_t        *rwp,
 	msize += mep->length + sizeof (SubmsgHeader);
 
 	/* Add submessage to message. */
-	add_proxy_elements (&rwp->proxy, first_mep, msize, 0, NULL);
+	add_proxy_elements (&rwp->proxy, first_mep, msize, 0, prefix);
 
 	STATS_INC (rwp->rw_nnackfrags);
 
@@ -1226,7 +1332,8 @@ void *submsg_data_ptr (RME      *mep,	/* Subelement structure. */
 static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 {
 	DataSMsg	*dp;
-	unsigned	length, dleft, n, sofs;
+	size_t		length;
+	unsigned	dleft, n, sofs;
 	int		swap, all_endpoints, new_key, error, qos_size, ignore;
 	unsigned	size;
 	Reader_t	*rp;
@@ -1245,6 +1352,9 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 	PIDSet_t	pids [2];
 	uint32_t	ui32;
 	uint16_t	ui16;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	size_t		ofs;
+#endif
 	const TypeSupport_t *ts;
 	unsigned char	data [sizeof (DataSMsg)];
 #ifdef MAX_KEY_BUFFER
@@ -1295,24 +1405,35 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 	if (!entity_id_writer (dp->writer_id))
 		goto inv_submsg;
 
+	if (rxp->have_prefix &&
+	    !guid_prefix_eq (rxp->domain->participant.p_guid_prefix,
+	    		     rxp->dst_guid_prefix))
+		goto unknown_dest;
+
 	if (rxp->peer)
 		peer_ep = endpoint_lookup (rxp->peer, &dp->writer_id);
 	else
 		peer_ep = NULL;
 	if (!peer_ep || (rwp = peer_ep->rtps) == NULL) {
-		if (entity_id_eq (rtps_builtin_eids [EPB_PARTICIPANT_W], 
-				  dp->writer_id)) {
+		if (entity_id_eq (rtps_builtin_eids [EPB_PARTICIPANT_W],
+				  dp->writer_id))
 			rp = (Reader_t *) rxp->domain->participant.
 					p_builtin_ep [EPB_PARTICIPANT_R];
-			if (!rp)
-				goto unknown_dest;
+#ifdef DDS_NATIVE_SECURITY
+		else if (entity_id_eq (rtps_builtin_eids [EPB_PARTICIPANT_SL_W],
+				  dp->writer_id))
+			rp = (Reader_t *) rxp->domain->participant.
+					p_builtin_ep [EPB_PARTICIPANT_SL_R];
+#endif
+		else
+			rp = NULL;
 
+		if (rp) {
 			rdrp = (READER *) rp->r_rtps;
 			all_endpoints = 0;
 			rwp = NULL;
 		}
 		else {
-
 		    unknown_dest:
 
 			RX_LL_ERROR ("UnknownDest");
@@ -1358,7 +1479,7 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 	cp->c_handle = 0;	/* Not specified yet -- derived in reader. */
 	new_key = 0;
 	ddp = NULL;
-
+	dbp = NULL;
 	length = mep->length;
 	sofs = dp->inline_qos_ofs + 4;
 	if (sofs >= length) {
@@ -1512,10 +1633,11 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 					ddp = dbp->data;
 				}
 			}
+			dbp = NULL;
 		}
 		else {
-			cp->c_db = walk.dbp;
-			cp->c_data = walk.data;
+			cp->c_db = (DB *) walk.dbp;
+			cp->c_data = (unsigned char *) walk.data;
 			mep->db = NULL;
 		}
 	}
@@ -1527,9 +1649,49 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 		cp->c_db = dbp;
 		cp->c_data = dbp->data;
 		memcpy (dbp->data, walk.data, cp->c_length);
+		dbp = NULL;
 	}
 
     deliver_data:
+
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+
+	/* Decrypt payload data if an encrypted payload is present. */
+	if (rwp &&
+	    rwp->rw_crypto &&
+	    (cp->c_length || (mep->header.flags & SMF_KEY) != 0)) {
+		if (cp->c_length) {	/* Set walk to real sample data. */
+			walk.dbp = cp->c_db;
+			walk.data = cp->c_data;
+			walk.length = length = cp->c_length;
+			walk.left = cp->c_db->size - (cp->c_data - cp->c_db->data);
+			if (walk.left > length)
+				walk.left = length;
+		}
+		/* else -- walk/length are still valid for key data. */
+
+		dbp = sec_decode_serialized_data (&walk,
+						  0,
+						  rwp->rw_crypto,
+						  &length,
+						  &ofs,
+						  (DDS_ReturnCode_t *) &error);
+		if (!dbp)
+			goto invalid_marshalled_data;
+
+		if (cp->c_length) {	/* Real sample data decrypted now. */
+			cp->c_length = length;
+			cp->c_db = dbp;
+			cp->c_data = dbp->data + ofs;
+			dbp = NULL;
+		}
+		else {			/* Set walk to decrypted key data. */
+			walk.dbp = dbp;
+			walk.data = dbp->data + ofs;
+			walk.length = walk.left = length;
+		}
+	}
+#endif
 
 	/* If data type indicates multi-instance data, we need the actual keys
 	   in order to lookup instances properly. */
@@ -1544,8 +1706,6 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 			walk.data = cp->c_data;
 			walk.left = walk.length = cp->c_length;
 		}
-
-		/* else walk is still ok. */
 		size = ts->ts_mkeysize;
 		if (!size || !ts->ts_fksize) {
 			size = DDS_KeySizeFromMarshalled (walk, ts,
@@ -1560,7 +1720,10 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 				goto save_msg2;
 			}
 		}
-		if (ts->ts_mkeysize && ts->ts_fksize && size <= sizeof (KeyHash_t)) {
+		if (ts->ts_mkeysize &&
+		    ts->ts_fksize &&
+		    size <= sizeof (KeyHash_t) &&
+		    !ENC_DATA (&rp->r_lep)) {
 			if (hp) {
 				key = hp->hash;
 				goto got_keys;
@@ -1582,9 +1745,9 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 			}
 			new_key = 1;
 		}
-
 		error = DDS_KeyFromMarshalled (key, walk, ts,
-					 (mep->header.flags & SMF_KEY) != 0);
+					 (mep->header.flags & SMF_KEY) != 0,
+					 ENC_DATA (&rp->r_lep));
 		if (error) {
 			if (new_key)
 				xfree (key);
@@ -1592,7 +1755,8 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 			goto invalid_marshalled_data;
 		}
 		if (!hp) {
-			error = DDS_HashFromKey (qos.key_hash.hash, key, size, ts);
+			error = DDS_HashFromKey (qos.key_hash.hash, key, size,
+							ENC_DATA (&rp->r_lep), ts);
 			if (error) {
 				if (new_key)
 					xfree (key);
@@ -1604,7 +1768,10 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 	else if (ts->ts_keys) {
 
 		/* Key from hash. */
-		if (!hp || !ts->ts_mkeysize || ts->ts_mkeysize > 16)
+		if (!hp ||
+		    !ts->ts_mkeysize ||
+		    ts->ts_mkeysize > 16 ||
+		    ENC_DATA (&rp->r_lep))
 			goto invalid_marshalled_data;
 
 		key = hp->hash;
@@ -1622,7 +1789,7 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 	lock_take (rp->r_lock);
 
 	/* Trace DATA frame if tracing enabled. */
-	RX_DATA (rdrp, dp, mep->header.flags);
+	RX_DATA (rdrp, rxp->peer, dp, mep->header.flags);
 
 	/* Add to either writer proxy or directly to reader cache. */
 	if (!rdrp->endpoint.stateful) {
@@ -1688,6 +1855,10 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 		xfree (key);
 
     cleanup2:
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	if (dbp)
+		db_free_data (dbp); 
+#endif
 	if (dwrite && dwrite->_length)
 		xfree (dwrite->_buffer);
 
@@ -1709,7 +1880,7 @@ static int snr_set_valid (SequenceNumberSet *sp, unsigned remain)
 	return (SEQNR_VALID (sp->base) &&
 	        sp->numbits &&
 		sp->numbits <= 256 &&
-		(((sp->numbits + 31) & ~0x1f) >> 3) == remain);
+		(((sp->numbits + 31) & ~0x1f) >> 3) <= remain);
 }
 
 static void swap_snr_set (SequenceNumberSet *sp, int extra)
@@ -1795,6 +1966,11 @@ static void submsg_rx_gap (RECEIVER *rxp, RME *mep)
 	if (!entity_id_writer (gp->writer_id))
 		goto inv_submsg;
 
+	if (rxp->have_prefix &&
+	    !guid_prefix_eq (rxp->domain->participant.p_guid_prefix,
+	    		     rxp->dst_guid_prefix))
+		goto unknown_dest;
+
 	if (!rxp->peer ||
 	    (peer_ep = endpoint_lookup (rxp->peer, &gp->writer_id)) == NULL ||
 	    (rwp = peer_ep->rtps) == NULL) {
@@ -1828,7 +2004,7 @@ static void submsg_rx_gap (RECEIVER *rxp, RME *mep)
 	lock_take (rp->r_lock);
 
 	/* Trace GAP frame if enabled. */
-	RX_GAP (rdrp, gp, mep->header.flags);
+	RX_GAP (rdrp, rxp->peer, gp, mep->header.flags);
 
 	/* Process GAP on all reliable proxy writers. */
 	for (;;) {
@@ -1882,7 +2058,7 @@ static void submsg_rx_heartbeat (RECEIVER *rxp, RME *mep)
 	prof_start (rtps_rx_hbeat);
 	RX_LL_TRACE ("HEARTBEAT");
 
-	if (mep->header.length < sizeof (HeartbeatSMsg)) {
+	if (mep->header.length < DEF_HB_SIZE) {
 		RX_LL_ERROR ("TooShort");
 		rxp->submsg_too_short++;
 		rxp->last_error = R_TOO_SHORT;
@@ -1890,11 +2066,16 @@ static void submsg_rx_heartbeat (RECEIVER *rxp, RME *mep)
 		rxp->msg_size = 0;
 		return;
 	}
-	hp = (HeartbeatSMsg *) SUBMSG_DATA (mep, 0, sizeof (HeartbeatSMsg), data);
+#ifdef RTPS_PROXY_INST_TX
+	if (mep->header.length >= MAX_HB_SIZE)
+		t = MAX_HB_SIZE;
+	else
+#endif
+		t = DEF_HB_SIZE;
+	hp = (HeartbeatSMsg *) SUBMSG_DATA (mep, 0, t, data);
 	if ((mep->flags & RME_SWAP) != 0) {
 		SWAP_SEQNR (hp->first_sn, t);
 		SWAP_SEQNR (hp->last_sn, t);
-		SWAP_UINT32 (hp->count, t);
 	}
 
 	ctrc_begind (RTPS_ID, RTPS_RX_HBEAT, &mep, sizeof (mep));
@@ -1926,6 +2107,11 @@ static void submsg_rx_heartbeat (RECEIVER *rxp, RME *mep)
 	if (!entity_id_writer (hp->writer_id))
 		goto inv_submsg;
 
+	if (rxp->have_prefix &&
+	    !guid_prefix_eq (rxp->domain->participant.p_guid_prefix,
+	    		     rxp->dst_guid_prefix))
+		goto unknown_dest;
+
 	if (!rxp->peer ||
 	    (peer_ep = endpoint_lookup (rxp->peer, &hp->writer_id)) == NULL ||
 	    (rwp = peer_ep->rtps) == NULL) {
@@ -1937,6 +2123,13 @@ static void submsg_rx_heartbeat (RECEIVER *rxp, RME *mep)
 		rxp->last_error = R_UNKN_DEST;
 		goto save_msg;
 	}
+#ifdef RTPS_PROXY_INST_TX
+	if (mep->header.length < MAX_HB_SIZE ||
+	    rxp->peer->p_vendor_id [0] != VENDORID_H_TECHNICOLOR ||
+	    rxp->peer->p_vendor_id [1] != VENDORID_L_TECHNICOLOR ||
+	    rxp->peer->p_sw_version < RTPS_PROXY_INST_VERSION)
+		hp->instance_id = 0;
+#endif
 	if ((all_endpoints = entity_id_unknown (hp->reader_id)) != 0)
 		rdrp = rwp->rw_reader;
 	else {
@@ -1960,7 +2153,7 @@ static void submsg_rx_heartbeat (RECEIVER *rxp, RME *mep)
 	lock_take (rp->r_lock);
 
 	/* Trace HEARTBEAT frame if enabled. */
-	RX_HEARTBEAT (rdrp, hp, mep->header.flags);
+	RX_HEARTBEAT (rdrp, rxp->peer, hp, mep->header.flags);
 
 	/* Process HEARTBEAT on all reliable proxy writers. */
 	for (;;) {
@@ -2006,6 +2199,9 @@ static void submsg_rx_acknack (RECEIVER *rxp, RME *mep)
 	Endpoint_t	*peer_ep;
 	unsigned	length;
 	int		all_endpoints;
+#ifdef RTPS_PROXY_INST_TX
+	unsigned	nw;
+#endif
 	unsigned char	data [MAX_ACKNACK_SIZE];
 	PROF_ITER	(n);
 
@@ -2037,6 +2233,11 @@ static void submsg_rx_acknack (RECEIVER *rxp, RME *mep)
 	ctrc_contd (&ap->reader_sn_state.numbits, sizeof (uint32_t));
 	ctrc_endd ();
 
+#ifdef RTPS_PROXY_INST_TX
+	nw = (ap->reader_sn_state.numbits + 31) >> 5;
+	if (mep->header.length != sizeof (AckNackSMsg) + (nw << 2))
+		ap->reader_sn_state.bitmap [nw + 1] = 0;
+#endif
 	if (ap->reader_sn_state.numbits &&
 	    !snr_set_valid (&ap->reader_sn_state,
 			    mep->length - MIN_ACKNACK_SIZE + sizeof (uint32_t))) {
@@ -2057,6 +2258,11 @@ static void submsg_rx_acknack (RECEIVER *rxp, RME *mep)
 	/* Check if this is a valid entity type. */
 	if (!entity_id_reader (ap->reader_id))
 		goto inv_submsg;
+
+	if (rxp->have_prefix &&
+	    !guid_prefix_eq (rxp->domain->participant.p_guid_prefix,
+	    		     rxp->dst_guid_prefix))
+		goto unknown_dest;
 
 	if (!rxp->peer ||
 	    (peer_ep = endpoint_lookup (rxp->peer, &ap->reader_id)) == NULL ||
@@ -2091,7 +2297,7 @@ static void submsg_rx_acknack (RECEIVER *rxp, RME *mep)
 	lock_take (wp->w_lock);
 
 	/* Trace ACKNACK frame if enabled. */
-	RX_ACKNACK (lwp, ap, mep->header.flags);
+	RX_ACKNACK (lwp, rxp->peer, ap, mep->header.flags);
 
 	/* Process ACKNACK on all reliable proxy readers. */
 	for (;;) {
@@ -2299,6 +2505,7 @@ static void submsg_rx_info_dst (RECEIVER *rxp, RME *mep)
 		rxp->dst_guid_prefix = rxp->domain->participant.p_guid_prefix;
 	else
 		rxp->dst_guid_prefix = ip->guid_prefix;
+	rxp->have_prefix = 1;
 	RX_LL_END ();
 	prof_stop (rtps_rx_inf_dst, 1);
 }
@@ -2366,7 +2573,7 @@ static void submsg_rx_data_frag (RECEIVER *rxp, RME *mep)
 	unsigned char	data [sizeof (DataFragSMsg)];
 	PROF_ITER	(prof_nrdrs)
 
-	prof_start (rtps_rx_datafrag);
+	prof_start (rtps_rx_data_frag);
 	RX_LL_TRACE ("DATA-FRAG");
 
 	if (mep->length < sizeof (DataFragSMsg)) {
@@ -2434,6 +2641,11 @@ static void submsg_rx_data_frag (RECEIVER *rxp, RME *mep)
 	/* Check if this is a valid entity type. */
 	if (!entity_id_writer (dp->writer_id))
 		goto inv_submsg;
+
+	if (rxp->have_prefix &&
+	    !guid_prefix_eq (rxp->domain->participant.p_guid_prefix,
+	    		     rxp->dst_guid_prefix))
+		goto unknown_dest;
 
 	if (rxp->peer)
 		peer_ep = endpoint_lookup (rxp->peer, &dp->writer_id);
@@ -2587,8 +2799,8 @@ static void submsg_rx_data_frag (RECEIVER *rxp, RME *mep)
 	}
 
 	/* Move data reference to change. */
-	cp->c_data = walk.data;
-	cp->c_db = walk.dbp;
+	cp->c_db = (DB *) walk.dbp;
+	cp->c_data = (unsigned char *) walk.data;
 	if (cp->c_db)
 		mep->db = NULL;
 
@@ -2598,7 +2810,7 @@ static void submsg_rx_data_frag (RECEIVER *rxp, RME *mep)
 	lock_take (rp->r_lock);
 
 	/* Trace DATAFRAG frame if tracing enabled. */
-	RX_DATA_FRAG (rdrp, dp, mep->header.flags);
+	RX_DATA_FRAG (rdrp, rxp->peer, dp, mep->header.flags);
 
 	/* Add to either writer proxy or directly to reader cache. */
 	if (!rdrp->endpoint.stateful) {
@@ -2611,7 +2823,7 @@ static void submsg_rx_data_frag (RECEIVER *rxp, RME *mep)
 			participant_add_prefix (hp->hash, 12);
 		reader_add_fragment (rdrp, cp, hp, dp);
 	}
-	else {
+	else if (rwp) {
 		finfo = NULL;
 		for (;;) {
 			PROF_INC (prof_nrdrs);
@@ -2622,7 +2834,7 @@ static void submsg_rx_data_frag (RECEIVER *rxp, RME *mep)
 					if (guid_prefix_eq (rxp->domain->participant.p_guid_prefix,
 							    dwrite->_buffer [n].prefix) &&
 					    entity_id_eq (rp->r_entity_id,
-					    		  dwrite->_buffer [n].entity_id)) {
+							  dwrite->_buffer [n].entity_id)) {
 						ignore = 0;
 						break;
 					}
@@ -2642,7 +2854,7 @@ static void submsg_rx_data_frag (RECEIVER *rxp, RME *mep)
 
 			/* Handle message. */
 			(*rtps_rw_event [sf_type]->data) (rwp, cp, &dp->writer_sn,
-					    	hp, NULL, 0, dp, &finfo, ignore);
+						hp, NULL, 0, dp, &finfo, ignore);
 
 			if (!all_endpoints)
 				break;
@@ -2679,7 +2891,7 @@ static void submsg_rx_data_frag (RECEIVER *rxp, RME *mep)
 		db_free_data (mep->db);
 		mep->db = NULL;
 	}
-	prof_stop (rtps_rx_data, prof_nrdrs);
+	prof_stop (rtps_rx_data_frag, prof_nrdrs);
 }
 
 static int fragnr_set_valid (FragmentNumberSet *sp, unsigned len)
@@ -2718,9 +2930,11 @@ static void submsg_rx_nack_frag (RECEIVER *rxp, RME *mep)
 	RemReader_t	*rrp;
 	Endpoint_t	*peer_ep;
 	int		all_endpoints;
+	PROF_ITER	(n)
 #endif
 	unsigned char	data [sizeof (NackFragSMsg)];
 
+	prof_start (rtps_rx_nack_frag);
 	ctrc_printd (RTPS_ID, RTPS_RX_NACK_FRAG, &mep, sizeof (mep));
 
 	RX_LL_TRACE ("NACK-FRAG");
@@ -2771,6 +2985,11 @@ static void submsg_rx_nack_frag (RECEIVER *rxp, RME *mep)
 	if (!entity_id_reader (np->reader_id))
 		goto inv_submsg;
 
+	if (rxp->have_prefix &&
+	    !guid_prefix_eq (rxp->domain->participant.p_guid_prefix,
+	    		     rxp->dst_guid_prefix))
+		goto unknown_dest;
+
 	if (!rxp->peer ||
 	    (peer_ep = endpoint_lookup (rxp->peer, &np->reader_id)) == NULL ||
 	    (rrp = peer_ep->rtps) == NULL) {
@@ -2804,7 +3023,7 @@ static void submsg_rx_nack_frag (RECEIVER *rxp, RME *mep)
 	lock_take (wp->w_lock);
 
 	/* Trace NACKFRAG frame if enabled. */
-	RX_NACK_FRAG (lwp, np, mep->header.flags);
+	RX_NACK_FRAG (lwp, rxp->peer, np, mep->header.flags);
 
 	/* Process NACKFRAG on all reliable proxy readers. */
 	for (;;) {
@@ -2835,6 +3054,7 @@ static void submsg_rx_nack_frag (RECEIVER *rxp, RME *mep)
 		lock_take (wp->w_lock);
 	} 
 	lock_release (wp->w_lock);
+	prof_stop (rtps_rx_nack_frag, n);
 #endif
 
 	RX_LL_END ();
@@ -2853,9 +3073,11 @@ static void submsg_rx_heartbeat_frag (RECEIVER *rxp, RME *mep)
 	READER			*rdrp;
 	Endpoint_t		*peer_ep;
 	int			all_endpoints;
+	PROF_ITER		(n)
 #endif
 	unsigned char		data [sizeof (HeartbeatFragSMsg)];
 
+	prof_start (rtps_rx_hbeat_frag);
 	ctrc_printd (RTPS_ID, RTPS_RX_HBEAT_FRAG, &mep, sizeof (mep));
 
 	RX_LL_TRACE ("HEARTBEAT-FRAG");
@@ -2903,6 +3125,11 @@ static void submsg_rx_heartbeat_frag (RECEIVER *rxp, RME *mep)
 	if (!entity_id_writer (hp->writer_id))
 		goto inv_submsg;
 
+	if (rxp->have_prefix &&
+	    !guid_prefix_eq (rxp->domain->participant.p_guid_prefix,
+	    		     rxp->dst_guid_prefix))
+		goto unknown_dest;
+
 	if (!rxp->peer ||
 	    (peer_ep = endpoint_lookup (rxp->peer, &hp->writer_id)) == NULL ||
 	    (rwp = peer_ep->rtps) == NULL) {
@@ -2936,7 +3163,7 @@ static void submsg_rx_heartbeat_frag (RECEIVER *rxp, RME *mep)
 	lock_take (rp->r_lock);
 
 	/* Trace HEARTBEAT frame if enabled. */
-	RX_HEARTBEAT_FRAG (rdrp, hp, mep->header.flags);
+	RX_HEARTBEAT_FRAG (rdrp, rxp->peer, hp, mep->header.flags);
 
 	/* Process HEARTBEAT on all reliable proxy writers. */
 	for (;;) {
@@ -2966,6 +3193,7 @@ static void submsg_rx_heartbeat_frag (RECEIVER *rxp, RME *mep)
 		lock_take (rp->r_lock);
 	}
 	lock_release (rp->r_lock);
+	prof_stop (rtps_rx_hbeat_frag, 1);
 #endif
 
 	RX_LL_END ();
@@ -3035,7 +3263,8 @@ void rtps_receive (unsigned        id,		/* Participant id. */
 
 		/* Set the initial state of the receiver. */
 		rxp->src_guid_prefix = mhp->guid_prefix;
-		rxp->dst_guid_prefix = dp->participant.p_guid_prefix;
+		/*rxp->dst_guid_prefix = dp->participant.p_guid_prefix;*/
+		rxp->have_prefix = 0;
 		version_set (rxp->src_version, mhp->version);
 		vendor_id_set (rxp->src_vendor, mhp->vendor_id);
 		rxp->have_timestamp = 0;

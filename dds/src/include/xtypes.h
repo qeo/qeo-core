@@ -88,11 +88,15 @@ DynType_t *xt_dynamic_ptr (Type *type, int builder);
 
 /* Return a new dynamic type from a type. */
 
+void xt_type_ref (Type *tp);
+
+/* Reference a type. */
+
 
 /* Type create/delete functions.
     ---------------------------- */
 
-Type *xt_real_type (Type *t);
+Type *xt_real_type (const Type *t);
 
 /* Get the 'real' type of a type, i.e. not an alias type but the actual type
    that is represented. */
@@ -308,7 +312,8 @@ DDS_ReturnCode_t xt_type_finalize (Type   *tp,
 				   size_t *size,
 				   int    *keys,
 				   int    *fksize,
-				   int    *dkeys);
+				   int    *dkeys,
+				   int    *dynamic);
 
 /* Finalize a type by calculating its size and its member offsets. */
 

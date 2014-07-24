@@ -26,6 +26,6 @@ qeo_retcode_t entity_store_remove(const entity_t *entity);
 
 qeo_retcode_t entity_store_fini(void);
 
-qeo_retcode_t entity_store_update_partitions(const qeo_factory_t *factory);
+qeo_retcode_t entity_store_update_user_data(const qeo_factory_t *factory);
 
 #endif /* ENTITY_STORE_H_ */

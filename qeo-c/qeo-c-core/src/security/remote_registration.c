@@ -825,7 +825,7 @@ char * qeocore_remote_registration_decrypt_otc(unsigned char *encrypted_otc,
                                               int enrypted_otc_size)
 {
     if (NULL == _key) {
-        qeo_log_w("private key no known, cannot decrypt otc");
+        qeo_log_w("private key not known, cannot decrypt otc");
         return NULL;
     }
     return decrypt(_key, encrypted_otc, enrypted_otc_size);

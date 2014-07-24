@@ -28,15 +28,23 @@
 #define OP_DEBUG 0
 #endif
 
+typedef struct qeo_mgmt_fd_link_s {
+    int fd;
+    struct qeo_mgmt_fd_link_s* next;
+} qeo_mgmt_fd_link_t;
+
 struct qeo_mgmt_client_ctx_s{
     sscep_ctx_t sscep_ctx;
     CURL *curl_ctx;
     bool curl_global_init;
     qeo_mgmt_url_ctx_t url_ctx;
     pthread_mutex_t mutex;
+    pthread_mutex_t fd_mutex;
     bool mutex_init;
     pthread_t worker_thread;
     bool join_thread;
+    qeo_mgmt_fd_link_t* fd_list;
+    bool is_closed;
 };
 
 /*

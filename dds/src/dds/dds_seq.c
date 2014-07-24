@@ -72,8 +72,10 @@ void dds_seq_cleanup (void *seq)
 	if (!sp->_maximum || !sp->_own)
 		return;
 
-	xfree (sp->_buffer);
-	sp->_buffer = NULL;
+	if (sp->_buffer) {
+		xfree (sp->_buffer);
+		sp->_buffer = NULL;
+	}
 	sp->_length = sp->_maximum = 0;
 }
 

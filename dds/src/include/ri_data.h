@@ -38,7 +38,7 @@ typedef struct ip_cx_st		IP_CX;
 
 #ifndef STREAM_API_defined
 #define STREAM_API_defined
-typedef struct stream_fct_st STREAM_API;	/* See: ri_tcp_sock.h */
+typedef struct stream_fct_st	STREAM_API;	/* See: ri_tcp_sock.h */
 #endif
 
 #ifndef STREAM_CB_defined
@@ -133,17 +133,17 @@ typedef enum {
 /* Common connection data: */
 struct ip_cx_st {
 	LocatorNode_t	*locator;	/* Local address info. */
-	unsigned char	dst_addr [16];	/* Destination address if cx_mode. */
+	unsigned char	dst_addr [16];	/* Destination address if has_dst_addr.*/
 	uint16_t	users;		/* Use count. */
 	uint16_t	dst_port;	/* Destination port if cx_mode. */
-	GuidPrefix_t	dst_prefix;	/* GUID prefix associated. */
+	GuidPrefix_t	dst_prefix;	/* GUID prefix if has_prefix. */
 	unsigned	dst_forward;	/* Destination can forward. */
 	unsigned	retries:4;	/* # of retries. */
 	unsigned	cx_type:2;	/* Connection type (IP_CX_TYPE). */
 	unsigned	cx_mode:2;	/* Connection mode (IP_CX_MODE). */
 	unsigned	cx_side:2;	/* Side of connection (IP_CX_SIDE). */
 	unsigned	cx_state:3;	/* Connection state (IP_CX_STATE). */
-	unsigned	p_state:3;	/* Protocol state (cx_mode == ICM_CONTROL: TCP_CONTROL_STATE; cx_mode == ICM_DATA: TCP_DATA_STATE).*/
+	unsigned	p_state:3;	/* Protocol state (*_CONTROL/DATA_STATE).*/
 	unsigned	associated:1;	/* Connection association done. */
 	unsigned	src_mcast:1;	/* Multicast source? */
 	unsigned	redundant:1;	/* May be purged? */
@@ -152,6 +152,8 @@ struct ip_cx_st {
 	unsigned	rx_data:1;	/* Can receive data on connection. */
 	unsigned	fd_owner:1;	/* Owns the file descriptor. */
 	unsigned	trace:1;	/* Trace messages if set. */
+	unsigned	has_prefix:1;	/* GUID prefix present. */
+	unsigned	has_dst_addr:1;	/* Destination address present. */
 	unsigned	cxbs_queued:1;	/* ConnectionBindSuccess queued. */
 	unsigned	id;		/* Higher layer id. */
 	unsigned	handle;		/* Connection handle. */

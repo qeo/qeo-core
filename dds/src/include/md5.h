@@ -19,9 +19,6 @@
 
 #include <stdint.h>
 
-typedef uint32_t UINT4;
-typedef uint16_t UINT2;
-
 typedef struct md5_context_st {
 	uint32_t	state [4];	/* State (ABCD). */
 	uint32_t	count [2];	/* # of bits, modulo 2^64 (lsb first). */

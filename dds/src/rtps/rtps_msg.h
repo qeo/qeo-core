@@ -23,9 +23,10 @@
 #include "rtps_priv.h"
 
 int rtps_msg_add_data (RemReader_t        *rrp,
-		       DiscoveredReader_t *reader,
+		       const GuidPrefix_t *prefix,
+		       const EntityId_t   *eid,
 		       Change_t           *cp,
-		       HCI                hci,
+		       const HCI          hci,
 		       int                push
 #ifdef RTPS_FRAGMENTS
 		     , unsigned           first,
@@ -36,46 +37,46 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 /* Add either a DATA submessage element or multiple DATAFRAG submessage
    elements (depending on fragment size) to an existing message. */
 
-int rtps_msg_add_gap (RemReader_t        *rrp,
-		      DiscoveredReader_t *reader,
-		      SequenceNumber_t   *start,
-		      SequenceNumber_t   *base,
-		      unsigned           n_bits,
-		      uint32_t           *bits,
-		      int                push);
+int rtps_msg_add_gap (RemReader_t              *rrp,
+		      const DiscoveredReader_t *reader,
+		      const SequenceNumber_t   *start,
+		      const SequenceNumber_t   *base,
+		      unsigned                 n_bits,
+		      uint32_t                 *bits,
+		      int                      push);
 
 /* Add a GAP submessage element to an existing message. */
 
-int rtps_msg_add_heartbeat (RemReader_t        *rrp,
-			    DiscoveredReader_t *reader,
-			    unsigned           flags,
-			    SequenceNumber_t   *min_seqnr,
-			    SequenceNumber_t   *max_seqnr);
+int rtps_msg_add_heartbeat (RemReader_t              *rrp,
+			    const DiscoveredReader_t *reader,
+			    unsigned                 flags,
+			    const SequenceNumber_t   *min_seqnr,
+			    const SequenceNumber_t   *max_seqnr);
 
 /* Add a HEARTBEAT submessage to an RTPS message. */
 
-int rtps_msg_add_acknack (RemWriter_t        *rwp,
-			  DiscoveredWriter_t *writer,
-			  int                final,
-			  SequenceNumber_t   *base,
-			  unsigned           nbits,
-			  uint32_t           bitmaps []);
+int rtps_msg_add_acknack (RemWriter_t              *rwp,
+			  const DiscoveredWriter_t *writer,
+			  int                      final,
+			  const SequenceNumber_t   *base,
+			  unsigned                 nbits,
+			  const uint32_t           bitmaps []);
 
 /* Add an ACKNACK submessage to an RTPS message. */
 
-int rtps_msg_add_heartbeat_frag (RemReader_t        *rrp,
-				 DiscoveredReader_t *reader,
-				 SequenceNumber_t   *seqnr,
-				 unsigned           last_frag);
+int rtps_msg_add_heartbeat_frag (RemReader_t              *rrp,
+				 const DiscoveredReader_t *reader,
+				 const SequenceNumber_t   *seqnr,
+				 unsigned                 last_frag);
 
 /* Add a HEARTBEAT_FRAG submessage to an RTPS msg. */
 
-int rtps_msg_add_nack_frag (RemWriter_t        *rwp,
-			    DiscoveredWriter_t *writer,
-			    SequenceNumber_t   *seqnr,
-			    FragmentNumber_t   base,
-			    unsigned           nbits,
-			    uint32_t           bitmaps []);
+int rtps_msg_add_nack_frag (RemWriter_t              *rwp,
+			    const DiscoveredWriter_t *writer,
+			    const SequenceNumber_t   *seqnr,
+			    FragmentNumber_t         base,
+			    unsigned                 nbits,
+			    const uint32_t           bitmaps []);
 
 /* Add a NACK_FRAG submessage to an RTPS msg. */
 

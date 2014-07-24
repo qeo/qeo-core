@@ -15,9 +15,11 @@ qeo-c_ELEM_INSTALL       :=
 qeo-c_TEST_PARTS         :=
 qeo-c_TEST_PARTS_INSTALL := \
 	systest_event_public@$$(bindir/)systest/public/event:755 \
-	systest_stress_factory_public@$$(bindir/)systest_fail/public/factory:755 \
+	systest_stress_factory_public@$$(bindir/)systest_disabled/public/factory:755 \
 	systest_state_public@$$(bindir/)systest/public/state:755 \
 	systest_policy_public@$$(bindir/)systest/public/policy:755 \
+	systest_policy_updates_public@$$(bindir/)systest/public/policy_updates:755 \
+	systest_policy_missing_user_public@$$(bindir/)systest/public/policy_missing_user:755 \
 	systest_state_open_realm_public@$$(bindir/)systest/public/state_open_realm:755 \
     systest_open_realm_forbidden_topics_public@$$(bindir/)systest/public/open_realm_forbidden_topics:755
 qeo-c_TEST_PARTS_INSTALL += \
@@ -48,7 +50,7 @@ qeo-c.libqeoc_LDADD         := $(qeo-c-core_LIBS)
  
 # Build rules for system tests
 
-qeo-c_SYSTESTS = event state stress_factory policy state_open_realm open_realm_forbidden_topics
+qeo-c_SYSTESTS = event state stress_factory policy policy_updates policy_missing_user state_open_realm open_realm_forbidden_topics
 
 qeo-c.PROGRAMS += $(foreach test, $(qeo-c_SYSTESTS), systest_$(test)_public)
 

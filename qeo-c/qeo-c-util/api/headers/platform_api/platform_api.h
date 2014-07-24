@@ -83,6 +83,17 @@ qeo_util_retcode_t qeo_platform_init(uintptr_t app_context, const qeo_platform_c
  * */
 qeo_util_retcode_t qeo_platform_set_device_storage_path(const char* path);
 
+/**
+ * Store a pointer to the CA certificate storage path (only pointer is stored, ownership is not transferred)
+ * This function should be called prior to using the Qeo API (e.g. creating factories)
+ *
+ * \param[in] ca_file A file containing a list of CA certificates in PEM format, or \c NULL.
+ * \param[in] ca_path A directory containing CA certificates in PEM format, or \c NULL.
+ *                    See also the man page of OpenSSL's SSL_CTX_load_verify_locations().
+ */
+qeo_util_retcode_t qeo_platform_set_cacert_path(const char* ca_file,
+                                                const char* ca_path);
+
 /*
  * Store a pointer to device info path (only pointer is stored, ownership is not transferred) 
  * This function should be called prior to using the Qeo API (e.g. creating factories)

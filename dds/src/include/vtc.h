@@ -33,11 +33,11 @@ typedef struct vtc_header_st {
 
 #include "typecode.h"
 
-int vtc_validate (unsigned char *vtc,
-		  size_t        length,
-		  unsigned      *ofs,
-		  int           swap,
-		  int           ext);
+int vtc_validate (const unsigned char *vtc,
+		  size_t              length,
+		  unsigned            *ofs,
+		  int                 swap,
+		  int                 ext);
 
 /* Validate transported typecode in vendor-specific format.   If swap is set,
    the source data (vtc) needs to be swapped for correct interpretation.

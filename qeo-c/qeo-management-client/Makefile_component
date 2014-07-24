@@ -28,7 +28,7 @@ qeo-management-client_TEST_ELEM_INSTALL  := \
 	test/client_app/forwarder_cmds.sh@$$(bindir/)forwarder_cmds.sh:755 \
 	test/client_app/test_all.sh@$$(bindir/)test_all.sh:755 \
 	test/client_app/valgrind.sh@$$(bindir/)valgrind.sh:755 \
-    test/client_app/valgrind.supp@$$(bindir/)valgrind.supp:644 \
+        test/client_app/valgrind.supp@$$(bindir/)valgrind.supp:644 \
 	test/testdata/forwarder_single_locator@$$(bindir/)testdata/forwarder_single_locator:644 \
 	test/testdata/forwarder_multiple_locators@$$(bindir/)testdata/forwarder_multiple_locators:644 \
 
@@ -113,10 +113,11 @@ qeo-management-client.libutcertparser_LDADD         := $(qeo-c-util_LIBS) $(open
 
 
 qeo-management-client.libuturldiscovery_SRCS          := $(addprefix test/unittest/suite_url/, url_discovery.c json_messages.c) \
-                                                    $(addprefix libqeomgmtclient:src/management-client/, qeo_mgmt_util.c qeo_mgmt_cert_util.c qeo_mgmt_curl_util.c qeo_mgmt_urls.c qeo_mgmt_json_util.c qeo_mgmt_fwd.c) \
+                                                    $(addprefix libqeomgmtclient:src/management-client/, qeo_mgmt_client.c qeo_mgmt_util.c qeo_mgmt_cert_util.c qeo_mgmt_curl_util.c qeo_mgmt_urls.c qeo_mgmt_json_util.c qeo_mgmt_fwd.c csr.c cnhelper.c) \
+                                                    $(addprefix test/unittest/mocks/sscep/, sscep_mock.c) \
                                                     $(addprefix test/unittest/mocks/curl/, curl_easy_mock.c) \
                                                     $(addprefix libqeomgmtclient:src/libsscep/, curl_util.c)
-qeo-management-client.libuturldiscovery_LOCALINCLUDES := src/management-client/ test/unittest/mocks/curl test/unittest/suite_url $(qeo-management-client_INCLUDES) $(qeo-c-util_INCLUDES) $(cmock_INCLUDES) $(unittest-check_INCLUDES) $(jansson_INCLUDES)
+qeo-management-client.libuturldiscovery_LOCALINCLUDES := src/management-client/ src/libsscep/ test/unittest/mocks/curl test/unittest/suite_url $(qeo-management-client_INCLUDES) $(qeo-c-util_INCLUDES) $(cmock_INCLUDES) $(unittest-check_INCLUDES) $(jansson_INCLUDES)
 qeo-management-client.libuturldiscovery_LOCALDEFINES  := -DDEBUG -Wall -Werror
 qeo-management-client.libuturldiscovery_LDADD         := $(qeo-c-util_LIBS) $(openssl_LIBS) $(jansson_LIBS) 
 

@@ -136,7 +136,7 @@ static size_t cdr_generate_member (unsigned char         *out,
 	const unsigned char	*prev_data;
 	const DynData_t		*prev_sdp;
 	int			prev_dynamic;
-	int			do_write, add_header;
+	int			do_write, add_header, skip_optional = 0;
 	size_t			delta = offset, n;
 
 	prev_data = ip->src;
@@ -161,15 +161,20 @@ static size_t cdr_generate_member (unsigned char         *out,
 		ndata = ip->src + mp->offset;
 		if (mp->is_shareable || mp->is_optional) {
 			ndata = *((const void **) ndata);
-			if (!ndata && !mp->is_optional)
+			if (ndata)
+				ip->src = ndata;
+			else if (!mp->is_optional)
 				return (0);
+			else
+				skip_optional = 1;
 		}
-		ip->src = ndata;
+		else
+			ip->src = ndata;
 	}
 	else
 		do_write = 0;
 
-	add_header = mutable || mp->is_optional;
+	add_header = mutable && !skip_optional;
 	if (add_header)	{ /* Add Parameter header! */
 		CDR_ALIGN (delta, 4, do_write, out);
 		if (mp->member_id >= XT_PID_EXTENDED) {
@@ -207,19 +212,26 @@ static size_t cdr_generate_member (unsigned char         *out,
 			delta += 4;
 		}
 	}
+	else if (!mutable && mp->is_optional) {
+		CDR_ALIGN (delta, 4, do_write, out);
+		l_len_ptr = (uint32_t *) &out [delta];
+	}
 	if (ip->dump && !disc) {
 		if (ip->names)
 			dbg_printf ("%s=", str_ptr (mp->name));
 		else if (mutable)
 			dbg_printf (".%s=", str_ptr (mp->name));
 	}
-	tp = real_type_ptr (scope, mp->id);
-	n = cdr_generate (out, delta, tp, ip,
-			  mp->is_key || all_key,
-			  mp->is_shareable);
-	if (!n)
-		return (0);
-
+	if (!skip_optional) {
+		tp = real_type_ptr (scope, mp->id);
+		n = cdr_generate (out, delta, tp, ip,
+				  mp->is_key || all_key,
+				  mp->is_shareable);
+		if (!n)
+			return (0);
+	}
+	else
+		n = delta;
 	ip->src = prev_data;
 	ip->sdp = prev_sdp;
 	ip->dynamic = prev_dynamic;
@@ -239,6 +251,13 @@ static size_t cdr_generate_member (unsigned char         *out,
 			else
 				memcpy16 (s_len_ptr, &s);
 		}
+	}
+	else if (!mutable && mp->is_optional) {
+		l = n - delta;
+		if (ip->swap)
+			memcswap32 (l_len_ptr, &l);
+		else
+			memcpy32 (l_len_ptr, &l);
 	}
 	return (n);
 }
@@ -802,6 +821,10 @@ static void cdr_dump_string (const char *data, size_t len, unsigned csize)
 	const wchar_t	*wcp;
 	unsigned	i;
 
+	if (!data) {
+		dbg_printf ("NULL");
+		return;
+	}
 	if (csize == 1) {
 		cp = data;
 		dbg_printf ("\'");
@@ -1091,7 +1114,8 @@ static size_t cdr_generate (unsigned char *out,
 					ptr = NULL;
 					len = 0;
 				}
-				len++;
+				if (!ip->dynamic || ip->sdp)
+					len++;
 				CDR_ALIGN (delta, 4, do_write, out);
 				if (out) {
 					if (ip->swap)
@@ -1112,7 +1136,7 @@ static size_t cdr_generate (unsigned char *out,
 					}
 					delta += len;
 				}
-				else {
+				else if (!ip->dynamic || ip->sdp) {
 					if (out)
 						out [delta] = '\0';
 					delta++;
@@ -1135,23 +1159,23 @@ static size_t cdr_generate (unsigned char *out,
 		case DDS_STRUCTURE_TYPE:
 			if (!ip->key_mode || kf)
 				delta = cdr_generate_struct (out, offset,
-						    (StructureType *) tp, ip);
+						    (const StructureType *) tp, ip);
 			break;
 		case DDS_UNION_TYPE:
 			if (!ip->key_mode || kf)
 				delta = cdr_generate_union (out, offset,
-						    (UnionType *) tp, ip);
+						    (const UnionType *) tp, ip);
 			break;
 		case DDS_ARRAY_TYPE:
 			if (!ip->key_mode || kf)
 				delta = cdr_generate_array (out, offset,
-						    (ArrayType *) tp, ip, kf);
+						    (const ArrayType *) tp, ip, kf);
 			break;
 		case DDS_SEQUENCE_TYPE:
 		case DDS_MAP_TYPE:
 			if (!ip->key_mode || kf)
 				delta = cdr_generate_seqmap (out, offset,
-						   (SequenceType *) tp, ip, kf);
+						   (const SequenceType *) tp, ip, kf);
 			break;
 		default:
 			return (0);
@@ -1180,6 +1204,11 @@ size_t cdr_marshalled_size (size_t           hsize,
 	GenInfo_t	info;
 
 	prof_start (cdr_m_size);
+	if (!type) {
+		if (error)
+			*error = DDS_RETCODE_BAD_PARAMETER;
+		return (0);
+	}
 	memset (&info, 0, sizeof (info));
 	if (key) {
 		if (msize)
@@ -1194,7 +1223,10 @@ size_t cdr_marshalled_size (size_t           hsize,
 		info.sdp = (const DynData_t *) data;
 	else
 		info.src = data;
-	if ((type->kind != DDS_STRUCTURE_TYPE &&
+	if (type->kind == DDS_ALIAS_TYPE)
+		type = xt_real_type (type);
+	if (!type ||
+	    (type->kind != DDS_STRUCTURE_TYPE &&
 	     type->kind != DDS_SEQUENCE_TYPE &&
 	     type->kind != DDS_ARRAY_TYPE &&
 	     type->kind != DDS_UNION_TYPE) ||
@@ -1215,23 +1247,32 @@ size_t cdr_marshalled_size (size_t           hsize,
 		   If msize && key set: pad strings to the maximum length.
 		   If swap set: reverse endianness of the marshalled data. */
 
-DDS_ReturnCode_t cdr_marshall (void       *dest,
-			       size_t     hsize,
-			       const void *data,
-			       const Type *type,
-			       int        dynamic,
-			       int        key,
-			       int        msize,
-			       int        swap)
+size_t cdr_marshall (void             *dest,
+		     size_t           hsize,
+		     const void       *data,
+		     const Type       *type,
+		     int              dynamic,
+		     int              key,
+		     int              msize,
+		     int              swap,
+		     DDS_ReturnCode_t *error)
 {
 	size_t		length;
 	GenInfo_t	info;
 
 	prof_start (cdr_m);
-	if (!dest || (!key && !data) || !type ||
-	    type->kind != DDS_STRUCTURE_TYPE)
-		return (DDS_RETCODE_BAD_PARAMETER);
-
+	if (!dest || (!key && !data) || !type) {
+		*error = DDS_RETCODE_BAD_PARAMETER;
+		return (0);
+	}
+	if (type->kind == DDS_ALIAS_TYPE)
+		type = xt_real_type (type);
+	if (!type ||
+	    (type->kind != DDS_STRUCTURE_TYPE &&
+	     type->kind != DDS_UNION_TYPE)) {
+		*error = DDS_RETCODE_BAD_PARAMETER;
+		return (0);
+	}
 	memset (&info, 0, sizeof (info));
 	if (key) {
 		if (msize)
@@ -1249,13 +1290,15 @@ DDS_ReturnCode_t cdr_marshall (void       *dest,
 	info.swap = swap;
 	length = cdr_generate ((unsigned char *) dest - hsize, hsize,
 						type, &info, key, 0) - hsize;
-	if (!length)
-		return (DDS_RETCODE_BAD_PARAMETER);
-
+	if (!length) {
+		*error = DDS_RETCODE_BAD_PARAMETER;
+		return (0);
+	}
 	CDR_ALIGN (length, 4, 1, (unsigned char *) dest);
 
 	prof_stop (cdr_m, 1);
-	return (DDS_RETCODE_OK);
+	*error = DDS_RETCODE_OK;
+	return (length);
 }
 
 /* cdr_dump_native -- Dump a native data sample (data). If key is given, only
@@ -1272,7 +1315,14 @@ DDS_ReturnCode_t cdr_dump_native (unsigned   indent,
 	size_t		length;
 	GenInfo_t	info;
 
-	if (!data || !type || type->kind != DDS_STRUCTURE_TYPE)
+	if (!data || !type)
+		return (DDS_RETCODE_BAD_PARAMETER);
+
+	if (type->kind == DDS_ALIAS_TYPE)
+		type = xt_real_type (type);
+	if (!type ||
+	    (type->kind != DDS_STRUCTURE_TYPE &&
+	     type->kind != DDS_UNION_TYPE))
 		return (DDS_RETCODE_BAD_PARAMETER);
 
 	memset (&info, 0, sizeof (info));
@@ -1313,6 +1363,7 @@ typedef struct parse_info_st {
 	size_t		dofs;		/* Dest. offset (Convert/KeyLength). */
 	DynData_t	*dyn_dst;	/* Dynamic dest. context (Convert). */
 	unsigned char	*aux_dst;	/* Extra dest. data buffer (Convert).*/
+	size_t		aux_ofs;	/* Offset in extra dest. buffer. */
 	size_t		dlength;	/* Length (DynLength). */
 	unsigned	depth:8;	/* Structure depth (GetOffset). */
 	unsigned	field:8;	/* Structure field id (GetOffset). */
@@ -1397,8 +1448,8 @@ static size_t cdr_parse_string (const unsigned char *src,
 			memcswap32 (&l, &src [sofs]);
 		else
 			memcpy32 (&l, &src [sofs]);
-		if (!l)
-			return (0);
+		/*if (!l)		<== Allow 0 lengths!
+			return (0); */
 
 		/* Point source to string data. */
 		sofs += 4;
@@ -1423,13 +1474,13 @@ static size_t cdr_parse_string (const unsigned char *src,
 	}
 	if (!PA_CopyData (ip->action)) { /* Length calculation. */
 		if (ip->action == PA_DumpData)
-			cdr_dump_string ((char *) src + sofs, l, 
-					 stp->collection.element_size);
+			cdr_dump_string ((l) ? (char *) src + sofs : NULL,
+					 l, stp->collection.element_size);
 		else if (ip->action == PA_GetAuxLength && !stp->bound)
 
 			/* Unbounded string: increase total length
 			   with unbounded string length. */
-			ip->dlength += ALIGN (l, 4);
+			ip->dlength += l;
 		else if (CF_Key (ip->dformat)) {
 			ip->dofs = ALIGN (ip->dofs, 4) + 4;
 			if (stp->bound &&
@@ -1440,7 +1491,7 @@ static size_t cdr_parse_string (const unsigned char *src,
 		}
 	}
 	else if (ip->action == PA_GetDynamic) {	/* Dynamic data copy. */
-		if (l == 1)
+		if (!l)
 			ip->dyn_dst = NULL;
 		else {
 			s = (ip->copy_data) ? l : 0;
@@ -1488,8 +1539,8 @@ static size_t cdr_parse_string (const unsigned char *src,
 		/* Zero out the remainder of the string if we are not 
 		   working on a minimal size key (if there is a 
 		   remainder). */
-		else if (l <= stp->bound)
-			memset (&ip->dst [ip->dofs + l - 1], 0,	stp->bound - l + 1); 
+		else if (l <= stp->bound + 1)
+			memset (&ip->dst [ip->dofs + l - 1], 0,	stp->bound + 2 - l); 
 
 		if (ip->sformat == CF_CDR_PaddedKey)
 			sofs += stp->bound - l;
@@ -1515,17 +1566,129 @@ static size_t cdr_parse_string (const unsigned char *src,
 		}
 		else {
 			/* Copy to extra buffer space. */
-			if (l)
-				memcpy (ip->aux_dst, &src [sofs], l);
+			if (l) {
+				dcp = ip->aux_dst + ip->aux_ofs;
+				memcpy (dcp, &src [sofs], l);
+			}
+			else
+				dcp = NULL;
 
 			/* Set the char * to the correct value. */
-			memcpy (&ip->dst [ip->dofs], &ip->aux_dst, sizeof (char *));
-			ip->aux_dst += ALIGN (l, 4);
+			memcpy (&ip->dst [ip->dofs], &dcp, sizeof (char *));
+			ip->aux_ofs += l;
 		}
 	}
 	if (ip->sformat == CF_CDR || key)
 		sofs += l;
 	return (sofs);
+}
+
+static size_t cdr_field_ofs (const Type *tp, size_t ofs, size_t *esize)
+{
+	size_t	nofs;
+
+	switch (tp->kind) {
+		case DDS_BOOLEAN_TYPE:
+		case DDS_BYTE_TYPE:
+		case DDS_CHAR_8_TYPE:
+		    do_8:
+			*esize = 1;
+			return (ofs);
+
+		case DDS_INT_16_TYPE:
+		case DDS_UINT_16_TYPE:
+		    do_16:
+			*esize = 2;
+			return ((ofs + 1) & ~1);
+
+		case DDS_INT_32_TYPE:
+		case DDS_UINT_32_TYPE:
+		case DDS_CHAR_32_TYPE:
+		case DDS_FLOAT_32_TYPE:
+		    do_32:
+			*esize = 4;
+			return ((ofs + 3) & ~3);
+
+		case DDS_INT_64_TYPE:
+		case DDS_UINT_64_TYPE:
+		case DDS_FLOAT_64_TYPE:
+		    do_64:
+			*esize = 8;
+			return ((ofs + 7) & ~7);
+
+		case DDS_FLOAT_128_TYPE:
+			*esize = 16;
+			return ((ofs + 15) & ~15);
+
+		case DDS_ENUMERATION_TYPE: {
+			EnumType *ep = (EnumType *) tp;
+
+			if (ep->bound <= 8)
+				goto do_8;
+			else if (ep->bound <= 16)
+				goto do_16;
+			else /*if (ep->bound <= 32)*/
+				goto do_32;
+		}
+		case DDS_BITSET_TYPE: {
+			BitSetType *bp = (BitSetType *) tp;
+
+			if (bp->bit_bound <= 8)
+				goto do_8;
+			else if (bp->bit_bound <= 16)
+				goto do_16;
+			else if (bp->bit_bound <= 32)
+				goto do_32;
+			else
+				goto do_64;
+		}
+		case DDS_ARRAY_TYPE: {
+			const ArrayType	*atp = (const ArrayType *) tp;
+			size_t		s = atp->collection.element_size;
+			unsigned	i;
+
+			if (s == 1)
+				nofs = ofs;
+			else if (s == 2)
+				nofs = (ofs + 1) & ~1;
+			else if (s == 4)
+				nofs = (ofs + 3) & ~3;
+			else
+				nofs = (ofs + sizeof (void *) - 1) & ~(sizeof (void *) - 1);
+			for (i = 0; i < atp->nbounds; i++)
+				s *= atp->bound [i];
+			*esize = s;
+			return (nofs);
+		}
+		case DDS_SEQUENCE_TYPE:
+		case DDS_MAP_TYPE:
+			nofs = (ofs + sizeof (void *) - 1) & ~(sizeof (void *) - 1);
+			*esize = sizeof (DDS_VoidSeq);
+			return (nofs);
+
+		case DDS_STRING_TYPE: {
+			const StringType *sp = (const StringType *) tp;
+
+			*esize = sp->bound;
+			return (ofs);
+		}
+		case DDS_UNION_TYPE: {
+			const UnionType	*utp = (const UnionType *) tp;
+
+			nofs = (ofs + sizeof (void *) - 1) & ~(sizeof (void *) - 1);
+			*esize = utp->size;
+			return (nofs);
+		}
+		case DDS_STRUCTURE_TYPE: {
+			const StructureType *stp = (const StructureType *) tp;
+
+			nofs = (ofs + sizeof (void *) - 1) & ~(sizeof (void *) - 1);
+			*esize = stp->size;
+			return (nofs);
+		}
+		default:
+			return (0);
+	}
 }
 
 static size_t cdr_parse_member (const unsigned char *src, 
@@ -1542,7 +1705,7 @@ static size_t cdr_parse_member (const unsigned char *src,
 	unsigned char	*prev_dst = NULL, **pp = NULL;
 	DynData_t	*dp = NULL, *ndp;
 	DynDataMember_t	*fp = NULL;
-	size_t		prev_dofs = 0, n, nofs;
+	size_t		prev_dofs = 0, n, nofs, esize;
 
 	tp = real_type_ptr (scope, mp->id);
 	if (!tp)
@@ -1552,7 +1715,7 @@ static size_t cdr_parse_member (const unsigned char *src,
 		prev_dst = ip->dst;
 		prev_dofs = ip->dofs;
 		if (mp->is_optional || mp->is_shareable) {
-			pp = (unsigned char **) &ip->dst [mp->offset];
+			pp = (unsigned char **) &ip->dst [ip->dofs + mp->offset];
 			if (mp->is_optional && !plen) {
 				*pp = NULL;
 				return (sofs);
@@ -1560,8 +1723,11 @@ static size_t cdr_parse_member (const unsigned char *src,
 			if (CF_Key (ip->sformat) && !*pp)
 				return (0);
 
-			else if (!CF_Key (ip->sformat))
-				*pp = ip->aux_dst;
+			else if (!CF_Key (ip->sformat)) {
+				ip->aux_ofs = cdr_field_ofs (tp, ip->aux_ofs, &esize);
+				*pp = ip->aux_dst + ip->aux_ofs;
+				ip->aux_ofs += esize;
+			}
 			ip->dst = *pp;
 		}
 		else
@@ -1596,16 +1762,22 @@ static size_t cdr_parse_member (const unsigned char *src,
 		dp->dleft = dp->dsize - nofs;
 		ip->dst = dp->dp;
 		if (dp->type->kind == DDS_STRUCTURE_TYPE)
-			fp->index = mp - ((StructureType *) dp->type)->member;
+			fp->index = mp - ((const StructureType *) dp->type)->member;
 		else
 			fp->index = (UnionMember *) mp - 
-					     ((UnionType *) dp->type)->member;
+					     ((const UnionType *) dp->type)->member;
 	}
 	else if (action == PA_DumpData && (!ip->key_mode || key)) {
 		if (ip->names)
 			dbg_printf ("%s=", str_ptr (mp->name));
 		else if (mutable)
 			dbg_printf (".%s=", str_ptr (mp->name));
+	}
+	else if (action == PA_GetAuxLength &&
+		 (mp->is_optional || mp->is_shareable) &&
+		 plen) {
+		ip->dlength = cdr_field_ofs (tp, ip->dlength, &esize);
+		ip->dlength += esize;
 	}
 	n = cdr_parse (src, sofs, tp, ip, key);
 	if (!n)
@@ -1776,10 +1948,22 @@ static size_t cdr_parse_mutable_unordered (const unsigned char *src,
 					   int                 key)
 {
 	const Member		*mp;
+	unsigned char		**pp;
 	unsigned		i, id, nf = 0;
 	size_t			plen, n;
 	int			understand, key_field;
 
+	/* Clear optional fields. */
+	if (stp->optional && ip->action == PA_GetNative)
+		for (i = 0, mp = stp->member;
+		     i < stp->nmembers;
+		     i++, mp++)
+			if (mp->is_optional) {
+				pp = (unsigned char **) &ip->dst [ip->dofs + mp->offset];
+				*pp = NULL;
+			}
+
+	/* Parse all fields. */
 	for (;;) {
 		n = pid_parse_header (src, sofs, ip->int_swap,
 					    &id, &plen, &understand);
@@ -2244,6 +2428,7 @@ static size_t cdr_parse_seqmap (const unsigned char *src,
 	unsigned char	*dp;
 	uint32_t	nelem;
 	unsigned	i, n, dofs, s, ts;
+	size_t		esize;
 	
 	tp = real_type_ptr (stp->collection.type.scope,
 			    stp->collection.element_type);
@@ -2263,8 +2448,10 @@ static size_t cdr_parse_seqmap (const unsigned char *src,
 		s = stp->collection.element_size;
 		if (ip->action == PA_DumpData)
 			dbg_printf ("{");
-		else if (ip->action == PA_GetAuxLength)
+		else if (ip->action == PA_GetAuxLength) {
+			ip->dlength = cdr_field_ofs (tp, ip->dlength, &esize);
 			ip->dlength += nelem * s;
+		}
 		else if (CF_Key (ip->dformat) && (!ip->key_mode || key))
 			ip->dofs = ALIGN (ip->dofs, 4) + 4;
 		p = NULL;
@@ -2313,8 +2500,9 @@ static size_t cdr_parse_seqmap (const unsigned char *src,
 					memcpy (&seq->_buffer, &dp, sizeof (unsigned char *));
 				}
 				else {
-					seq->_buffer = ip->aux_dst;
-					ip->aux_dst += nelem * stp->collection.element_size;
+					ip->aux_ofs = cdr_field_ofs (tp, ip->aux_ofs, &esize);
+					seq->_buffer = ip->aux_dst + ip->aux_ofs;
+					ip->aux_ofs += nelem * stp->collection.element_size;
 				}
 				seq->_length = seq->_maximum = nelem;
 				seq->_esize = stp->collection.element_size;
@@ -2631,20 +2819,20 @@ static size_t cdr_parse (const unsigned char *src,
 				goto get_64;
 		}
 		case DDS_ARRAY_TYPE:
-			sofs = cdr_parse_array (src, sofs, (ArrayType *) tp, ip, key);
+			sofs = cdr_parse_array (src, sofs, (const ArrayType *) tp, ip, key);
 			break;
 		case DDS_SEQUENCE_TYPE:
 		case DDS_MAP_TYPE:
-			sofs = cdr_parse_seqmap (src, sofs, (SequenceType *) tp, ip, key);
+			sofs = cdr_parse_seqmap (src, sofs, (const SequenceType *) tp, ip, key);
 			break;
 		case DDS_STRING_TYPE:
-			sofs = cdr_parse_string (src, sofs, (StringType *) tp, ip, key);
+			sofs = cdr_parse_string (src, sofs, (const StringType *) tp, ip, key);
 			break;
 		case DDS_UNION_TYPE:
-			sofs = cdr_parse_union (src, sofs, (UnionType *) tp, ip, key);
+			sofs = cdr_parse_union (src, sofs, (const UnionType *) tp, ip, key);
 			break;
 		case DDS_STRUCTURE_TYPE:
-			sofs = cdr_parse_struct (src, sofs, (StructureType *) tp, ip, key);
+			sofs = cdr_parse_struct (src, sofs, (const StructureType *) tp, ip, key);
 			break;
 		default:
 			return (0);
@@ -2665,16 +2853,27 @@ size_t cdr_unmarshalled_size (const void       *data,
 			      int              key,
 			      int              msize,
 			      int              swap,
+			      size_t           size,
 			      DDS_ReturnCode_t *error)
 {
-	StructureType		*stp = (StructureType *) type;
+	const StructureType	*stp;
+	const UnionType		*utp;
 	const unsigned char	*src = (const unsigned char *) data;
 	ParseInfo		info;
 	DDS_ReturnCode_t	err = DDS_RETCODE_BAD_PARAMETER;
 
 	prof_start (cdr_um_size);
 
-	if (!data || !type || type->kind != DDS_STRUCTURE_TYPE) {
+	if (!data || !type) {
+		if (error)
+			*error = err;
+		return (0);
+	}
+	if (type->kind == DDS_ALIAS_TYPE)
+		type = xt_real_type (type);
+	if (!type ||
+	    (type->kind != DDS_STRUCTURE_TYPE &&
+	     type->kind != DDS_UNION_TYPE)) {
 		if (error)
 			*error = err;
 		return (0);
@@ -2688,9 +2887,21 @@ size_t cdr_unmarshalled_size (const void       *data,
 	info.dofs = hsize;
 	info.int_swap = info.cnv_swap = swap;
 	info.key_mode = key;
-	if (cdr_parse_struct (src - hsize, hsize, stp, &info, 1)) {
-		err = DDS_RETCODE_OK;
-		info.dlength += stp->size;
+	if (type->kind == DDS_STRUCTURE_TYPE) {
+		stp = (const StructureType *) type;
+		if ((!size || size >= stp->size) &&
+		    cdr_parse_struct (src - hsize, hsize, stp, &info, 1)) {
+			err = DDS_RETCODE_OK;
+			info.dlength += (size) ? size : stp->size;
+		}
+	}
+	else {
+		utp = (const UnionType *) type;
+		if ((!size || size >= utp->size) &&
+		    cdr_parse_union (src - hsize, hsize, utp, &info, 1)) {
+			err = DDS_RETCODE_OK;
+			info.dlength += (size) ? size : utp->size;
+		}
 	}
 	if (error)
 		*error = err;
@@ -2712,16 +2923,24 @@ DDS_ReturnCode_t cdr_unmarshall (void       *dest,
 				 const Type *type,
 				 int        key,
 			         int        msize,
-				 int        swap)
+				 int        swap,
+				 size_t     size)
 {
-	StructureType		*stp = (StructureType *) type;
+	const StructureType	*stp;
+	const UnionType		*utp;
 	const unsigned char	*src = (const unsigned char *) data;
 	ParseInfo		info;
 
 	prof_start (cdr_um);
 
-	if (!dest || !data || !type ||
-	    type->kind != DDS_STRUCTURE_TYPE)
+	if (!dest || !data || !type)
+		return (DDS_RETCODE_BAD_PARAMETER);
+
+	if (type->kind == DDS_ALIAS_TYPE)
+		type = xt_real_type (type);
+	if (!type ||
+	    (type->kind != DDS_STRUCTURE_TYPE &&
+	     type->kind != DDS_UNION_TYPE))
 		return (DDS_RETCODE_BAD_PARAMETER);
 
 	memset (&info, 0, sizeof (info));
@@ -2731,14 +2950,32 @@ DDS_ReturnCode_t cdr_unmarshall (void       *dest,
 	                     : CF_CDR;
 	info.dformat = CF_Native;
 	info.dst = dest;
-	info.dofs = 0;
-	info.aux_dst = (unsigned char *) dest +
-		       ((StructureType *) type)->size;
 	info.int_swap = info.cnv_swap = swap;
 	info.key_mode = key;
-	if (!cdr_parse_struct (src - hsize, hsize, stp, &info, 1))
-		return (DDS_RETCODE_BAD_PARAMETER);
+	if (type->kind == DDS_STRUCTURE_TYPE) {
+		stp = (const StructureType *) type;
+		if (size && size < stp->size)
+			return (DDS_RETCODE_BAD_PARAMETER);
 
+		if (!size)
+			size = stp->size;
+
+		info.aux_dst = (unsigned char *) dest + size;
+		if (!cdr_parse_struct (src - hsize, hsize, stp, &info, 1))
+			return (DDS_RETCODE_BAD_PARAMETER);
+	}
+	else {
+		utp = (const UnionType *) type;
+		if (size && size < utp->size)
+			return (DDS_RETCODE_BAD_PARAMETER);
+
+		if (!size)
+			size = utp->size;
+
+		info.aux_dst = (unsigned char *) dest + size;
+		if (!cdr_parse_union (src - hsize, hsize, utp, &info, 1))
+			return (DDS_RETCODE_BAD_PARAMETER);
+	}
 	prof_stop (cdr_um, 1);
 	return (DDS_RETCODE_OK);
 }
@@ -2756,14 +2993,21 @@ DynData_t *cdr_dynamic_data (const void *data,
 			     int        copy,
 			     int        swap)
 {
-	StructureType		*stp = (StructureType *) type;
+	const StructureType	*stp;
+	const UnionType		*utp;
 	const unsigned char	*src = (const unsigned char *) data;
 	ParseInfo		info;
 
 	prof_start (cdr_um);
 
-	if (!data || !type ||
-	    type->kind != DDS_STRUCTURE_TYPE)
+	if (!data || !type)
+		return (NULL);
+
+	if (type->kind == DDS_ALIAS_TYPE)
+		type = xt_real_type (type);
+	if (!type ||
+	    (type->kind != DDS_STRUCTURE_TYPE &&
+	     type->kind != DDS_UNION_TYPE))
 		return (NULL);
 
 	memset (&info, 0, sizeof (info));
@@ -2773,9 +3017,16 @@ DynData_t *cdr_dynamic_data (const void *data,
 	info.int_swap = info.cnv_swap = swap;
 	info.key_mode = key;
 	info.copy_data = copy;
-	if (!cdr_parse_struct (src - hsize, hsize, stp, &info, 1))
-		return (NULL);
-
+	if (type->kind == DDS_STRUCTURE_TYPE) {
+		stp = (const StructureType *) type;
+		if (!cdr_parse_struct (src - hsize, hsize, stp, &info, 1))
+			return (NULL);
+	}
+	else {
+		utp = (const UnionType *) type;
+		if (!cdr_parse_union (src - hsize, hsize, utp, &info, 1))
+			return (NULL);
+	}
 	prof_stop (cdr_um, 1);
 	return (info.dyn_dst);
 }
@@ -2796,14 +3047,23 @@ size_t cdr_key_size (size_t           dhsize,	/* Dst: data offset.          */
 		     int              iswap,	/* Src: non-cpu endianness.   */
 		     DDS_ReturnCode_t *error)	/* Resulting error code.      */
 {
-	StructureType		*stp = (StructureType *) type;
+	const StructureType	*stp;
+	const UnionType		*utp;
 	const unsigned char	*src = (const unsigned char *) data;
 	ParseInfo		info;
 	DDS_ReturnCode_t 	err = DDS_RETCODE_BAD_PARAMETER;
 
 	prof_start (cdr_k_size);
 
-	if (!data || !type || type->kind != DDS_STRUCTURE_TYPE) {
+	if (!data || !type) {
+		info.dofs = 0;
+		goto out;
+	}
+	if (type->kind == DDS_ALIAS_TYPE)
+		type = xt_real_type (type);
+	if (!type ||
+	    (type->kind != DDS_STRUCTURE_TYPE &&
+	     type->kind != DDS_UNION_TYPE)) {
 		info.dofs = 0;
 		goto out;
 	}
@@ -2815,12 +3075,24 @@ size_t cdr_key_size (size_t           dhsize,	/* Dst: data offset.          */
 	info.cnv_swap = swap;
 	info.int_swap = iswap;
 	info.key_mode = 1;
-	if (cdr_parse_struct (src - hsize, hsize, stp, &info, 1)) {
-		err = DDS_RETCODE_OK;
-		info.dofs -= dhsize;
+	if (type->kind == DDS_STRUCTURE_TYPE) {
+		stp = (const StructureType *) type;
+		if (cdr_parse_struct (src - hsize, hsize, stp, &info, 1)) {
+			err = DDS_RETCODE_OK;
+			info.dofs -= dhsize;
+		}
+		else
+			info.dofs = 0;
 	}
-	else
-		info.dofs = 0;
+	else {
+		utp = (const UnionType *) type;
+		if (cdr_parse_union (src - hsize, hsize, utp, &info, 1)) {
+			err = DDS_RETCODE_OK;
+			info.dofs -= dhsize;
+		}
+		else
+			info.dofs = 0;
+	}
 
     out:
 	if (error)
@@ -2846,13 +3118,21 @@ DDS_ReturnCode_t cdr_key_fields (void       *dest,	/* Dst: data pointer. */
 				 int        swap,	/* Swap src->dst.     */
 				 int        iswap)	/* Src: non-cpu end.  */
 {
-	StructureType		*stp = (StructureType *) type;
+	const StructureType	*stp;
+	const UnionType		*utp;
 	const unsigned char	*src = (const unsigned char *) data;
 	ParseInfo		info;
 
 	prof_start (cdr_k_get);
 
 	if (!dest || !data || !type)
+		return (DDS_RETCODE_BAD_PARAMETER);
+
+	if (type->kind == DDS_ALIAS_TYPE)
+		type = xt_real_type (type);
+	if (!type ||
+	    (type->kind != DDS_STRUCTURE_TYPE &&
+	     type->kind != DDS_UNION_TYPE))
 		return (DDS_RETCODE_BAD_PARAMETER);
 
 	memset (&info, 0, sizeof (info));
@@ -2864,9 +3144,16 @@ DDS_ReturnCode_t cdr_key_fields (void       *dest,	/* Dst: data pointer. */
 	info.cnv_swap = swap;
 	info.int_swap = iswap;
 	info.key_mode = 1;
-	if (type->kind != DDS_STRUCTURE_TYPE ||
-	    !cdr_parse_struct (src - hsize, hsize, stp, &info, 1))
-		return (DDS_RETCODE_BAD_PARAMETER);
+	if (type->kind == DDS_STRUCTURE_TYPE) {
+		stp = (const StructureType *) type;
+		if (!cdr_parse_struct (src - hsize, hsize, stp, &info, 1))
+			return (DDS_RETCODE_BAD_PARAMETER);
+	}
+	else {
+		utp = (const UnionType *) type;
+		if (!cdr_parse_union (src - hsize, hsize, utp, &info, 1))
+			return (DDS_RETCODE_BAD_PARAMETER);
+	}
 
 	prof_stop (cdr_k_get, 1);
 	return (DDS_RETCODE_OK);
@@ -2884,13 +3171,26 @@ size_t cdr_field_offset (const void       *data,
 			 int              swap,
 		         DDS_ReturnCode_t *error)
 {
-	StructureType		*stp = (StructureType *) type;
+	const StructureType	*stp;
+	const UnionType		*utp;
 	const unsigned char	*src = (const unsigned char *) data;
 	size_t			offset;
 	ParseInfo		info;
 
 	prof_start (cdr_f_ofs);
 
+	if (!data || !type) {
+		*error = DDS_RETCODE_BAD_PARAMETER;
+		return (0);
+	}
+	if (type->kind == DDS_ALIAS_TYPE)
+		type = xt_real_type (type);
+	if (!type ||
+	    (type->kind != DDS_STRUCTURE_TYPE &&
+	     type->kind != DDS_UNION_TYPE)) {
+		*error = DDS_RETCODE_BAD_PARAMETER;
+		return (0);
+	}
 	memset (&info, 0, sizeof (info));
 	info.action = PA_GetOffset;
 	info.sformat = CF_CDR;
@@ -2898,7 +3198,14 @@ size_t cdr_field_offset (const void       *data,
 	info.dofs = hsize;
 	info.field = field;
 	info.int_swap = info.cnv_swap = swap;
-	offset = cdr_parse_struct (src - hsize, hsize, stp, &info, 1);
+	if (type->kind == DDS_STRUCTURE_TYPE) {
+		stp = (const StructureType *) type;
+	 	offset = cdr_parse_struct (src - hsize, hsize, stp, &info, 1);
+	}
+	else {
+		utp = (const UnionType *) type;
+	 	offset = cdr_parse_union (src - hsize, hsize, utp, &info, 1);
+	}
 	if (!offset)
 		*error = DDS_RETCODE_BAD_PARAMETER;
 	else
@@ -2916,17 +3223,25 @@ size_t cdr_field_offset (const void       *data,
 DDS_ReturnCode_t cdr_dump_cdr (unsigned   indent,
 			       const void *data,
 			       size_t     hsize,
-			       Type       *type,
+			       const Type *type,
 			       int        key,
 			       int        msize,
 			       int        swap,
 			       int        names)
 {
-	StructureType		*stp = (StructureType *) type;
+	const StructureType	*stp;
+	const UnionType		*utp;
 	const unsigned char	*src = (const unsigned char *) data;
 	ParseInfo		info;
 
-	if (!data || !type || type->kind != DDS_STRUCTURE_TYPE)
+	if (!data || !type)
+		return (DDS_RETCODE_BAD_PARAMETER);
+
+	if (type->kind == DDS_ALIAS_TYPE)
+		type = xt_real_type (type);
+	if (!type ||
+	    (type->kind != DDS_STRUCTURE_TYPE &&
+	     type->kind != DDS_UNION_TYPE))
 		return (DDS_RETCODE_BAD_PARAMETER);
 
 	memset (&info, 0, sizeof (info));
@@ -2938,9 +3253,16 @@ DDS_ReturnCode_t cdr_dump_cdr (unsigned   indent,
 	info.int_swap = swap;
 	info.key_mode = key;
 	info.names = names;
-	if (!cdr_parse_struct (src - hsize, hsize, stp, &info, 1))
-		return (DDS_RETCODE_BAD_PARAMETER);
-
+	if (type->kind == DDS_STRUCTURE_TYPE) {
+		stp = (const StructureType *) type;
+		if (!cdr_parse_struct (src - hsize, hsize, stp, &info, 1))
+			return (DDS_RETCODE_BAD_PARAMETER);
+	}
+	else {
+		utp = (const UnionType *) type;
+		if (!cdr_parse_union (src - hsize, hsize, utp, &info, 1))
+			return (DDS_RETCODE_BAD_PARAMETER);
+	}
 	return (DDS_RETCODE_OK);
 }
 

@@ -22,6 +22,7 @@
 #include "dds/dds_error.h"
 #include "typecode.h"
 #include "cache.h"
+#include "rtps_cfg.h"
 
 typedef struct rtps_config_st {
 	POOL_LIMITS	readers;	/* RTPS Reader instances. */
@@ -60,10 +61,10 @@ extern ProtocolId_t		rtps_protocol_id;
 extern ProtocolVersion_t	rtps_protocol_version;
 extern VendorId_t		rtps_vendor_id;
 
-extern const EntityId_t rtps_builtin_eids [];	/* Builtin Endpoint ids. */
-extern const char *rtps_builtin_topic_names [];	/* Builtin Endpoint topic names. */
-extern const char *rtps_builtin_type_names [];	/* Builtin Endpoint type names. */
-extern EntityId_t rtps_entity_id_unknown;	/* Unknown Endpoint Id. */
+extern const EntityId_t rtps_builtin_eids [];	   /* Builtin Endpoint ids. */
+extern const char *rtps_builtin_endpoint_names []; /* Builtin Endpoint names. */
+extern const char *rtps_builtin_topic_names [];	   /* Builtin Topic names. */
+extern EntityId_t rtps_entity_id_unknown;	   /* Unknown Endpoint Id. */
 
 
 /* 1. Participant operations.
@@ -132,13 +133,21 @@ int rtps_matched_reader_remove (Writer_t *w, DiscoveredReader_t *dr);
 
 /* Remove a matched, i.e. proxy reader from a stateful writer. */
 
+int rtps_matched_reader_restart (Writer_t *w, DiscoveredReader_t *dr);
+
+/* Restart a matched, i.e. proxy reader for a stateful writer. */
+
 int rtps_writer_matches (Writer_t *w, DiscoveredReader_t *dr);
 
 /* Return a non-0 result if the local Writer matches the remote reader. */
 
-unsigned rtps_matched_reader_count (Writer_t *r);
+unsigned rtps_matched_reader_count (Writer_t *w);
 
 /* Return the number of matched readers. */
+
+int rtps_matched_reader_restart (Writer_t *w, DiscoveredReader_t *dr);
+
+/* Restart a stateful reliable matched reader context. */
 
 int rtps_writer_write (Writer_t       *w,
 		       const void     *data,
@@ -201,6 +210,10 @@ int rtps_matched_writer_add (Reader_t *r, DiscoveredWriter_t *dw);
 int rtps_matched_writer_remove (Reader_t *r, DiscoveredWriter_t *dw);
 
 /* Remove a matched, i.e. proxy writer from a stateful reader. */
+
+int rtps_matched_writer_restart (Reader_t *r, DiscoveredWriter_t *dw);
+
+/* Restart a matched, i.e. proxy writer for a stateful reader. */
 
 int rtps_reader_matches (Reader_t *r, DiscoveredWriter_t *dw);
 
@@ -321,6 +334,22 @@ void rtps_relay_update (Participant_t *pp);
 /* Update a relay from the set of local relays in a domain since its locators
    were updated.  Updates all the proxy context locators as a result of this. */
 
+void rtps_peer_reader_crypto_set (Writer_t *rp, DiscoveredReader_t *dw, unsigned h);
+
+/* Set a peer reader crypto handle. */
+
+void rtps_peer_writer_crypto_set (Reader_t *rp, DiscoveredWriter_t *dw, unsigned h);
+
+/* Set a peer writer crypto handle. */
+
+unsigned rtps_peer_reader_crypto_get (Writer_t *rp, DiscoveredReader_t *dw);
+
+/* Get a peer reader crypto handle. */
+
+unsigned rtps_peer_writer_crypto_get (Reader_t *rp, DiscoveredWriter_t *dw);
+
+/* Get a peer writer crypto handle. */
+
 
 /* 6. Debug functions.
    ------------------- */
@@ -341,6 +370,10 @@ void rtps_proxy_dump (Endpoint_t *e);
 
 /* Display the proxy contents of an endpoint. */
 
+void rtps_proxy_restart (Endpoint_t *e);
+
+/* Restart a proxy of an endpoint. */
+
 void rtps_receiver_dump (void);
 
 /* Display the contents of the RTPS receiver. */
@@ -348,6 +381,10 @@ void rtps_receiver_dump (void);
 void rtps_transmitter_dump (void);
 
 /* Display the contents of the RTPS transmitter. */
+
+int rtps_endpoint_assert (LocalEndpoint_t *e);
+
+/* Assert the validity of an endpoint and return the result as an error code. */
 
 
 /* 6. On-line trace functionality.

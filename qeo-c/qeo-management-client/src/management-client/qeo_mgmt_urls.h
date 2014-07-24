@@ -54,7 +54,7 @@ typedef struct qeo_mgmt_url_ctx_s *qeo_mgmt_url_ctx_t;
  * \retval ::QMGMTCLIENT_EFAIL in case the url of that type was not found.
  *
  */
-qeo_mgmt_client_retcode_t qeo_mgmt_url_get(qeo_mgmt_url_ctx_t ctx, qeo_mgmt_client_ssl_ctx_cb ssl_cb, void *ssl_cookie, const char* base_url, qeo_mgmt_url_type_t service, const char** url);
+qeo_mgmt_client_retcode_t qeo_mgmt_url_get(qeo_mgmt_client_ctx_t* ctx, qeo_mgmt_client_ssl_ctx_cb ssl_cb, void *ssl_cookie, const char* base_url, qeo_mgmt_url_type_t service, const char** url);
 
 /**
  * Return a handle to url context that should be used inside this api.

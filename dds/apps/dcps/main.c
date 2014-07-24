@@ -26,10 +26,15 @@
 #endif
 #include "libx.h"
 #ifdef DDS_SECURITY
-#include "assert.h"
+#include "dds/dds_security.h"
+#ifdef DDS_NATIVE_SECURITY
+#include "nsecplug/nsecplug.h"
+#else
 #include "msecplug/msecplug.h"
-#include "../secplug/xmlparse.h"
-#include "../security/engine_fs.h"
+#include "assert.h"
+#include "../../plugins/secplug/xmlparse.h"
+#endif
+#include "../../plugins/security/engine_fs.h"
 #endif
 #include "dds/dds_dcps.h"
 #include "dds/dds_debug.h"
@@ -42,6 +47,7 @@
 /*#define TRACE_DISC	** Define to trace discovery endpoints. */
 /*#define TRACE_DATA	** Define to trace data endpoints. */
 /*#define NORMAL_TAKE	** Define to take items in reader. */
+/*#define SAMPLE_INFO	** Define to show sample info. */
 /*#define SLOW_RREAD	** Slow consumption. */
 #define EXTRA_READER	/* Define to create an extra reader in writer mode. */
 /*#define WRDISPATCH	** Dispatch from extra reader to extra thread. */
@@ -55,10 +61,12 @@
 /*#define NO_KEY	** Use keyless data. */
 #ifndef NO_KEY
 #define DO_UNREGISTER	/* Define to unregister instances. */
-#define	LARGE_KEY	/* Use a large key (>16 bytes). */
+/*#define UNREG_DISC	** Force unregister/dispose on discovery. */
+#define LARGE_KEY	/* Use a large key (>16 bytes). */
 /*#define SINGLE_INST	** One instance only. */
 /*#define DUAL_INST	** Two instances: 1 direct in listener, 1 dispatched. */
 #endif
+#define	ADD_PID		/* Define to add the PID to data samples. */
 #define DYNMSG		/* Dynamic message data. */
 /*#define LIVELINESS_MODE DDS_AUTOMATIC_LIVELINESS_QOS*/
 /*#define LIVELINESS_MODE DDS_MANUAL_BY_PARTICIPANT_LIVELINESS_QOS*/
@@ -74,6 +82,11 @@
 /* #define PART_UPD	** Define this for partition string updates. */
 #define	MULTI_RUN    1	/* # of runs. */
 /*#define DYN_CFG	** Dynamically define a Dynamic secure TCP server. */
+#define LOG_DATA	/* Define this to add data messages to the log file. */
+#ifdef LOG_DATA
+#include "log.h"
+#include "error.h"
+#endif
 
 #define	HELLO_WORLD	"Hello DDS world!"
 #define MAX_DSIZE	0x20000		/* 128KB */
@@ -93,12 +106,19 @@ int			paused;			/* Pause program if set. */
 int			extra_dp;		/* Create extra participant. */
 int			no_rtps;		/* Don't use RTPS if set. */
 unsigned		domain_id;		/* Domain id. */
+int                     tests;
+int                     file;
+char                    *fname;
+int                     sfile;
+char                    *sname;
+int			dbg_server;		/* Start a debug server. */
+unsigned		dbg_port;		/* Debug server port. */
 #ifdef DDS_SECURITY
-char                    *engine_id;		/* Engine id. */
-char                    *cert_path;		/* Certificates path. */
-char                    *key_path;		/* Private key path. */
+char			*engine_id;		/* Engine id. */
+char			*cert_path;		/* Certificates path. */
+char			*key_path;		/* Private key path. */
 #endif
-char                    *realm_name;		/* Realm name. */
+char			*realm_name;		/* Realm name. */
 #ifdef EXTRA_READER
 unsigned		nreaders = 1;		/* # of local readers. */
 DDS_DataReader		ldr [3];		/* Local readers. */
@@ -106,12 +126,14 @@ DDS_DataReader		ldr [3];		/* Local readers. */
 unsigned		data_size;		/* Default: {"hello world", count} */
 unsigned		max_size;		/* Max. data size. */
 unsigned		inc_size = 1;		/* Increment size. */
-unsigned		nsamples;		/* Sample to send. */
+unsigned		nsamples;		/* Current # of samples done. */
+unsigned		burst_amount = 1;	/* # of samples per burst. */
 unsigned		nruns = MULTI_RUN;	/* # of runs. */
 size_t			cur_size;		/* Current sample size. */
-unsigned		count = ~0;		/* Max. # of times to send. */
-unsigned		max_events = ~0;	/* Max. # of steps. */
+unsigned		max_samples = ~0;	/* Max. # of sends/receives before exit. */
+unsigned		max_sends = ~0;		/* Max. # of sends before pause. */
 unsigned		sleep_time = 1000;	/* Sleep time (1000ms = 1s). */
+unsigned		start_delay;
 unsigned char		buf [MAX_DSIZE];	/* Data buffer to use. */
 DDS_Topic		topic;
 DDS_TopicDescription	topic_desc;
@@ -124,9 +146,6 @@ const char *kind_str [] = {
 	"NOT_ALIVE_NO_WRITERS"
 };
 int clientTest = 0;
-
-#undef dbg_printf
-#define	dbg_printf printf
 
 typedef struct msg_data_st {
 	uint64_t	counter;
@@ -162,16 +181,17 @@ void usage (void)
 #endif
 	fprintf (stderr, "   -s <size>      Data size to write in writer mode.\r\n");
 	fprintf (stderr, "                  Default it sends a 4-byte counter, followed\r\n");
-	fprintf (stderr, "                  by a 'hello world' string.\r\n");
+	fprintf (stderr, "                  by a 'hello world' type string.\r\n");
 	fprintf (stderr, "   -m <size>      Maximum data size in writer mode.\r\n");
 	fprintf (stderr, "                  If set, will continuously increment the data\r\n");
 	fprintf (stderr, "                  until the maximum size and restarts with the\r\n");
 	fprintf (stderr, "                  minimum size.\r\n");
 	fprintf (stderr, "   -a <size>      Offset to add for each size increment.\r\n");
 	fprintf (stderr, "   -n <count>     Max. # of times to send/receive data.\r\n");
+	fprintf (stderr, "   -b <count>     # of messages per burst.\r\n");
 	fprintf (stderr, "   -q             Quit when all packets sent/received.\r\n");
 	fprintf (stderr, "   -f             Flood mode (no waiting: as fast as possible).\r\n");
-	fprintf (stderr, "   -d <msec>      Max. delay to wait for responses (10..10000).\r\n");
+	fprintf (stderr, "   -d <msec>      Max. delay to wait between bursts (10..10000).\r\n");
 	fprintf (stderr, "   -p             Startup in paused state.\r\n");
 	fprintf (stderr, "   -t             Trace transmitted/received messages.\r\n");
 	fprintf (stderr, "   -i <num>       Domain id to use.\r\n");
@@ -182,6 +202,11 @@ void usage (void)
 	fprintf (stderr, "   -z <realm>     The realm name.\r\n");
 	fprintf (stderr, "   -x             Create secondary domain participant.\r\n");
 	fprintf (stderr, "   -l             No lower layer RTPS functionality.\r\n");
+	fprintf (stderr, "   -g [<num>]     Start a debug server.\r\n");
+	fprintf (stderr, "   -y <filename>  Write received data to file.\r\n");
+        fprintf (stderr, "   -o <delay>     Specific command only for automated tests.\r\n");
+        fprintf (stderr, "                  + adds a startup delay.\r\n");
+	fprintf (stderr, "   -j <filename>  Specify a security.xml file.\r\n");
 	fprintf (stderr, "   -v             Verbose: log overall functionality\r\n");
 	fprintf (stderr, "   -vv            Extra verbose: log detailed functionality.\r\n");
 	exit (1);
@@ -287,7 +312,12 @@ int do_switches (int argc, const char **argv)
 					break;
 				case 'n':
 					INC_ARG()
-					if (!get_num (&cp, &count, 0, ~0, "-n"))
+					if (!get_num (&cp, &max_samples, 0, ~0, "-n"))
+						usage ();
+					break;
+				case 'b':
+					INC_ARG()
+					if (!get_num (&cp, &burst_amount, 1, 100, "-b"))
 						usage ();
 					break;
 				case 'f':
@@ -327,6 +357,18 @@ int do_switches (int argc, const char **argv)
 					if (!get_num (&cp, &domain_id, 0, 256, "-i"))
 						usage ();
 					break;
+				case 'g':
+					if (!*cp &&
+					    argv [i + 1] &&
+					    *argv [i + 1] >= '0' &&
+					    *argv [i + 1] <= '9') {
+						INC_ARG()
+						if (!get_num (&cp, &dbg_port, 1024, 65535, "-g"))
+							usage ();
+					}
+					dbg_server = 1;
+					break;
+#ifdef DDS_SECURITY
 			        case 'e':
 					INC_ARG ()
 					if (!get_str (&cp, &arg_input))
@@ -356,12 +398,35 @@ int do_switches (int argc, const char **argv)
 					realm_name = malloc (strlen (arg_input) + 1);
 					strcpy (realm_name, arg_input);
 					break;
+#endif
 				case 'x':
 					extra_dp = 1;
 					break;
 				case 'h':
 					fprintf (stderr, "dds -- test program for the DDS protocol.\r\n");
 					usage ();
+					break;
+			        case 'y':
+					file = 1;
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage();
+					fname = malloc (strlen (arg_input) + 1);
+					strcpy (fname, arg_input);
+					break;
+			        case 'o':
+					INC_ARG ()
+					if (!get_num (&cp, &start_delay, 0, 20000, "-o"))
+						usage ();
+					tests = 1;
+					break;
+			        case 'j':
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage ();
+					sname = malloc (strlen (arg_input) + 1);
+					strcpy (sname, arg_input);
+					sfile = 1;
 					break;
 				default:
 					usage ();
@@ -494,165 +559,193 @@ static void do_write (void)
 {
 	MsgData_t	data;
 	MsgDesc_t	*dp;
-	unsigned	op, index;
+	unsigned	op, index, i, c;
 #ifndef NO_KEY
 	unsigned	inst_delta;
 #endif
 	int		error;
 	char		*dbuf = NULL;
 	static DDS_InstanceHandle_t h [4];
+	char		buffer [256];
 
 	if (paused)
 		return;
 
+	for (i = 0; i < burst_amount; i++) {
 #ifdef SINGLE_INST
-	index = 0;
-	op = 1;
+		index = 0;
+		op = 1;
 #elif defined (DUAL_INST)
-	index = nsamples & 1;
-	op = 1;
+		index = nsamples & 1;
+		op = 1;
 #else
-	index = nsamples & 3;
-	op = (nsamples & 0xc) >> 2;
+		index = nsamples & 3;
+		op = (nsamples & 0xc) >> 2;
 #endif
-	dp = &messages [index];
+		dp = &messages [index];
 #ifndef NO_KEY
 #ifdef DUAL_INST
-	inst_delta = nsamples & 1;
+		inst_delta = nsamples & 1;
 #else
-	inst_delta = (nsamples & 0x30) >> 4;
+		inst_delta = (nsamples & 0x30) >> 4;
 #endif
 #ifdef LARGE_KEY
 #ifdef SINGLE_INST
-	data.key [0] = dp->key [0];
+		data.key [0] = dp->key [0];
 #else
-	data.key [0] = dp->key [0] + inst_delta;
+		data.key [0] = dp->key [0] + inst_delta;
 #endif
-	data.key [1] = data.key [2] = data.key [3] = data.key [4] = 0;
+#ifdef ADD_PID
+		data.key [0] += getpid () & 0xf;
+#endif
+		data.key [1] = getpid ();
+		data.key [2] = data.key [3] = data.key [4] = 0;
 #else
 #ifdef SINGLE_INST
-	data.key = dp->key;
+		data.key = dp->key;
 #else
-	data.key = dp->key + inst_delta;
+		data.key = dp->key + inst_delta;
+#endif
+#ifdef ADD_PID
+		data.key += getpid () & 0xf;
 #endif
 #endif
 #endif
 
 #ifndef DYNMSG
-	dbuf = data.message;
+		dbuf = data.message;
 #endif
-	switch (op) {
-		case 0:
+		switch (op) {
+			case 0:
 #ifndef NO_KEY
-			h [index] = DDS_DataWriter_register_instance (w, &data);
-			if (verbose)
-				dbg_printf ("DDS-W: [%2u] Registered instance.\r\n", h [index]);
+				h [index] = DDS_DataWriter_register_instance (w, &data);
+				if (verbose)
+					printf ("DDS-W: [%2u] Registered instance.\r\n", h [index]);
 #endif
-		case 1:
-		case 2:
-		case 3:
-			/*if (trace)
-				trace_data (buf, cur_size);*/
+			case 1:
+			case 2:
+			case 3:
+				/*if (trace)
+					trace_data (buf, cur_size);*/
 			
-			data.counter = nsamples;
-			if (cur_size) {
+				data.counter = nsamples;
+				if (cur_size) {
 #ifdef DYNMSG
-				data.message = dbuf = malloc (cur_size - MSG_HDR_SIZE);
-				if (!data.message) {
-					printf ("DDS-W: No memory for dynamic sample data!");
-					exit (1);
-				}
+					data.message = dbuf = malloc (cur_size - MSG_HDR_SIZE);
+					if (!data.message) {
+						printf ("DDS-W: No memory for dynamic sample data!");
+						exit (1);
+					}
 #endif
-				sprintf (dbuf, "%9lu bytes ", (unsigned long) cur_size);
-				memcpy (dbuf + 16, buf, cur_size - MSG_HDR_SIZE - 16);
-				dbuf [cur_size - MSG_HDR_SIZE - 1] = '\0';
-			}
-			else {
+					sprintf (dbuf, "%9lu bytes ", (unsigned long) cur_size);
+					memcpy (dbuf + 16, buf, cur_size - MSG_HDR_SIZE - 16);
+					dbuf [cur_size - MSG_HDR_SIZE - 1] = '\0';
+				}
+				else {
 #ifdef DYNMSG
-				data.message = (char *) dp->data;
+					data.message = (char *) dp->data;
 #else
-				if (strlen (dp->data) + 1 > MSG_SIZE) {
-					memcpy (data.message, dp->data, MSG_SIZE - 1);
-					data.message [MSG_SIZE - 1] = '\0';
-				}
-				else
-					strcpy (data.message, dp->data);
+					if (strlen (dp->data) + 1 > MSG_SIZE) {
+						memcpy (data.message, dp->data, MSG_SIZE - 1);
+						data.message [MSG_SIZE - 1] = '\0';
+					}
+					else
+						strcpy (data.message, dp->data);
 #endif
-			}
-			if (verbose || trace) {
-				dbg_printf ("DDS-W: [%2u] ALIVE - %2u :%6llu - ", 
-							h [index],
+				}
+				if (verbose || trace) {
+					c = snprintf (buffer, 255, "DDS-W: [%2u] ALIVE - %2u :%6llu - ", 
+								h [index],
 #ifndef NO_KEY
 #ifdef LARGE_KEY
-							data.key [0],
+								data.key [0],
 #else
-							data.key,
+								data.key,
 #endif
 #else
-							0,
+								0,
 #endif
-							(unsigned long long) data.counter);
-				if (trace || !cur_size)
-					dbg_printf ("'%s'", data.message);
-				else
-					dbg_printf ("%9lu bytes", (unsigned long) cur_size);
-				dbg_printf ("\r\n");
-			}
-			do {
-				error = DDS_DataWriter_write (w, &data, h [index]);
-				/*if (error) {
-					printf ("DDS_DataWriter_write() failed! (error=%u)\r\n", error);
-					break;
-				}*/
-			}
-			while (error);
+								(unsigned long long) data.counter);
+					if (trace || !cur_size)
+						snprintf (buffer + c, 255 - c, "'%s'\r\n", data.message);
+					else
+						snprintf (buffer + c, 255 - c, "%9lu bytes\r\n", (unsigned long) cur_size);
+#ifdef LOG_DATA
+					log_printf (USER_ID, 0, "%s", buffer);
+#else
+					fprintf (stdout, "%s", buffer);
+#endif
+				}
+				do {
+					error = DDS_DataWriter_write (w, &data, h [index]);
+					/*if (error) {
+						printf ("DDS_DataWriter_write() failed! (error=%u)\r\n", error);
+						break;
+					}*/
+				}
+				while (error);
 #ifdef DYNMSG
-			if (cur_size)
-				free (dbuf);
+				if (cur_size)
+					free (dbuf);
 #endif
-			nsamples++;
-			if (op < 3)
-				break;
+				nsamples++;
+				if (op < 3)
+					break;
 
 #ifdef DO_UNREGISTER
-			if (h [index] >= 8) {
-				if (nsamples == 45)
-					error = 0;
-				if (verbose)
-					dbg_printf ("DDS-W: [%2u] Unregister instance\r\n", h [index]);
-				do {
-					error = DDS_DataWriter_unregister_instance (w, &data, h [index]);
-					/*if (error) {
-						printf ("DDS_DataWriter_unregister_instance() failed! (error=%u)\r\n", error);
-						break;
-					}*/
-				}
-				while (error);
-			}
-			else {
-				if (verbose)
-					dbg_printf ("DDS-W: [%2u] Dispose instance\r\n", h [index]);
-				do {
-					error = DDS_DataWriter_dispose (w, &data, h [index]);
-					/*if (error) {
-						printf ("DDS_DataWriter_dispose() failed! (error=%u)\r\n", error);
-						break;
-					}*/
-				}
-				while (error);
-			}
+				if (h [index] >= 8) {
+					if (nsamples == 45)
+						error = 0;
+					if (verbose) {
+						snprintf (buffer, 255, "DDS-W: [%2u] Unregister instance\r\n", h [index]);
+#ifdef LOG_DATA
+						log_printf (USER_ID, 0, "%s", buffer);
+#else
+						fprintf (stdout, "%s", buffer);
 #endif
+					}
+					do {
+						error = DDS_DataWriter_unregister_instance (w, &data, h [index]);
+						/*if (error) {
+							printf ("DDS_DataWriter_unregister_instance() failed! (error=%u)\r\n", error);
+							break;
+						}*/
+					}
+					while (error);
+				}
+				else {
+					if (verbose) {
+						snprintf (buffer, 255, "DDS-W: [%2u] Dispose instance\r\n", h [index]);
+#ifdef LOG_DATA
+						log_printf (USER_ID, 0, "%s", buffer);
+#else
+						fprintf (stdout, "%s", buffer);
+#endif
+					}
+					do {
+						error = DDS_DataWriter_dispose (w, &data, h [index]);
+						/*if (error) {
+							printf ("DDS_DataWriter_dispose() failed! (error=%u)\r\n", error);
+							break;
+						}*/
+					}
+					while (error);
+				}
+#endif
+				break;
+		}
+		if (cur_size < max_size && cur_size + inc_size > max_size)
+			cur_size = max_size;
+		else {
+			cur_size += inc_size;
+			if (cur_size > max_size)
+				cur_size = data_size;
+		}
+		if (!--max_sends) {
+			paused = 1;
 			break;
+		}
 	}
-	if (cur_size < max_size && cur_size + inc_size > max_size)
-		cur_size = max_size;
-	else {
-		cur_size += inc_size;
-		if (cur_size > max_size)
-			cur_size = data_size;
-	}
-	if (!--max_events)
-		paused = 1;
 }
 
 void dr_rejected (DDS_DataReaderListener  *self,
@@ -666,7 +759,7 @@ void dr_rejected (DDS_DataReaderListener  *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (reader)
 
-	dbg_printf ("DDS-R: Sample Rejected - T=%d, TC=%d - %s - {%u}\r\n",
+	printf ("DDS-R: Sample Rejected - T=%d, TC=%d - %s - {%u}\r\n",
 			status->total_count,
 			status->total_count_change,
 			reason_str [status->last_reason],
@@ -680,7 +773,7 @@ void dr_liveliness (DDS_DataReaderListener      *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (reader)
 
-	dbg_printf ("DDS-R: Liveliness Changed - A=%d, NA=%d, AC=%d, NAC=%d, {%u}\r\n",
+	printf ("DDS-R: Liveliness Changed - A=%d, NA=%d, AC=%d, NAC=%d, {%u}\r\n",
 			status->alive_count,
 			status->not_alive_count,
 			status->alive_count_change,
@@ -695,7 +788,7 @@ void dr_deadline (DDS_DataReaderListener            *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (reader)
 
-	dbg_printf ("DDS-R: Requested Deadline Missed - T=%d, TC=%d - {%u}\r\n",
+	printf ("DDS-R: Requested Deadline Missed - T=%d, TC=%d - {%u}\r\n",
 			status->total_count,
 			status->total_count_change,
 			status->last_instance_handle);
@@ -709,12 +802,12 @@ void dbg_print_policies (DDS_QosPolicyCountSeq *seq)
 	if (DDS_SEQ_LENGTH (*seq)) {
 		DDS_SEQ_FOREACH_ENTRY (*seq, i, p) {
 			if (i)
-				dbg_printf (", ");
+				printf (", ");
 			else
-				dbg_printf ("\t");
-			dbg_printf ("%s:%d", DDS_qos_policy (p->policy_id), p->count);
+				printf ("\t");
+			printf ("%s:%d", DDS_qos_policy (p->policy_id), p->count);
 		}
-		dbg_printf ("\r\n");
+		printf ("\r\n");
 	}
 }
 
@@ -725,7 +818,7 @@ void dr_inc_qos (DDS_DataReaderListener             *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (reader)
 
-	dbg_printf ("DDS-R: Requested Incompatible QoS - T=%d, TC=%d, L:%s\r\n",
+	printf ("DDS-R: Requested Incompatible QoS - T=%d, TC=%d, L:%s\r\n",
 			status->total_count,
 			status->total_count_change,
 			DDS_qos_policy (status->last_policy_id));
@@ -739,7 +832,7 @@ void dr_smatched (DDS_DataReaderListener        *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (reader)
 
-	dbg_printf ("DDS-R: Subscription Matched - T:%d, TC:%d, C:%d, CC:%d - {%u}\r\n",
+	printf ("DDS-R: Subscription Matched - T:%d, TC:%d, C:%d, CC:%d - {%u}\r\n",
 			status->total_count,
 			status->total_count_change,
 			status->current_count,
@@ -754,7 +847,7 @@ void dr_lost (DDS_DataReaderListener *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (reader)
 
-	dbg_printf ("DDS-R: Sample Lost - T:%d, TC:%d\r\n",
+	printf ("DDS-R: Sample Lost - T:%d, TC:%d\r\n",
 			status->total_count,
 			status->total_count_change);
 }
@@ -765,6 +858,20 @@ static cond_t lr_cond;
 static lock_t lr_lock;
 static int lr_ready = 0;
 #endif
+
+void write_to_file (char *buffer)
+{
+	FILE *f = fopen (fname, "a");
+
+	if (f == NULL) {
+		printf ("Error opening file!\r\n");
+		exit(1);
+	}
+
+	/* write buffer */
+	fprintf (f, "%s", buffer);
+	fclose (f);
+}
 
 void lr_data_avail_inst (DDS_DataReaderListener *l,
 	                 DDS_DataReader         dr,
@@ -779,6 +886,8 @@ void lr_data_avail_inst (DDS_DataReaderListener *l,
 	MsgData_t		*sample;
 	DDS_ReturnCode_t	error;
 	unsigned		key0;
+	char                    buffer [256];
+	int                     c;
 
 	ARG_NOT_USED (l)
 
@@ -795,9 +904,9 @@ void lr_data_avail_inst (DDS_DataReaderListener *l,
 
 		if (error) {
 			if (error != DDS_RETCODE_NO_DATA)
-				dbg_printf ("    Unable to read samples: error = %u!\r\n", error);
+				printf ("    Unable to read samples: error = %u!\r\n", error);
 #ifdef WRDISPATCH
-			dbg_printf ("    No more data ...\r\n");
+			printf ("    No more data ...\r\n");
 #endif
 			return;
 		}
@@ -805,7 +914,20 @@ void lr_data_avail_inst (DDS_DataReaderListener *l,
 			sample = DDS_SEQ_ITEM (rx_sample, 0);
 			info = DDS_SEQ_ITEM (rx_info, 0);
 			if (verbose) {
-				if (info->instance_state == DDS_ALIVE_INSTANCE_STATE) {
+#ifdef SAMPLE_INFO
+				printf ("SampleInfo: ss:%u,vs:%u,is:%u,dg:%u,nwg:%u,sr:%u,gr:%u,agr:%u\r\n", 
+						info->sample_state,
+						info->view_state,
+						info->instance_state,
+						info->disposed_generation_count,
+						info->no_writers_generation_count,
+						info->sample_rank,
+						info->generation_rank,
+						info->absolute_generation_rank);
+#endif
+				if (info->valid_data) {
+
+				/*instance_state == DDS_ALIVE_INSTANCE_STATE) {*/
 #ifndef NO_KEY
 #ifdef LARGE_KEY
 					key0 = sample->key [0];
@@ -816,20 +938,32 @@ void lr_data_avail_inst (DDS_DataReaderListener *l,
 					key0 = 0;
 #endif
 
-					dbg_printf ("DDS-R: [%2u] ALIVE - %2u :%6llu - ", 
-							info->instance_handle,
-							key0,
-							(unsigned long long) sample->counter);
+					c = snprintf (buffer, 255, "DDS-R: [%2u] ALIVE - %2u :%6llu - ", 
+						      info->instance_handle,
+						      key0,
+						      (unsigned long long) sample->counter);
 					if (trace || sample->message [10] != 'b')
-						dbg_printf ("'%s'", sample->message);
+						snprintf (buffer + c, 255 - c, "'%s'\r\n", sample->message);
 					else
-						dbg_printf ("%9lu bytes.", (unsigned long) strlen (sample->message) + MSG_HDR_SIZE + 1);
-					dbg_printf ("\r\n");
+						snprintf (buffer + c, 255 - c, "%9lu bytes.\r\n", (unsigned long) strlen (sample->message) + MSG_HDR_SIZE + 1);
+					if (file)
+						write_to_file (buffer);
+#ifdef LOG_DATA
+					log_printf (USER_ID, 0, "%s", buffer);
+#else
+					fprintf (stdout, "%s", buffer);
+#endif
 				}
-				else
-					dbg_printf ("DDS-R: [%2u] %s\r\n",
-							info->instance_handle,
-							kind_str [info->instance_state]);
+				else if (info->instance_state != DDS_ALIVE_INSTANCE_STATE) {
+					snprintf (buffer, 255, "DDS-R: [%2u] %s\r\n",
+						  info->instance_handle,
+						  kind_str [info->instance_state]);
+#ifdef LOG_DATA
+					log_printf (USER_ID, 0, "%s", buffer);
+#else
+					fprintf (stdout, "%s", buffer);
+#endif
+				}
 			}
 
 			/*if (trace && info->instance_state == DDS_ALIVE_INSTANCE_STATE)
@@ -837,14 +971,14 @@ void lr_data_avail_inst (DDS_DataReaderListener *l,
 			DDS_DataReader_return_loan (dr, &rx_sample, &rx_info);
 #ifdef SLOW_RREAD
 			if (key0 == 0) {
-				dbg_printf ("    Sleep a bit ... \r\n");
+				printf ("    Sleep a bit ... \r\n");
 				sleep (5);
-				dbg_printf ("    Wakeup ... \r\n");
+				printf ("    Wakeup ... \r\n");
 			}
 #endif
 		}
 		else {
-			dbg_printf ("    do_read: all read!\r\n");
+			printf ("    do_read: all read!\r\n");
 			return;
 		}
 	}
@@ -862,7 +996,7 @@ void dr_data_avail (DDS_DataReaderListener *l,
 
 	ARG_NOT_USED (l)
 
-	dbg_printf ("Listener!\r\n");
+	printf ("Listener!\r\n");
 
 #ifdef LARGE_KEY
 	sample.key [0] = messages [0].key [0];
@@ -873,7 +1007,7 @@ void dr_data_avail (DDS_DataReaderListener *l,
 	h = DDS_DataReader_lookup_instance (dr, &sample);
 	if (h) {
 		messages [0].handle = h;
-		dbg_printf ("(L) Dispatched instance ...\r\n");
+		printf ("(L) Dispatched instance ...\r\n");
 		for (i = 0; i < nreaders; i++)
 			if (ldr [i] == dr)
 				break;
@@ -881,17 +1015,17 @@ void dr_data_avail (DDS_DataReaderListener *l,
 		if (i == nreaders)
 			return;
 
-		dbg_printf ("(L) Take lock ... \r\n");
+		printf ("(L) Take lock ... \r\n");
 		lock_take (lr_lock);
 		prev_ready = lr_ready;
 		lr_ready |= (1 << i);
 		if (!prev_ready) {
-			dbg_printf ("(L) Got data: send signal!\r\n");
+			printf ("(L) Got data: send signal!\r\n");
 
 			cond_signal (lr_cond);
 		}
 		lock_release (lr_lock);
-		dbg_printf ("(L) Release lock ... \r\n");
+		printf ("(L) Release lock ... \r\n");
 	}
 #ifdef LARGE_KEY
 	sample.key [0] = messages [1].key [0] + 1;
@@ -902,13 +1036,13 @@ void dr_data_avail (DDS_DataReaderListener *l,
 	h = DDS_DataReader_lookup_instance (dr, &sample);
 	if (h) {
 		messages [1].handle = h;
-		dbg_printf ("(L) In-listener instance ...\r\n");
+		printf ("(L) In-listener instance ...\r\n");
 		lr_data_avail_inst (l, dr, h);
 	}
 #else
 	lr_data_avail_inst (l, dr, 0);
 #endif
-	dbg_printf ("(L) Done\r\n");
+	printf ("(L) Done\r\n");
 }
 
 #endif
@@ -947,22 +1081,22 @@ thread_result_t lr_consumer (void *arg)
 	for (; !aborting; ) {
 		lock_take (lr_lock);
 		if (!lr_ready) {
-			dbg_printf ("(C) Np more data: wait for signal!\r\n");
+			printf ("(C) Np more data: wait for signal!\r\n");
 			cond_wait (lr_cond, lr_lock);
-			dbg_printf ("(C) Got signal.\r\n");
+			printf ("(C) Got signal.\r\n");
 		}
 		lock_release (lr_lock);
 		do {
 			for (i = 0; i < nreaders; i++)
 				if ((lr_ready & (1 << i)) != 0) {
-					dbg_printf ("(C) Take lock.\r\n");
+					printf ("(C) Take lock.\r\n");
 					lock_take (lr_lock);
 					lr_ready &= ~(1 << i);
 					lock_release (lr_lock);
-					dbg_printf ("(C) Release lock.\r\n");
-					dbg_printf ("(C) Dispatched data!\r\n");
+					printf ("(C) Release lock.\r\n");
+					printf ("(C) Dispatched data!\r\n");
 					lr_data_avail_inst (&r_listener, ldr [i], messages [0].handle);
-					dbg_printf ("(C) Data procesed\r\n");
+					printf ("(C) Data processed\r\n");
 				}
 		}
 		while (lr_ready);
@@ -980,7 +1114,7 @@ void dw_deadline (DDS_DataWriterListener          *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (writer)
 
-	dbg_printf ("DDS-W: Offered Deadline Missed - T=%d, TC=%d - {%u}\r\n",
+	printf ("DDS-W: Offered Deadline Missed - T=%d, TC=%d - {%u}\r\n",
 			status->total_count,
 			status->total_count_change,
 			status->last_instance_handle);
@@ -993,7 +1127,7 @@ void dw_pmatched (DDS_DataWriterListener       *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (writer)
 
-	dbg_printf ("DDS-W: Publication Matched - T:%d, TC:%d, C:%d, CC:%d - {%u}\r\n",
+	printf ("DDS-W: Publication Matched - T:%d, TC:%d, C:%d, CC:%d - {%u}\r\n",
 			status->total_count,
 			status->total_count_change,
 			status->current_count,
@@ -1008,7 +1142,7 @@ void dw_liveliness (DDS_DataWriterListener   *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (writer)
 
-	dbg_printf ("DDS-W: Liveliness Lost - T:%d, TC:%d\r\n",
+	printf ("DDS-W: Liveliness Lost - T:%d, TC:%d\r\n",
 			status->total_count,
 			status->total_count_change);
 }
@@ -1020,7 +1154,7 @@ void dw_inc_qos (DDS_DataWriterListener           *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (writer)
 
-	dbg_printf ("DDS-W: Offered Incompatible QoS - T=%d, TC=%d, L:%s\r\n",
+	printf ("DDS-W: Offered Incompatible QoS - T=%d, TC=%d, L:%s\r\n",
 			status->total_count,
 			status->total_count_change,
 			DDS_qos_policy (status->last_policy_id));
@@ -1072,7 +1206,7 @@ void dcps_do_writer (DDS_DomainParticipant part)
 		DDS_DomainParticipantFactory_delete_participant (part);
 	}
 	if (verbose)
-		dbg_printf ("DDS Publisher created.\r\n");
+		printf ("DDS Publisher created.\r\n");
 
 	/* Test get_qos() fynctionality. */
 	if ((error = DDS_Publisher_get_qos (pub, &pqos)) != DDS_RETCODE_OK)
@@ -1123,7 +1257,23 @@ void dcps_do_writer (DDS_DomainParticipant part)
 		DDS_DomainParticipantFactory_delete_participant (part);
 	}
 	if (verbose)
-		dbg_printf ("DDS Writer created.\r\n");
+		printf ("DDS Writer created.\r\n");
+
+#ifdef UNREG_DISC
+	usleep (5000000);
+	for (i = 0; i < 3; i++) {
+		usleep (500000);
+		DDS_Publisher_delete_datawriter (pub, w);
+		usleep (500000);
+		w = DDS_Publisher_create_datawriter (pub, topic, &wr_qos, &w_listener, sm);
+		if (!w) {
+			fatal ("Unable to create a writer (2) \r\n");
+			DDS_DomainParticipantFactory_delete_participant (part);
+		}
+		if (verbose)
+			printf ("DDS Writer created (2).\r\n");
+	}
+#endif
 
 	/* Test get_qos() fynctionality. */
 	if ((error = DDS_DataWriter_get_qos (w, &dwqos)) != DDS_RETCODE_OK)
@@ -1138,7 +1288,7 @@ void dcps_do_writer (DDS_DomainParticipant part)
 		DDS_DomainParticipantFactory_delete_participant (part);
 	}
 	if (verbose)
-		dbg_printf ("DDS Subscriber created.\r\n");
+		printf ("DDS Subscriber created.\r\n");
 
 #ifdef PART_UPD
 
@@ -1204,12 +1354,23 @@ void dcps_do_writer (DDS_DomainParticipant part)
 			fatal ("DDS_DomainParticipant_create_datareader () returned an error!");
 
 		if (verbose)
-			dbg_printf ("DDS Extra Reader created.\r\n");
+			printf ("DDS Extra Reader created.\r\n");
+
+		/* Test get/set_qos() functionality. */
+		if ((error = DDS_DataReader_get_qos (ldr [i], &rd_qos)) != DDS_RETCODE_OK)
+			fatal ("DDS_DataReader_get_qos () failed (%s)!", DDS_error (error));
+
+		/* Test set_qos() functionality. */
+		if ((error = DDS_DataReader_set_qos (ldr [i], &rd_qos)) != DDS_RETCODE_OK)
+			fatal ("DDS_DataReader_set_qos () failed (%s)!", DDS_error (error));
 	}
 #endif
 	cur_size = data_size;
 	nsamples = 0;
 	i = 0;
+	
+	if (tests)
+		DDS_wait (start_delay);
 	do {
 		do_write ();
 		DDS_wait (sleep_time);
@@ -1217,14 +1378,14 @@ void dcps_do_writer (DDS_DomainParticipant part)
 #ifdef DYN_CFG
 		if (i == 5) {
 			if (verbose)
-				dbg_printf ("Set TCP_SEC_SERVER parameter to 'localhost:7300'!\r\n");
+				printf ("Set TCP_SEC_SERVER parameter to 'localhost:7300'!\r\n");
 			DDS_parameter_set ("TCP_SEC_SERVER", "localhost:7300");
 		}
 #endif
 #ifdef PART_UPD
 		if (i == 5) {
 			if (verbose)
-				dbg_printf ("DDS Publisher QoS update to: %s, %s\r\n", s0, s1);
+				printf ("DDS Publisher QoS update to: %s, %s\r\n", s0, s1);
 			dds_seq_reset (&pqos.partition.name);
 			dds_seq_append (&pqos.partition.name, &s0);
 			dds_seq_append (&pqos.partition.name, &s1);
@@ -1235,7 +1396,7 @@ void dcps_do_writer (DDS_DomainParticipant part)
 		}
 		else if (i == 15) {
 			if (verbose)
-				dbg_printf ("DDS Publisher QoS update to: %s, %s\r\n", s1, s0);
+				printf ("DDS Publisher QoS update to: %s, %s\r\n", s1, s0);
 			dds_seq_reset (&pqos.partition.name);
 			dds_seq_append (&pqos.partition.name, &s1);
 			dds_seq_append (&pqos.partition.name, &s0);
@@ -1246,7 +1407,7 @@ void dcps_do_writer (DDS_DomainParticipant part)
 		}
 		else if (i == 25) {
 			if (verbose)
-				dbg_printf ("DDS Publisher QoS update to: empty\r\n");
+				printf ("DDS Publisher QoS update to: empty\r\n");
 			dds_seq_reset (&pqos.partition.name);
 			if ((error = DDS_Publisher_set_qos (pub, &pqos)) != DDS_RETCODE_OK)
 				fatal ("DDS_Publisher_set_qos () failed (%s)!", DDS_error (error));
@@ -1256,7 +1417,7 @@ void dcps_do_writer (DDS_DomainParticipant part)
 #ifdef EXTRA_READER
 		if (i == 10) {
 			if (verbose)
-				dbg_printf ("DDS Subscriber QoS update to: %s, %s\r\n", s1, s0);
+				printf ("DDS Subscriber QoS update to: %s, %s\r\n", s1, s0);
 			dds_seq_reset (&sqos.partition.name);
 			dds_seq_append (&sqos.partition.name, &s1);
 			dds_seq_append (&sqos.partition.name, &s0);
@@ -1267,7 +1428,7 @@ void dcps_do_writer (DDS_DomainParticipant part)
 		}
 		else if (i == 20) {
 			if (verbose)
-				dbg_printf ("DDS Subscriber QoS update to: %s, %s\r\n", s2, s3);
+				printf ("DDS Subscriber QoS update to: %s, %s\r\n", s2, s3);
 			dds_seq_reset (&sqos.partition.name);
 			dds_seq_append (&sqos.partition.name, &s2);
 			dds_seq_append (&sqos.partition.name, &s3);
@@ -1278,7 +1439,7 @@ void dcps_do_writer (DDS_DomainParticipant part)
 		}
 		else if (i == 30) {
 			if (verbose)
-				dbg_printf ("DDS Subscriber QoS update to: empty\r\n");
+				printf ("DDS Subscriber QoS update to: empty\r\n");
 			dds_seq_reset (&sqos.partition.name);
 			if ((error = DDS_Subscriber_set_qos (sub, &sqos)) != DDS_RETCODE_OK)
 				fatal ("DDS_Subscriber_set_qos () failed (%s)!", DDS_error (error));
@@ -1288,9 +1449,12 @@ void dcps_do_writer (DDS_DomainParticipant part)
 #endif
 #endif
 	}
-	while (nsamples < count && !aborting);
-	if (nsamples >= count)
+	while (nsamples < max_samples && !aborting);
+	if (nsamples >= max_samples)
 		DDS_wait (2);
+
+	if (tests)
+		DDS_wait (start_delay);
 
 #ifdef EXTRA_READER
 	for (i = 0; i < nreaders; i++) {
@@ -1300,7 +1464,7 @@ void dcps_do_writer (DDS_DomainParticipant part)
 			fatal ("DDS_Subscriber_delete_datareader() failed (%s)!", DDS_error (error));
 
 		if (verbose)
-			dbg_printf ("DDS Extra Reader deleted.\r\n");
+			printf ("DDS Extra Reader deleted.\r\n");
 	}
 #endif
 	DDS_DataWriter_set_listener (w, NULL, 0);
@@ -1309,7 +1473,7 @@ void dcps_do_writer (DDS_DomainParticipant part)
 		fatal ("DDS_Publisher_delete_datawriter() failed (%s)!", DDS_error (error));
 
 	if (verbose)
-		dbg_printf ("DDS Writer deleted.\r\n");
+		printf ("DDS Writer deleted.\r\n");
 }
 
 #ifdef DO_DISC_LISTEN
@@ -1347,6 +1511,7 @@ void dcps_do_reader (DDS_DomainParticipant part)
 	DDS_StatusMask		sm;
 	MsgData_t		*sample;
 	unsigned		i, nchanges;
+	char                    buffer [256];
 #ifdef PART_UPD
 	char			*s0 = "Hi", *s1 = "Folks", *s2 = "cya", *s3 = "bye";
 #endif
@@ -1358,7 +1523,7 @@ void dcps_do_reader (DDS_DomainParticipant part)
 		DDS_DomainParticipantFactory_delete_participant (part);
 	}
 	if (verbose)
-		dbg_printf ("DDS Subscriber created.\r\n");
+		printf ("DDS Subscriber created.\r\n");
 
 	/* Test get_qos() fynctionality. */
 	if ((error = DDS_Subscriber_get_qos (sub, &sqos)) != DDS_RETCODE_OK)
@@ -1419,33 +1584,37 @@ void dcps_do_reader (DDS_DomainParticipant part)
 		fatal ("DDS_DomainParticipant_create_datareader () returned an error!");
 
 	if (verbose)
-		dbg_printf ("DDS Reader created.\r\n");
+		printf ("DDS Reader created.\r\n");
 
-	/* Test get_qos() fynctionality. */
+	/* Test get_qos() functionality. */
 	if ((error = DDS_DataReader_get_qos (dr, &drqos)) != DDS_RETCODE_OK)
 		fatal ("DDS_DataReader_get_qos () failed (%s)!", DDS_error (error));
+
+	/* Test set_qos() functionality. */
+	if ((error = DDS_DataReader_set_qos (dr, &drqos)) != DDS_RETCODE_OK)
+		fatal ("DDS_DataReader_set_qos () failed (%s)!", DDS_error (error));
 
 	ws = DDS_WaitSet__alloc ();
 	if (!ws)
 		fatal ("Unable to allocate a WaitSet!");
 
 	if (verbose)
-		dbg_printf ("DDS Waitset allocated.\r\n");
+		printf ("DDS Waitset allocated.\r\n");
 
 	rc = DDS_DataReader_create_readcondition (dr, ss, vs, is);
 	if (!rc)
 		fatal ("DDS_DataReader_create_readcondition () returned an error!");
 
 	if (verbose)
-		dbg_printf ("DDS Readcondition created.\r\n");
+		printf ("DDS Readcondition created.\r\n");
 
 	DDS_WaitSet_attach_condition (ws, rc);
-	for (i = 0; i < count && !aborting; i++) {
+	for (i = 0; i < max_samples && !aborting; i++) {
 
 #ifdef PART_UPD
 		if (i == 18) {
 			if (verbose)
-				dbg_printf ("DDS Subscriber QoS updated to: %s, %s\r\n", s2, s3);
+				printf ("DDS Subscriber QoS updated to: %s, %s\r\n", s2, s3);
 			dds_seq_reset (&sqos.partition.name);
 			dds_seq_append (&sqos.partition.name, &s2);
 			dds_seq_append (&sqos.partition.name, &s3);
@@ -1456,7 +1625,7 @@ void dcps_do_reader (DDS_DomainParticipant part)
 		}
 		else if (i == 28) {
 			if (verbose)
-				dbg_printf ("DDS Subscriber QoS updated to: %s, %s\r\n", s1, s0);
+				printf ("DDS Subscriber QoS updated to: %s, %s\r\n", s1, s0);
 			dds_seq_reset (&sqos.partition.name);
 			dds_seq_append (&sqos.partition.name, &s1);
 			dds_seq_append (&sqos.partition.name, &s0);
@@ -1467,7 +1636,7 @@ void dcps_do_reader (DDS_DomainParticipant part)
 		}
 		else if (i == 38) {
 			if (verbose)
-				dbg_printf ("DDS Subscriber QoS updated to: empty\r\n");
+				printf ("DDS Subscriber QoS updated to: empty\r\n");
 			dds_seq_reset (&sqos.partition.name);
 			if ((error = DDS_Subscriber_set_qos (sub, &sqos)) != DDS_RETCODE_OK)
 				fatal ("DDS_Subscriber_set_qos () failed (%s)!", DDS_error (error));
@@ -1477,7 +1646,7 @@ void dcps_do_reader (DDS_DomainParticipant part)
 #endif
 #if defined (DO_DISC_LISTEN) && defined (DDL_DELAY)
 		if (i == DDL_DELAY) {
-			dbg_printf ("Starting Discovery readers.\r\n");
+			printf ("Starting Discovery readers.\r\n");
 			start_disc_readers (part);
 		}
 #endif
@@ -1488,7 +1657,7 @@ void dcps_do_reader (DDS_DomainParticipant part)
 			continue;
 		}
 		if ((error = DDS_WaitSet_wait (ws, &conds, &to)) == DDS_RETCODE_TIMEOUT) {
-			/*dbg_printf ("WaitSet - Time-out!\r\n");*/
+			/*printf ("WaitSet - Time-out!\r\n");*/
 			continue;
 		}
 
@@ -1497,38 +1666,62 @@ void dcps_do_reader (DDS_DomainParticipant part)
 #else
 		error = DDS_DataReader_read (dr, &rx_sample, &rx_info, 1, ss, vs, is);
 #endif
-		/*dbg_printf ("WaitSet:read/take() result=%s!\r\n", DDS_error (error));*/
+		/*printf ("WaitSet:read/take() result=%s!\r\n", DDS_error (error));*/
 		if (error) {
 			if (error == DDS_RETCODE_NO_DATA)
 				continue;
 
-			dbg_printf ("Unable to read samples: error = %u!\r\n", error);
+			printf ("Unable to read samples: error = %u!\r\n", error);
 			break;
 		}
 		if (DDS_SEQ_LENGTH (rx_info)) {
 			sample = DDS_SEQ_ITEM (rx_sample, 0);
 			info = DDS_SEQ_ITEM (rx_info, 0);
 			nchanges = 1;
+#ifdef SAMPLE_INFO
+			printf ("SampleInfo: ss:%u,vs:%u,is:%u,dg:%u,nwg:%u,sr:%u,gr:%u,agr:%u\r\n", 
+					info->sample_state,
+					info->view_state,
+					info->instance_state,
+					info->disposed_generation_count,
+					info->no_writers_generation_count,
+					info->sample_rank,
+					info->generation_rank,
+					info->absolute_generation_rank);
+#endif
 			if (verbose) {
-				if (info->instance_state == DDS_ALIVE_INSTANCE_STATE) {
-					dbg_printf ("DDS-R: [%2u] ALIVE - %2u :%6llu - '%s'\r\n", 
-							info->instance_handle,
+				if (info->valid_data) {
+					snprintf (buffer, 255, "DDS-R: [%2u] ALIVE - %2u :%6llu - '%s'\r\n", 
+						  info->instance_handle,
 #ifndef NO_KEY
 #ifdef LARGE_KEY
-							sample->key [0],
+						  sample->key [0],
 #else
-							sample->key,
+						  sample->key,
 #endif
 #else
-							0,
+						  0,
 #endif
-							(unsigned long long) sample->counter,
-							sample->message);
+						  (unsigned long long) sample->counter,
+						  sample->message);
+					if (file)
+						write_to_file (buffer);
+#ifdef LOG_DATA
+					log_printf (USER_ID, 0, "%s", buffer);
+#else
+					fprintf (stdout, "%s", buffer);
+#endif
 				}
-				else
-					dbg_printf ("DDS-R: [%2u] %s\r\n",
+				else if (info->instance_state != DDS_ALIVE_INSTANCE_STATE) {
+					snprintf (buffer, 255, "DDS-R: [%2u] %s\r\n",
 							info->instance_handle,
 							kind_str [info->instance_state]);
+#ifdef LOG_DATA
+					log_printf (USER_ID, 0, "%s", buffer);
+#else
+					fprintf (stdout, "%s", buffer);
+#endif
+				}
 			}
 			/*if (trace && info->instance_state == DDS_ALIVE_INSTANCE_STATE)
 				trace_data (bufp, data_size);*/
@@ -1539,9 +1732,12 @@ void dcps_do_reader (DDS_DomainParticipant part)
 			i += nchanges;
 		}
 		else
-			dbg_printf ("WaitSet:read/take() - no info!\r\n");
+			printf ("WaitSet:read/take() - no info!\r\n");
 		dds_seq_reset (&conds);
 	}
+	if (tests) 
+		DDS_wait (start_delay);
+
 	error = DDS_DataReader_delete_contained_entities (dr);
 	if (error)
 		fatal ("DDS_DataReader_delete_contained_entities() failed (%s)!", DDS_error (error));
@@ -1556,7 +1752,7 @@ void dcps_do_reader (DDS_DomainParticipant part)
 	dds_seq_cleanup (&rx_info);
 	dds_seq_cleanup (&conds);
 	if (verbose)
-		dbg_printf ("DDS Reader deleted.\r\n");
+		printf ("DDS Reader deleted.\r\n");
 }
 
 #ifdef DO_DISC_LISTEN
@@ -1570,7 +1766,7 @@ static const char	*names [] = {
 
 void dump_key (DDS_BuiltinTopicKey_t *kp)
 {
-	dbg_printf ("%08x:%08x:%08x", ntohl (kp->value [0]), 
+	printf ("%08x:%08x:%08x", ntohl (kp->value [0]), 
 			ntohl (kp->value [1]), ntohl (kp->value [2]));
 }
 
@@ -1580,23 +1776,23 @@ void dump_user_data (DDS_OctetSeq *sp)
 	unsigned char	*p;
 
 	if (!DDS_SEQ_LENGTH (*sp))
-		dbg_printf ("<none>\r\n");
+		printf ("<none>\r\n");
 	else if (DDS_SEQ_LENGTH (*sp) < 10) {
 		DDS_SEQ_FOREACH_ENTRY (*sp, i, p)
-			dbg_printf ("%02x ", *p);
-		dbg_printf ("\r\n");
+			printf ("%02x ", *p);
+		printf ("\r\n");
 	}
 	else {
-		dbg_printf ("\r\n");
+		printf ("\r\n");
 		dbg_print_region (DDS_SEQ_ITEM_PTR (*sp, 0), DDS_SEQ_LENGTH (*sp), 0, 0);
 	}
 }
 
 void display_participant_info (DDS_ParticipantBuiltinTopicData *sample)
 {
-	dbg_printf ("\tKey                = ");
+	printf ("\tKey                = ");
 	dump_key (&sample->key);
-	dbg_printf ("\r\n\tUser data          = ");
+	printf ("\r\n\tUser data          = ");
 	dump_user_data (&sample->user_data.value);
 }
 
@@ -1620,28 +1816,28 @@ void participant_info (DDS_DataReaderListener *l,
 		error = DDS_DataReader_read (dr, &rx_sample, &rx_info, 1, ss, vs, is);
 		if (error) {
 			if (error != DDS_RETCODE_NO_DATA)
-				dbg_printf ("Unable to read Discovered Participant samples: error = %u!\r\n", error);
+				printf ("Unable to read Discovered Participant samples: error = %u!\r\n", error);
 			return;
 		}
 		if (DDS_SEQ_LENGTH (rx_info)) {
 			sample = DDS_SEQ_ITEM (rx_sample, 0);
 			info = DDS_SEQ_ITEM (rx_info, 0);
 			if (verbose) {
-				dbg_printf ("* ");
+				printf ("* ");
 				if (info->valid_data)
 					dump_key (&sample->key);
 				else {
 					DDS_DataReader_get_key_value (dr, &tmp, info->instance_handle);
 					dump_key (&tmp.key);
 				}
-				dbg_printf ("  ");
+				printf ("  ");
 				if ((info->view_state & DDS_NEW_VIEW_STATE) != 0)
-					dbg_printf ("New");
+					printf ("New");
 				else if (info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-					dbg_printf ("Updated");
+					printf ("Updated");
 				else
-					dbg_printf ("Deleted");
-				dbg_printf (" Participant\r\n");
+					printf ("Deleted");
+				printf (" Participant\r\n");
 				if (info->valid_data)
 					display_participant_info (sample);
 			}
@@ -1651,7 +1847,7 @@ void participant_info (DDS_DataReaderListener *l,
 			DDS_DataReader_return_loan (dr, &rx_sample, &rx_info);
 		}
 		else {
-			/*dbg_printf ("do_read: all read!\r\n");*/
+			/*printf ("do_read: all read!\r\n");*/
 			return;
 		}
 	}
@@ -1661,12 +1857,12 @@ void dump_duration (DDS_Duration_t *dp)
 {
 	if (dp->sec == DDS_DURATION_ZERO_SEC &&
 	    dp->nanosec == DDS_DURATION_ZERO_NSEC)
-		dbg_printf ("0s");
+		printf ("0s");
 	else if (dp->sec == DDS_DURATION_INFINITE_SEC &&
 	         dp->nanosec == DDS_DURATION_INFINITE_NSEC)
-		dbg_printf ("<infinite>");
+		printf ("<infinite>");
 	else
-		dbg_printf ("%d.%09us", dp->sec, dp->nanosec);
+		printf ("%d.%09us", dp->sec, dp->nanosec);
 }
 
 void dump_durability (DDS_DurabilityQosPolicy *dp)
@@ -1676,32 +1872,32 @@ void dump_durability (DDS_DurabilityQosPolicy *dp)
 	};
 
 	if (dp->kind <= DDS_PERSISTENT_DURABILITY_QOS)
-		dbg_printf ("%s", durability_str [dp->kind]);
+		printf ("%s", durability_str [dp->kind]);
 	else
-		dbg_printf ("?(%d)", dp->kind);
+		printf ("?(%d)", dp->kind);
 }
 
 void dump_history (DDS_HistoryQosPolicyKind k, int depth)
 {
 	if (k == DDS_KEEP_ALL_HISTORY_QOS)
-		dbg_printf ("All");
+		printf ("All");
 	else
-		dbg_printf ("Last %d", depth);
+		printf ("Last %d", depth);
 }
 
 void dump_resource_limits (int max_samples, int max_inst, int max_samples_per_inst)
 {
-	dbg_printf ("max_samples/instances/samples_per_inst=%d/%d/%d",
+	printf ("max_samples/instances/samples_per_inst=%d/%d/%d",
 			max_samples, max_inst, max_samples_per_inst);
 }
 
 void dump_durability_service (DDS_DurabilityServiceQosPolicy *sp)
 {
-	dbg_printf ("\r\n\t     Cleanup Delay = ");
+	printf ("\r\n\t     Cleanup Delay = ");
 	dump_duration (&sp->service_cleanup_delay);
-	dbg_printf ("\r\n\t     History       = ");
+	printf ("\r\n\t     History       = ");
 	dump_history (sp->history_kind, sp->history_depth);
-	dbg_printf ("\r\n\t     Limits        = ");
+	printf ("\r\n\t     Limits        = ");
 	dump_resource_limits (sp->max_samples,
 			      sp->max_instances,
 			      sp->max_samples_per_instance);
@@ -1714,77 +1910,77 @@ void dump_liveliness (DDS_LivelinessQosPolicy *lp)
 	};
 
 	if (lp->kind <= DDS_MANUAL_BY_TOPIC_LIVELINESS_QOS)
-		dbg_printf ("%s", liveness_str [lp->kind]);
+		printf ("%s", liveness_str [lp->kind]);
 	else
-		dbg_printf ("?(%d)", lp->kind);
-	dbg_printf (", Lease duration: ");
+		printf ("?(%d)", lp->kind);
+	printf (", Lease duration: ");
 	dump_duration (&lp->lease_duration);
 }
 
 void dump_reliability (DDS_ReliabilityQosPolicy *rp)
 {
 	if (rp->kind == DDS_BEST_EFFORT_RELIABILITY_QOS)
-		dbg_printf ("Best-effort");
+		printf ("Best-effort");
 	else if (rp->kind == DDS_RELIABLE_RELIABILITY_QOS)
-		dbg_printf ("Reliable");
+		printf ("Reliable");
 	else
-		dbg_printf ("?(%d)", rp->kind);
-	dbg_printf (", Max_blocking_time: ");
+		printf ("?(%d)", rp->kind);
+	printf (", Max_blocking_time: ");
 	dump_duration (&rp->max_blocking_time);
 }
 
 void dump_destination_order (DDS_DestinationOrderQosPolicyKind k)
 {
 	if (k == DDS_BY_RECEPTION_TIMESTAMP_DESTINATIONORDER_QOS)
-		dbg_printf ("Reception_Timestamp");
+		printf ("Reception_Timestamp");
 	else if (k == DDS_BY_SOURCE_TIMESTAMP_DESTINATIONORDER_QOS)
-		dbg_printf ("Source_Timestamp");
+		printf ("Source_Timestamp");
 	else
-		dbg_printf ("?(%d)", k);
+		printf ("?(%d)", k);
 }
 
 void dump_ownership (DDS_OwnershipQosPolicyKind k)
 {
 	if (k == DDS_SHARED_OWNERSHIP_QOS)
-		dbg_printf ("Shared");
+		printf ("Shared");
 	else if (k == DDS_EXCLUSIVE_OWNERSHIP_QOS)
-		dbg_printf ("Exclusive");
+		printf ("Exclusive");
 	else
-		dbg_printf ("?(%d)", k);
+		printf ("?(%d)", k);
 }
 
 void display_topic_info (DDS_TopicBuiltinTopicData *sample)
 {
-	dbg_printf ("\tKey                = ");
+	printf ("\tKey                = ");
 	dump_key (&sample->key);
-	dbg_printf ("\r\n\tName               = %s", sample->name);
-	dbg_printf ("\r\n\tType Name          = %s", sample->type_name);
-	dbg_printf ("\r\n\tDurability         = ");
+	printf ("\r\n\tName               = %s", sample->name);
+	printf ("\r\n\tType Name          = %s", sample->type_name);
+	printf ("\r\n\tDurability         = ");
 	dump_durability (&sample->durability);
-	dbg_printf ("\r\n\tDurability Service:");
+	printf ("\r\n\tDurability Service:");
 	dump_durability_service (&sample->durability_service);
-	dbg_printf ("\r\n\tDeadline           = ");
+	printf ("\r\n\tDeadline           = ");
 	dump_duration (&sample->deadline.period);
-	dbg_printf ("\r\n\tLatency Budget     = ");
+	printf ("\r\n\tLatency Budget     = ");
 	dump_duration (&sample->latency_budget.duration);
-	dbg_printf ("\r\n\tLiveliness         = ");
+	printf ("\r\n\tLiveliness         = ");
 	dump_liveliness (&sample->liveliness);
-	dbg_printf ("\r\n\tReliability        = ");
+	printf ("\r\n\tReliability        = ");
 	dump_reliability (&sample->reliability);
-	dbg_printf ("\r\n\tTransport Priority = %d", sample->transport_priority.value);
-	dbg_printf ("\r\n\tLifespan           = ");
+	printf ("\r\n\tTransport Priority = %d", sample->transport_priority.value);
+	printf ("\r\n\tLifespan           = ");
 	dump_duration (&sample->lifespan.duration);
-	dbg_printf ("\r\n\tDestination Order  = ");
+	printf ("\r\n\tDestination Order  = ");
 	dump_destination_order (sample->destination_order.kind);
-	dbg_printf ("\r\n\tHistory            = ");
+	printf ("\r\n\tHistory            = ");
 	dump_history (sample->history.kind, sample->history.depth);
-	dbg_printf ("\r\n\tResource Limits    = ");
+	printf ("\r\n\tResource Limits    = ");
 	dump_resource_limits (sample->resource_limits.max_samples,
 			      sample->resource_limits.max_instances,
 			      sample->resource_limits.max_samples_per_instance);
-	dbg_printf ("\r\n\tOwnership          = ");
+	printf ("\r\n\tOwnership          = ");
 	dump_ownership (sample->ownership.kind);
-	dbg_printf ("\r\n\tTopic Data         = ");
+	printf ("\r\n\tTopic Data         = ");
 	dump_user_data (&sample->topic_data.value);
 }
 
@@ -1803,36 +1999,36 @@ void topic_info (DDS_DataReaderListener *l,
 
 	ARG_NOT_USED (l)
 
-	/*dbg_printf ("do_read: got notification!\r\n");*/
+	/*printf ("do_read: got notification!\r\n");*/
 	for (;;) {
 		error = DDS_DataReader_read (dr, &rx_sample, &rx_info, 1, ss, vs, is);
 		if (error) {
 			if (error != DDS_RETCODE_NO_DATA)
-				dbg_printf ("Unable to read Discovered Topic samples: error = %u!\r\n", error);
+				printf ("Unable to read Discovered Topic samples: error = %u!\r\n", error);
 			return;
 		}
 		if (DDS_SEQ_LENGTH (rx_info)) {
 			sample = DDS_SEQ_ITEM (rx_sample, 0);
 			info = DDS_SEQ_ITEM (rx_info, 0);
 			if (verbose) {
-				dbg_printf ("* ");
+				printf ("* ");
 				if (info->valid_data)
 					dump_key (&sample->key);
 				else {
 					DDS_DataReader_get_key_value (dr, &tmp, info->instance_handle);
 					dump_key (&tmp.key);
 				}
-				dbg_printf ("  ");
+				printf ("  ");
 				if ((info->view_state & DDS_NEW_VIEW_STATE) != 0)
-					dbg_printf ("New");
+					printf ("New");
 				else if (info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-					dbg_printf ("Updated");
+					printf ("Updated");
 				else
-					dbg_printf ("Deleted");
-				dbg_printf (" Topic");
+					printf ("Deleted");
+				printf (" Topic");
 				if (info->valid_data)
-					dbg_printf (" (%s/%s)", sample->name, sample->type_name);
-				dbg_printf ("\r\n");
+					printf (" (%s/%s)", sample->name, sample->type_name);
+				printf ("\r\n");
 				if (info->valid_data)
 					display_topic_info (sample);
 			}
@@ -1842,7 +2038,7 @@ void topic_info (DDS_DataReaderListener *l,
 			DDS_DataReader_return_loan (dr, &rx_sample, &rx_info);
 		}
 		else {
-			/*dbg_printf ("do_read: all read!\r\n");*/
+			/*printf ("do_read: all read!\r\n");*/
 			return;
 		}
 	}
@@ -1854,12 +2050,12 @@ void dump_presentation (DDS_PresentationQosPolicy *pp)
 		"Instance", "Topic", "Group"
 	};
 
-	dbg_printf ("Scope: ");
+	printf ("Scope: ");
 	if (pp->access_scope <= DDS_GROUP_PRESENTATION_QOS)
-		dbg_printf ("%s", pres_str [pp->access_scope]);
+		printf ("%s", pres_str [pp->access_scope]);
 	else
-		dbg_printf ("?(%d)", pp->access_scope);
-	dbg_printf (", coherent: %d, ordered: %d", pp->coherent_access, pp->ordered_access);
+		printf ("?(%d)", pp->access_scope);
+	printf (", coherent: %d, ordered: %d", pp->coherent_access, pp->ordered_access);
 }
 
 void dump_partition (DDS_PartitionQosPolicy *pp)
@@ -1868,53 +2064,53 @@ void dump_partition (DDS_PartitionQosPolicy *pp)
 	char		**cp;
 
 	if (!DDS_SEQ_LENGTH (pp->name)) {
-		dbg_printf ("<none>");
+		printf ("<none>");
 		return;
 	}
 	DDS_SEQ_FOREACH_ENTRY (pp->name, i, cp) {
 		if (i)
-			dbg_printf (", ");
-		dbg_printf ("%s", *cp);
+			printf (", ");
+		printf ("%s", *cp);
 	}
 }
 
 void display_publication_info (DDS_PublicationBuiltinTopicData *sample)
 {
-	dbg_printf ("\tKey                = ");
+	printf ("\tKey                = ");
 	dump_key (&sample->key);
-	dbg_printf ("\r\n\tParticipant Key    = ");
+	printf ("\r\n\tParticipant Key    = ");
 	dump_key (&sample->participant_key);
-	dbg_printf ("\r\n\tTopic Name         = %s", sample->topic_name);
-	dbg_printf ("\r\n\tType Name          = %s", sample->type_name);
-	dbg_printf ("\r\n\tDurability         = ");
+	printf ("\r\n\tTopic Name         = %s", sample->topic_name);
+	printf ("\r\n\tType Name          = %s", sample->type_name);
+	printf ("\r\n\tDurability         = ");
 	dump_durability (&sample->durability);
-	dbg_printf ("\r\n\tDurability Service:");
+	printf ("\r\n\tDurability Service:");
 	dump_durability_service (&sample->durability_service);
-	dbg_printf ("\r\n\tDeadline           = ");
+	printf ("\r\n\tDeadline           = ");
 	dump_duration (&sample->deadline.period);
-	dbg_printf ("\r\n\tLatency Budget     = ");
+	printf ("\r\n\tLatency Budget     = ");
 	dump_duration (&sample->latency_budget.duration);
-	dbg_printf ("\r\n\tLiveliness         = ");
+	printf ("\r\n\tLiveliness         = ");
 	dump_liveliness (&sample->liveliness);
-	dbg_printf ("\r\n\tReliability        = ");
+	printf ("\r\n\tReliability        = ");
 	dump_reliability (&sample->reliability);
-	dbg_printf ("\r\n\tLifespan           = ");
+	printf ("\r\n\tLifespan           = ");
 	dump_duration (&sample->lifespan.duration);
-	dbg_printf ("\r\n\tUser Data          = ");
+	printf ("\r\n\tUser Data          = ");
 	dump_user_data (&sample->user_data.value);
-	dbg_printf ("\tOwnership          = ");
+	printf ("\tOwnership          = ");
 	dump_ownership (sample->ownership.kind);
-	dbg_printf ("\r\n\tOwnership strength = %d",
+	printf ("\r\n\tOwnership strength = %d",
 			sample->ownership_strength.value);
-	dbg_printf ("\r\n\tDestination Order  = ");
+	printf ("\r\n\tDestination Order  = ");
 	dump_destination_order (sample->destination_order.kind);
-	dbg_printf ("\r\n\tPresentation       = ");
+	printf ("\r\n\tPresentation       = ");
 	dump_presentation (&sample->presentation);
-	dbg_printf ("\r\n\tPartition          = ");
+	printf ("\r\n\tPartition          = ");
 	dump_partition (&sample->partition);
-	dbg_printf ("\r\n\tTopic Data         = ");
+	printf ("\r\n\tTopic Data         = ");
 	dump_user_data (&sample->topic_data.value);
-	dbg_printf ("\tGroup Data         = ");
+	printf ("\tGroup Data         = ");
 	dump_user_data (&sample->group_data.value);
 }
 
@@ -1933,36 +2129,36 @@ void publication_info (DDS_DataReaderListener *l,
 
 	ARG_NOT_USED (l)
 
-	/*dbg_printf ("do_read: got notification!\r\n");*/
+	/*printf ("do_read: got notification!\r\n");*/
 	for (;;) {
 		error = DDS_DataReader_read (dr, &rx_sample, &rx_info, 1, ss, vs, is);
 		if (error) {
 			if (error != DDS_RETCODE_NO_DATA)
-				dbg_printf ("Unable to read Discovered Publication samples: error = %u!\r\n", error);
+				printf ("Unable to read Discovered Publication samples: error = %u!\r\n", error);
 			return;
 		}
 		if (DDS_SEQ_LENGTH (rx_info)) {
 			sample = DDS_SEQ_ITEM (rx_sample, 0);
 			info = DDS_SEQ_ITEM (rx_info, 0);
 			if (verbose) {
-				dbg_printf ("* ");
+				printf ("* ");
 				if (info->valid_data)
 					dump_key (&sample->key);
 				else {
 					DDS_DataReader_get_key_value (dr, &tmp, info->instance_handle);
 					dump_key (&tmp.key);
 				}
-				dbg_printf ("  ");
+				printf ("  ");
 				if ((info->view_state & DDS_NEW_VIEW_STATE) != 0)
-					dbg_printf ("New");
+					printf ("New");
 				else if (info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-					dbg_printf ("Updated");
+					printf ("Updated");
 				else
-					dbg_printf ("Deleted");
-				dbg_printf (" Publication");
+					printf ("Deleted");
+				printf (" Publication");
 				if (info->valid_data)
-					dbg_printf (" (%s/%s)", sample->topic_name, sample->type_name);
-				dbg_printf ("\r\n");
+					printf (" (%s/%s)", sample->topic_name, sample->type_name);
+				printf ("\r\n");
 				if (info->valid_data)
 					display_publication_info (sample);
 			}
@@ -1972,7 +2168,7 @@ void publication_info (DDS_DataReaderListener *l,
 			DDS_DataReader_return_loan (dr, &rx_sample, &rx_info);
 		}
 		else {
-			/*dbg_printf ("do_read: all read!\r\n");*/
+			/*printf ("do_read: all read!\r\n");*/
 			return;
 		}
 	}
@@ -1980,37 +2176,37 @@ void publication_info (DDS_DataReaderListener *l,
 
 void display_subscription_info (DDS_SubscriptionBuiltinTopicData *sample)
 {
-	dbg_printf ("\tKey                = ");
+	printf ("\tKey                = ");
 	dump_key (&sample->key);
-	dbg_printf ("\r\n\tParticipant Key    = ");
+	printf ("\r\n\tParticipant Key    = ");
 	dump_key (&sample->participant_key);
-	dbg_printf ("\r\n\tTopic Name         = %s", sample->topic_name);
-	dbg_printf ("\r\n\tType Name          = %s", sample->type_name);
-	dbg_printf ("\r\n\tDurability         = ");
+	printf ("\r\n\tTopic Name         = %s", sample->topic_name);
+	printf ("\r\n\tType Name          = %s", sample->type_name);
+	printf ("\r\n\tDurability         = ");
 	dump_durability (&sample->durability);
-	dbg_printf ("\r\n\tDeadline           = ");
+	printf ("\r\n\tDeadline           = ");
 	dump_duration (&sample->deadline.period);
-	dbg_printf ("\r\n\tLatency Budget     = ");
+	printf ("\r\n\tLatency Budget     = ");
 	dump_duration (&sample->latency_budget.duration);
-	dbg_printf ("\r\n\tLiveliness         = ");
+	printf ("\r\n\tLiveliness         = ");
 	dump_liveliness (&sample->liveliness);
-	dbg_printf ("\r\n\tReliability        = ");
+	printf ("\r\n\tReliability        = ");
 	dump_reliability (&sample->reliability);
-	dbg_printf ("\r\n\tOwnership          = ");
+	printf ("\r\n\tOwnership          = ");
 	dump_ownership (sample->ownership.kind);
-	dbg_printf ("\r\n\tDestination Order  = ");
+	printf ("\r\n\tDestination Order  = ");
 	dump_destination_order (sample->destination_order.kind);
-	dbg_printf ("\r\n\tUser Data          = ");
+	printf ("\r\n\tUser Data          = ");
 	dump_user_data (&sample->user_data.value);
-	dbg_printf ("\tTime based filter  = ");
+	printf ("\tTime based filter  = ");
 	dump_duration (&sample->time_based_filter.minimum_separation);
-	dbg_printf ("\r\n\tPresentation       = ");
+	printf ("\r\n\tPresentation       = ");
 	dump_presentation (&sample->presentation);
-	dbg_printf ("\r\n\tPartition          = ");
+	printf ("\r\n\tPartition          = ");
 	dump_partition (&sample->partition);
-	dbg_printf ("\r\n\tTopic Data         = ");
+	printf ("\r\n\tTopic Data         = ");
 	dump_user_data (&sample->topic_data.value);
-	dbg_printf ("\tGroup Data         = ");
+	printf ("\tGroup Data         = ");
 	dump_user_data (&sample->group_data.value);
 }
 
@@ -2029,36 +2225,36 @@ void subscription_info (DDS_DataReaderListener *l,
 
 	ARG_NOT_USED (l)
 
-	/*dbg_printf ("do_read: got notification!\r\n");*/
+	/*printf ("do_read: got notification!\r\n");*/
 	for (;;) {
 		error = DDS_DataReader_read (dr, &rx_sample, &rx_info, 1, ss, vs, is);
 		if (error) {
 			if (error != DDS_RETCODE_NO_DATA)
-				dbg_printf ("Unable to read Discovered Subscription samples: error = %u!\r\n", error);
+				printf ("Unable to read Discovered Subscription samples: error = %u!\r\n", error);
 			return;
 		}
 		if (DDS_SEQ_LENGTH (rx_info)) {
 			sample = DDS_SEQ_ITEM (rx_sample, 0);
 			info = DDS_SEQ_ITEM (rx_info, 0);
 			if (verbose) {
-				dbg_printf ("* ");
+				printf ("* ");
 				if (info->valid_data)
 					dump_key (&sample->key);
 				else {
 					DDS_DataReader_get_key_value (dr, &tmp, info->instance_handle);
 					dump_key (&tmp.key);
 				}
-				dbg_printf ("  ");
+				printf ("  ");
 				if ((info->view_state & DDS_NEW_VIEW_STATE) != 0)
-					dbg_printf ("New");
+					printf ("New");
 				else if (info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-					dbg_printf ("Updated");
+					printf ("Updated");
 				else
-					dbg_printf ("Deleted");
-				dbg_printf (" Subscription");
+					printf ("Deleted");
+				printf (" Subscription");
 				if (info->valid_data)
-					dbg_printf (" (%s/%s)", sample->topic_name, sample->type_name);
-				dbg_printf ("\r\n");
+					printf (" (%s/%s)", sample->topic_name, sample->type_name);
+				printf ("\r\n");
 				if (info->valid_data)
 					display_subscription_info (sample);
 			}
@@ -2068,7 +2264,7 @@ void subscription_info (DDS_DataReaderListener *l,
 			DDS_DataReader_return_loan (dr, &rx_sample, &rx_info);
 		}
 		else {
-			/*dbg_printf ("do_read: all read!\r\n");*/
+			/*printf ("do_read: all read!\r\n");*/
 			return;
 		}
 	}
@@ -2124,7 +2320,7 @@ void start_disc_readers (DDS_DomainParticipant part)
 		fatal ("DDS_DomainParticipant_get_builtin_subscriber() returned an error!");
 
 	if (verbose)
-		dbg_printf ("DDS Builtin Subscriber found.\r\n");
+		printf ("DDS Builtin Subscriber found.\r\n");
 
 	for (i = 0; i < sizeof (names) / sizeof (char *); i++) {
 		dr = DDS_Subscriber_lookup_datareader (sub, names [i]);
@@ -2136,7 +2332,7 @@ void start_disc_readers (DDS_DomainParticipant part)
 			fatal ("DDS_DataReader_set_listener returned an error (%s)!", DDS_error (ret));
 
 		if (verbose)
-			dbg_printf ("DDS Discovery Reader created (%s).\r\n", names [i]);
+			printf ("DDS Discovery Reader created (%s).\r\n", names [i]);
 
 		switch (i) {
 			case 0:
@@ -2166,7 +2362,7 @@ void t_inconsistent (DDS_TopicListener           *self,
 	ARG_NOT_USED (self)
 	ARG_NOT_USED (topic)
 
-	dbg_printf ("DDS-T: Inconsistent Topic - T=%d, TC=%d\r\n",
+	printf ("DDS-T: Inconsistent Topic - T=%d, TC=%d\r\n",
 			status->total_count, status->total_count_change);
 }
 
@@ -2174,26 +2370,30 @@ DDS_TopicListener t_listener = {
 	t_inconsistent
 };
 
+
 #ifdef DDS_SECURITY
 
 #define fail_unless     assert
 
 static void enable_security (void)
 {
-#ifdef DDS_SECURITY
 	DDS_Credentials		credentials;
 	DDS_ReturnCode_t	error;
 #ifdef MSECPLUG_WITH_SECXML
 	/*int dhandle, thandle;*/
 #endif
-
 	error = DDS_SP_set_policy ();
 	if (error)
 		fatal ("DDS_SP_set_policy() returned error (%s)!", DDS_error (error));
 
 #ifdef MSECPLUG_WITH_SECXML
-	if (!parse_xml ("security.xml"))
-		fatal ("MSP: no DDS security rules in 'security.xml'!\r\n");
+	if (sfile) {
+		if (DDS_SP_parse_xml (sname))
+			fatal ("SP: no DDS security rules in '%s'!\r\n", sname);
+	}
+	else 
+		if (DDS_SP_parse_xml ("security.xml"))
+			fatal ("SP: no DDS security rules in 'security.xml'!\r\n");
 
 	/* some tests */
 	/*	dhandle = DDS_SP_get_domain_handle (~0);
@@ -2231,7 +2431,6 @@ static void enable_security (void)
 	}
 
 	error = DDS_Security_set_credentials ("DCPS Test program", &credentials);
-#endif
 }
 
 static void cleanup_security (void)
@@ -2249,6 +2448,10 @@ static void cleanup_security (void)
 		free (key_path);
 	if (realm_name)
 		free (realm_name);
+
+#ifdef DDS_NATIVE_SECURITY
+	DDS_Security_cleanup_credentials ();
+#endif
 }
 
 #endif
@@ -2282,17 +2485,20 @@ int main (int argc, const char *argv [])
 	DDS_set_pool_constraints (&reqs);
 	DDS_entity_name ("Technicolor DCPS Tester");
 
-#ifdef DDS_SECURITY
-	if (cert_path || key_path || engine_id)
-		enable_security ();
-#endif
 #ifdef DDS_DEBUG
 	DDS_Debug_start ();
 	DDS_Debug_abort_enable (&aborting);
-	DDS_Debug_control_enable (&paused, &max_events, &sleep_time);
+	DDS_Debug_control_enable (&paused, &max_sends, &sleep_time);
+	if (dbg_server)
+		DDS_Debug_server_start (2, dbg_port);
 #endif
 	for (; nruns; nruns--) {
 		aborting = 0;
+
+#ifdef DDS_SECURITY
+		if (cert_path || key_path || engine_id)
+			enable_security ();
+#endif
 #ifdef RTPS_USED
 #ifdef TRACE_DISC
 		DDS_Trace_defaults_set (DDS_TRACE_ALL);
@@ -2316,7 +2522,7 @@ int main (int argc, const char *argv [])
 				fatal ("Secondary DDS_DomainParticipantFactory_create_participant () failed!");
 
 			if (verbose)
-				dbg_printf ("Secondary DDS Domain Participant created.\r\n");
+				printf ("Secondary DDS Domain Participant created.\r\n");
 		}
 
 		/* Create a domain participant. */
@@ -2329,7 +2535,7 @@ int main (int argc, const char *argv [])
 		DDS_Trace_defaults_set (DDS_TRACE_NONE);
 #endif
 		if (verbose)
-			dbg_printf ("DDS Domain Participant created.\r\n");
+			printf ("DDS Domain Participant created.\r\n");
 
 		/* Test get_qos() fynctionality. */
 		if ((error = DDS_DomainParticipant_get_qos (part, &dpqos)) != DDS_RETCODE_OK)
@@ -2346,7 +2552,7 @@ int main (int argc, const char *argv [])
 			fatal ("DDS_DomainParticipant_register_type ('HelloWorldData') failed (%s)!", DDS_error (error));
 		}
 		if (verbose)
-			dbg_printf ("DDS Topic type ('%s') registered.\r\n", "HelloWorldData");
+			printf ("DDS Topic type ('%s') registered.\r\n", "HelloWorldData");
 
 		/* Create a topic */
 		sm = DDS_INCONSISTENT_TOPIC_STATUS;
@@ -2357,7 +2563,7 @@ int main (int argc, const char *argv [])
 			fatal ("DDS_DomainParticipant_create_topic ('HelloWorld') failed!");
 		}
 		if (verbose)
-			dbg_printf ("DDS Topic created.\r\n");
+			printf ("DDS Topic created.\r\n");
 
 		/* Test get_qos() fynctionality. */
 		if ((error = DDS_Topic_get_qos (topic, &tqos)) != DDS_RETCODE_OK)
@@ -2373,10 +2579,15 @@ int main (int argc, const char *argv [])
 		}
 
 		/* Start either a reader or a writer depending on program options. */
-		if (writer)
+		if (writer) 
 			dcps_do_writer (part);
 		else
 			dcps_do_reader (part);
+
+		if (tests) {
+			DDS_Debug_command ("sdisca");
+			DDS_wait (start_delay);
+		}
 
 		/* Delete the topic. */
 		error = DDS_DomainParticipant_delete_topic (part, topic);
@@ -2384,7 +2595,7 @@ int main (int argc, const char *argv [])
 			fatal ("DDS_DomainParticipant_delete_topic () failed (%s)!", DDS_error (error));
 
 		if (verbose)
-			dbg_printf ("DDS Topic deleted.\r\n");
+			printf ("DDS Topic deleted.\r\n");
 
 		free_HelloWorldData_type (part);
 
@@ -2394,7 +2605,7 @@ int main (int argc, const char *argv [])
 				fatal ("DDS_DomainParticipantFactory_delete_participant () failed (%s)!", DDS_error (error));
 
 			if (verbose)
-				dbg_printf ("Secondary DDS Participant deleted\r\n");
+				printf ("Secondary DDS Participant deleted\r\n");
 		}
 
 		error = DDS_DomainParticipant_delete_contained_entities (part);
@@ -2402,7 +2613,7 @@ int main (int argc, const char *argv [])
 			fatal ("DDS_DomainParticipant_delete_contained_entities () failed (%s)!", DDS_error (error));
 
 		if (verbose)
-			dbg_printf ("DDS Entities deleted\r\n");
+			printf ("DDS Entities deleted\r\n");
 
 # if 0
 		aborting = 0;
@@ -2417,24 +2628,24 @@ int main (int argc, const char *argv [])
 			fatal ("DDS_DomainParticipantFactory_delete_participant () failed (%s)!", DDS_error (error));
 
 		if (verbose)
-			dbg_printf ("DDS Participant deleted\r\n");
+			printf ("DDS Participant deleted\r\n");
 
+#ifdef DDS_SECURITY
+		if (cert_path || key_path || engine_id)
+			cleanup_security ();
+#endif
 		if (nruns > 1) {
 			DDS_wait (1000);
-			dbg_printf ("\r\n --- Dumping some data ---\r\n\r\n");
+			printf ("\r\n --- Dumping some data ---\r\n\r\n");
 			DDS_Debug_command ("spool");
 			DDS_Debug_command ("sstr");
 			DDS_Debug_command ("sloc");
 			DDS_Debug_command ("sfd");
 			DDS_Debug_command ("scxa");
 			DDS_wait (1000);
-			dbg_printf ("\r\n --- Restarting ---\r\n\r\n");
+			printf ("\r\n --- Restarting ---\r\n\r\n");
 		}
 	}
-#ifdef DDS_SECURITY
-	if (cert_path || key_path || engine_id)
-		cleanup_security ();
-#endif
 	return (0);
 }
 

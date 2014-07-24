@@ -91,16 +91,18 @@
 #ifndef __msecplug_h_
 #define	__msecplug_h_
 
+#ifndef DDS_NATIVE_SECURITY
+
 #include "dds/dds_security.h"
 #include "dds/dds_error.h"
 #include "openssl/engine.h"
 #include <openssl/ssl.h>
 
 /* secure transport types on both sides*/
-#define TRANS_BOTH_NONE 0
-#define TRANS_BOTH_DTLS_UDP 0x10001
-#define TRANS_BOTH_TLS_TCP 0x20002
-#define TRANS_BOTH_DDS_SEC 0x40004
+#define TRANS_BOTH_NONE		0
+#define TRANS_BOTH_DTLS_UDP	0x10001
+#define TRANS_BOTH_TLS_TCP	0x20002
+#define TRANS_BOTH_DDS_SEC	0x40004
 
 #define	MAX_DOMAINS		4	/* Max. # of domain specifications. */
 #define	MAX_DOMAIN_TOPICS	8	/* Max. # of domain topic rules. */
@@ -117,6 +119,8 @@ typedef unsigned DomainHandle_t;
 typedef unsigned ParticipantHandle_t;
 typedef unsigned TopicHandle_t;
 typedef unsigned PartitionHandle_t;
+typedef unsigned IdentityHandle_t;
+typedef unsigned PermissionsHandle_t;
 
 typedef enum {
 	DS_UNCLASSIFIED,
@@ -210,10 +214,10 @@ struct ms_domain_st {
 	unsigned        refreshed;
 };
 
-struct ms_domains_st {
+typedef struct ms_domains_st {
 	MSDomain_t	*head;
 	MSDomain_t	*tail;
-};
+} MSDomains_t;
 
 typedef struct ms_participant_st MSParticipant_t;
 struct ms_participant_st {
@@ -236,10 +240,10 @@ struct ms_participant_st {
 	unsigned        input_number;
 };
 
-struct ms_participants_st {
+typedef struct ms_participants_st {
 	MSParticipant_t	*head;
 	MSParticipant_t	*tail;
-};
+} MSParticipants_t;
 
 extern MSDomain_t		*domain_handles [MAX_DOMAINS];
 extern struct ms_domains_st	domains;
@@ -418,9 +422,15 @@ DDS_EXPORT void DDS_SP_engine_cleanup (void);
 
 /* Cleanup the engines */
 
-DDS_ReturnCode_t access_db_dump (void);
+void DDS_SP_dump (void);
 
 /* Dumps the access database to log_printf */
+
+int DDS_SP_parse_xml (const char *fn);
+
+/* Parse security rules from a security.xml file. */
+
+DDS_EXPORT void DDS_SP_init_library (void);
 
 /*********************************/
 /* DDS CALLBACK SETTER FUNCTIONS */
@@ -440,6 +450,8 @@ DDS_ReturnCode_t msp_set_acc_listener (msp_acc_revoke_listener_fct fct);
 
 
 /* Handle DDS security via this plugin. */
+
+#endif
 
 #endif /* !__msecplug_h_ */
 

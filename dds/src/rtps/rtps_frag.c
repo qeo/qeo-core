@@ -15,6 +15,7 @@
 /* rtps_frag.c -- Implements the functions to handle fragments. */
 
 #include "error.h"
+#include "prof.h"
 #include "set.h"
 #include "rtps_cfg.h"
 #include "rtps_data.h"
@@ -174,7 +175,7 @@ void mark_fragment (FragInfo_t *fip, DataFragSMsg *fragp, Change_t *cp)
 			sleft -= n;
 			if (sleft)
 				src += n;
-			else if (left) {
+			else if (dbp && left) {
 				dbp = dbp->next;
 				sleft = dbp->size;
 				src = dbp->data;

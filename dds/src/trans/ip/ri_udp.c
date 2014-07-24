@@ -50,7 +50,6 @@
 #include "ri_dtls.h"
 #endif
 
-/*#define DDS_ACT_LOG	** Do activation logging. */
 #define	DDS_MULTI_DISC	/* Allow multiple Discovery Locators (IPv4+IPv6). */
 
 #ifdef DDS_ACT_LOG
@@ -79,7 +78,7 @@ static int rtps_udpv4_enable (void)
 	struct in_addr	mc_dst;
 	int		error, set;
 #ifdef __APPLE__
-	int	yes = 1;
+	int		yes = 1;
 #endif
 	act_printf ("rtps_udpv4_enable()\r\n");
 
@@ -175,7 +174,8 @@ static int rtps_udpv4_enable (void)
 	}
 
 #ifdef __APPLE__
-	/* MSG_NOSIGNAL does not exist for Apple OS, but an equivalent socket option is available */
+	/* MSG_NOSIGNAL does not exist for Apple OS, but an equivalent socket option
+	   is available. */
 	if (setsockopt(send_udpv4->fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes)) < 0)
 		perror("__func__: setsockopt() failed");
 #endif
@@ -835,8 +835,8 @@ static void rtps_udpv4_mc_join (IP_CX *mc_cxp, void *data)
 	error = setsockopt (jp->uc_cxp->fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
 			    (char *) &jp->mreq, sizeof (jp->mreq));
 	if (error < 0) {
-		perror ("setsockopt (IP_ADD_MEMBERSHIP) failed");
-		err_printf ("rtps_udp_add_locator(%s): setsockopt (IP_ADD_MEMBERSHIP) for %s failed - errno = %d.",
+		/*perror ("setsockopt (IP_ADD_MEMBERSHIP) failed");*/
+		log_printf (RTPS_ID, 0, "rtps_udp_add_locator(%s): setsockopt (IP_ADD_MEMBERSHIP) for %s failed - errno = %d.",
 				jp->abuf, 
 				locator_str (&mc_cxp->locator->locator),
 				ERRNO);
@@ -1019,12 +1019,10 @@ static int rtps_udpv4_add_locator (DomainId_t    domain_id,
 				lp->port);
 	addr.sin_family = family = AF_INET;
 	addr.sin_port = htons (lp->port);
-    memset(addr.sin_zero, 0, sizeof(addr.sin_zero)); /* This is mandatory on apple platforms */
+	memset (addr.sin_zero, 0, sizeof (addr.sin_zero)); /* Mandatory on apple platforms. */
 	memcpy (&addr.sin_addr.s_addr, lp->address + 12, 4);
 	sa = (struct sockaddr *) &addr;
 	ssize = sizeof (addr);
-
-	log_printf (RTPS_ID, 0, "UDP: adding %s\r\n", buf);
 
 	/* Create the listening socket. */
 	cxp->fd = fd = socket (family, SOCK_DGRAM, IPPROTO_UDP);
@@ -1036,6 +1034,8 @@ static int rtps_udpv4_add_locator (DomainId_t    domain_id,
 		return (DDS_RETCODE_ALREADY_DELETED);
 	}
 	cxp->fd_owner = 1;
+
+	log_printf (RTPS_ID, 0, "UDP: adding %s on [%d]\r\n", buf, fd);
 
 	/* If multicast address: allow multiple binds per host. */
 	if (CLASSD (lp->address [12])) {

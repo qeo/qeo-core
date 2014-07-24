@@ -59,7 +59,7 @@ Cycles_t rdtsc(void)
 
 #define	sys_time_hr(hr)	hr = rdtsc()
 
-#define	MAX_PROFS	256	/* Max. # of profile contexts. */
+#define	MAX_PROFS	1024	/* Max. # of profile contexts. */
 
 /* History masks from short to long. We assume that most often we get short
    profile periods, e.g. <= 16ms. */
@@ -672,15 +672,13 @@ void prof_list (void)
 {
 	PROF		pp;
 	PROF_ST		p;
-	unsigned	i,j;
+	unsigned	i, j, l;
 	Cycles_t	new;
 	Time_t		diff;
 	const HIST_ID_ST *histp; 
 	int		old_prof_dis_flag;
 	int		valid_data = 0;
 
-	dbg_printf ("Name         calls   iters    freq  total  perc    min    avg    max worstcase\r\n");
-	dbg_printf ("----         -----   -----    ----  -----  ----    ---    ---    --- ---------\r\n");
 	old_prof_dis_flag = profile_disabled;
 	profile_disabled = 1;
 
@@ -694,6 +692,25 @@ void prof_list (void)
 	for (i = 0; i < MAX_PROFS; i++)
 		sorted [i] = i;
 	qsort (sorted, MAX_PROFS, sizeof (unsigned), cmp_fct);
+	for (i = 0, l = 0; i < MAX_PROFS; i++) {
+		pp = &profs [sorted [i]];
+		if (!pp->name || !pp->ncalls)
+			continue;
+
+		j = strlen (pp->name);
+		if (j > l)
+			l = j;
+	}
+	if (l < 10)
+		l = 10;
+	dbg_printf ("Name      ");
+	for (i = 10; i < l; i++)
+		dbg_printf (" ");
+	dbg_printf ("   calls   iters    freq  total  perc    min    avg    max worstcase\r\n");
+	dbg_printf ("----      ");
+	for (i = 10; i < l; i++)
+		dbg_printf (" ");
+	dbg_printf ("   -----   -----    ----  -----  ----    ---    ---    --- ---------\r\n");
 	for (i = 0; i < MAX_PROFS; i++) {
 		pp = &profs [sorted [i]];
 		if (!pp->name || !pp->ncalls)
@@ -701,7 +718,7 @@ void prof_list (void)
 
 		p = *pp;
 		valid_data = 1;
-		dbg_printf ("%-10s ", p.name);
+		dbg_printf ("%*s ", -l, p.name);
 		if (p.ncalls) {
 			large_number_print (p.ncalls, 0, 0);
 			large_number_print (p.niter,  0, 0);
@@ -721,17 +738,22 @@ void prof_list (void)
 
 	/* Now print histogram: if some data. */
 	if (valid_data) {
-		dbg_printf ("\r\nName        ") ;
+		dbg_printf ("\r\nName       ");
+		for (i = 10; i < l; i++)
+			dbg_printf (" ");
 		for (i = 0, histp = hist_masks; i < QTY_HIST; i++, histp++)
 			dbg_printf ("%s", histp->name);
 
-		dbg_printf ("\r\n----        ------- ------- ------- ------- ------- ------- ------- -------\r\n") ;
+		dbg_printf ("\r\n----       ");
+		for (i = 10; i < l; i++)
+			dbg_printf (" ");
+		dbg_printf ("------- ------- ------- ------- ------- ------- ------- -------\r\n") ;
 		for (i = 0; i < MAX_PROFS; i++) {
 			pp = &profs [sorted [i]];
 			if (!pp->name || !pp->ncalls)
 				continue;
 
-			dbg_printf ("%-11s ", pp->name);
+			dbg_printf ("%*s ", -l, pp->name);
 			for (j = 0; j < QTY_HIST; j++)
 				large_number_print (pp->hist [j], 0, 0);
 			dbg_printf ("\r\n");

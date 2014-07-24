@@ -12,6 +12,7 @@
  * See LICENSE file for more details.
  */
 
+#include "dds/dds_security.h"
 #include "dds/dds_xtypes.h"
 #include "dds/dds_dwriter.h"
 #include "dds/dds_dreader.h"
@@ -302,7 +303,8 @@ DDS_InstanceHandle_t DDS_DynamicDataWriter_lookup_instance (
 	if (!wp)
 		return (DDS_HANDLE_NIL);
 
-	handle_get (wp->w_topic, wp->w_cache, drp->ddata, 1, &h, &ret);
+	handle_get (wp->w_topic, wp->w_cache, drp->ddata, 1, 
+					ENC_DATA (&wp->w_lep), &h, &ret);
 	lock_release (wp->w_lock);
 	prof_stop (xt_w_lookup, 1);
 	return ((DDS_InstanceHandle_t) h);
@@ -968,7 +970,8 @@ DDS_InstanceHandle_t DDS_DynamicDataReader_lookup_instance (
 	if (!rp)
 		return (DDS_HANDLE_NIL);
 
-	handle_get (rp->r_topic, rp->r_cache, key_data, 1, &h, &ret);
+	handle_get (rp->r_topic, rp->r_cache, key_data, 1,
+					ENC_DATA (&rp->r_lep), &h, &ret);
 	lock_release (rp->r_lock);
 	return ((DDS_InstanceHandle_t) h);
 }

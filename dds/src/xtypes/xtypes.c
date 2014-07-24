@@ -84,31 +84,31 @@ const char *xt_collection_names [] = {
 };
 
 static Type dt_boolean  = { 
-	DDS_BOOLEAN_TYPE,   FINAL, 1, 0, 0, 0, 0, 0, BOOLEAN_TYPE_ID,   0, NULL
+	DDS_BOOLEAN_TYPE,   FINAL, 1, 0, 0, 0, 0, 0, 0, BOOLEAN_TYPE_ID,   0, NULL
 }, dt_byte = {
-	DDS_BYTE_TYPE,      FINAL, 1, 0, 0, 0, 0, 0, BYTE_TYPE_ID,      0, NULL
+	DDS_BYTE_TYPE,      FINAL, 1, 0, 0, 0, 0, 0, 0, BYTE_TYPE_ID,      0, NULL
 }, dt_int16 = {
-	DDS_INT_16_TYPE,    FINAL, 1, 0, 0, 0, 0, 0, INT_16_TYPE_ID,    0, NULL
+	DDS_INT_16_TYPE,    FINAL, 1, 0, 0, 0, 0, 0, 0, INT_16_TYPE_ID,    0, NULL
 }, dt_uint16 = {
-	DDS_UINT_16_TYPE,   FINAL, 1, 0, 0, 0, 0, 0, UINT_16_TYPE_ID,   0, NULL
+	DDS_UINT_16_TYPE,   FINAL, 1, 0, 0, 0, 0, 0, 0, UINT_16_TYPE_ID,   0, NULL
 }, dt_int32 = {
-	DDS_INT_32_TYPE,    FINAL, 1, 0, 0, 0, 0, 0, INT_32_TYPE_ID,    0, NULL
+	DDS_INT_32_TYPE,    FINAL, 1, 0, 0, 0, 0, 0, 0, INT_32_TYPE_ID,    0, NULL
 }, dt_uint32 = {
-	DDS_UINT_32_TYPE,   FINAL, 1, 0, 0, 0, 0, 0, UINT_32_TYPE_ID,   0, NULL
+	DDS_UINT_32_TYPE,   FINAL, 1, 0, 0, 0, 0, 0, 0, UINT_32_TYPE_ID,   0, NULL
 }, dt_int64 = {
-	DDS_INT_64_TYPE,    FINAL, 1, 0, 0, 0, 0, 0, INT_64_TYPE_ID,    0, NULL
+	DDS_INT_64_TYPE,    FINAL, 1, 0, 0, 0, 0, 0, 0, INT_64_TYPE_ID,    0, NULL
 }, dt_uint64 = {
-	DDS_UINT_64_TYPE,   FINAL, 1, 0, 0, 0, 0, 0, UINT_64_TYPE_ID,   0, NULL
+	DDS_UINT_64_TYPE,   FINAL, 1, 0, 0, 0, 0, 0, 0, UINT_64_TYPE_ID,   0, NULL
 }, dt_float32 = {
-	DDS_FLOAT_32_TYPE,  FINAL, 1, 0, 0, 0, 0, 0, FLOAT_32_TYPE_ID,  0, NULL
+	DDS_FLOAT_32_TYPE,  FINAL, 1, 0, 0, 0, 0, 0, 0, FLOAT_32_TYPE_ID,  0, NULL
 }, dt_float64 = {
-	DDS_FLOAT_64_TYPE,  FINAL, 1, 0, 0, 0, 0, 0, FLOAT_64_TYPE_ID,  0, NULL
+	DDS_FLOAT_64_TYPE,  FINAL, 1, 0, 0, 0, 0, 0, 0, FLOAT_64_TYPE_ID,  0, NULL
 }, dt_float128 = {
-	DDS_FLOAT_128_TYPE, FINAL, 1, 0, 0, 0, 0, 0, FLOAT_128_TYPE_ID, 0, NULL
+	DDS_FLOAT_128_TYPE, FINAL, 1, 0, 0, 0, 0, 0, 0, FLOAT_128_TYPE_ID, 0, NULL
 }, dt_char8 = {
-	DDS_CHAR_8_TYPE,    FINAL, 1, 0, 0, 0, 0, 0, CHAR_8_TYPE_ID,    0, NULL
+	DDS_CHAR_8_TYPE,    FINAL, 1, 0, 0, 0, 0, 0, 0, CHAR_8_TYPE_ID,    0, NULL
 }, dt_char32 = {
-	DDS_CHAR_32_TYPE,   FINAL, 1, 0, 0, 0, 0, 0, CHAR_32_TYPE_ID,   0, NULL
+	DDS_CHAR_32_TYPE,   FINAL, 1, 0, 0, 0, 0, 0, 0, CHAR_32_TYPE_ID,   0, NULL
 };
 
 static Type *primitive_types [] = {
@@ -1080,25 +1080,25 @@ void DDS_TypeDescriptor__clear (DDS_TypeDescriptor *desc)
 
 /* xt_real_type -- Return the real type of a type, i.e. not the alias. */
 
-Type *xt_real_type (Type *t)
+Type *xt_real_type (const Type *t)
 {
-	Type		*tp = t;
-	AliasType	*ap;
-	TypeDomain	*dp;
+	const Type		*tp = t;
+	const AliasType		*ap;
+	const TypeDomain	*dp;
 
 	if (!tp)
 		return (NULL);
 
 	if (tp->kind != DDS_ALIAS_TYPE)
-		return (tp);
+		return ((Type *) tp);
 
 	dp = xt_domain_ptr (t->scope);
 	do {
-		ap = (AliasType *) tp;
+		ap = (const AliasType *) tp;
 		tp = DOMAIN_TYPE (dp, ap->base_type);
 	}
 	while (tp->kind == DDS_ALIAS_TYPE);
-	return (tp);
+	return ((Type *) tp);
 }
 
 /* xt_d2type_ptr -- Convert a Dynamic Type pointer to a real type pointer. */
@@ -1533,6 +1533,7 @@ static Type *create_enum (TypeLib    *lp,
 	ep->type.shared = 0;
 	ep->type.building = 1;
 	ep->type.extended = (bound != 32);
+	ep->type.root = 0;
 	ep->type.nrefs = 1;
 	ep->type.name = str_new_cstr (name);
 	if (!ep->type.name) {
@@ -1592,6 +1593,7 @@ static Type *create_bitset (TypeLib    *lp,
 	bp->type.shared = 0;
 	bp->type.building = 1;
 	bp->type.extended = 1;
+	bp->type.root = 0;
 	bp->type.nrefs = 1;
 	bp->type.name = str_new_cstr (name);
 	if (!bp->type.name) {
@@ -1629,7 +1631,7 @@ Type *xt_bitset_type_create (TypeLib *lp, uint32_t bound, unsigned n)
 
 /* xt_type_ref -- Reference a type. */
 
-static void xt_type_ref (Type *tp)
+void xt_type_ref (Type *tp)
 {
 	if (!primitive_type (tp->kind)) {
 		rcl_access (tp);
@@ -1659,6 +1661,7 @@ static Type *create_alias (TypeLib    *lp,
 	ap->type.shared = 0;
 	ap->type.building = 1;
 	ap->type.extended = 0;
+	ap->type.root = 0;
 	ap->type.nrefs = 1;
 	ap->type.name = str_new_cstr (name);
 	if (!ap->type.name) {
@@ -1680,6 +1683,7 @@ static Type *create_alias (TypeLib    *lp,
 
 Type *xt_alias_type_create (TypeLib *lp, const char *name, Type *base_type)
 {
+	Type	*tp;
 	int	index;
 
 	if (!lp || !name || !base_type)
@@ -1689,7 +1693,10 @@ Type *xt_alias_type_create (TypeLib *lp, const char *name, Type *base_type)
 	if (index >= 0)
 		return (NULL);
 
-	return (create_alias (lp, name, base_type, -index - 1));
+	tp = create_alias (lp, name, base_type, -index - 1);
+	if (tp)
+		tp->building = 0;
+	return (tp);
 }
 
 /* create_array -- Create an Array type. */
@@ -1714,6 +1721,7 @@ static Type *create_array (TypeLib      *lp,
 	ap->collection.type.nested = 1;
 	ap->collection.type.shared = 0;
 	ap->collection.type.extended = 0;
+	ap->collection.type.root = 0;
 	ap->collection.type.nrefs = 1;
 	ap->collection.type.name = str_new_cstr (name);
 	if (!ap->collection.type.name) {
@@ -1756,6 +1764,7 @@ static Type *create_sequence (TypeLib    *lp,
 	sp->collection.type.nested = 1;
 	sp->collection.type.shared = 0;
 	sp->collection.type.extended = 0;
+	sp->collection.type.root = 0;
 	sp->collection.type.nrefs = 1;
 	sp->collection.type.name = str_new_cstr (name);
 	if (!sp->collection.type.name) {
@@ -1795,6 +1804,7 @@ static Type *create_string (TypeLib    *lp,
 	sp->collection.type.nested = 1;
 	sp->collection.type.shared = 0;
 	sp->collection.type.extended = 0;
+	sp->collection.type.root = 0;
 	sp->collection.type.nrefs = 1;
 	sp->collection.type.name = str_new_cstr (name);
 	if (!sp->collection.type.name) {
@@ -1853,7 +1863,7 @@ static Type *create_map (TypeLib    *lp,
 	if (ret)
 		goto struct_err;
 
-	ret = xt_type_finalize (sp, &ssize, NULL, NULL, NULL);
+	ret = xt_type_finalize (sp, &ssize, NULL, NULL, NULL, NULL);
 	if (ret)
 		goto struct_err;
 
@@ -1866,6 +1876,7 @@ static Type *create_map (TypeLib    *lp,
 	mp->collection.type.nested = 1;
 	mp->collection.type.shared = 0;
 	mp->collection.type.extended = 0;
+	mp->collection.type.root = 0;
 	mp->collection.type.nrefs = 1;
 	mp->collection.type.name = str_new_cstr (name);
 	if (!mp->collection.type.name)
@@ -1915,6 +1926,7 @@ static Type *create_union (TypeLib    *lp,
 	up->type.nested = 0;
 	up->type.shared = 0;
 	up->type.extended = 0;
+	up->type.root = 0;
 	up->type.nrefs = 1;
 	up->type.name = str_new_cstr (name);
 	if (!up->type.name) {
@@ -1990,6 +2002,7 @@ static Type *create_struct (TypeLib       *lp,
 	sp->type.nested = 0;
 	sp->type.shared = 0;
 	sp->type.extended = (base != NULL);
+	sp->type.root = 0;
 	sp->type.nrefs = 1;
 	sp->type.name = str_new_cstr (name);
 	if (!sp->type.name) {
@@ -2001,6 +2014,7 @@ static Type *create_struct (TypeLib       *lp,
 	sp->size = size;
 	sp->nmembers = n;
 	sp->keyed = 0;
+	sp->optional = 0;
 	if (n)
 		memset (sp->member, 0, n * sizeof (Member));
 	if (xt_lib_add (lp, &sp->type, index)) {
@@ -2052,6 +2066,7 @@ static Type *create_annotation (TypeLib *lp, const char *name,
 	ap->type.nested = 0;
 	ap->type.shared = 0;
 	ap->type.extended = 1;
+	ap->type.root = 0;
 	ap->type.nrefs = 1;
 	ap->type.name = str_new_cstr (name);
 	if (!ap->type.name) {
@@ -2460,7 +2475,6 @@ DDS_DynamicTypeBuilder DDS_DynamicTypeBuilderFactory_create_bitset_type (unsigne
 {
 	return ((DDS_DynamicTypeBuilder) xt_dynamic_ptr (xt_create_bitset_type (dyn_lib, bound), 1));
 }
-
 
 DDS_DynamicTypeBuilder DDS_DynamicTypeBuilderFactory_load_type_w_uri (
 					const char *document_url,
@@ -4188,7 +4202,6 @@ DDS_ReturnCode_t DDS_DynamicTypeMember_get_descriptor (DDS_DynamicTypeMember des
 			ret = DDS_RETCODE_BAD_PARAMETER;
 			break;
 	}
-
 	if (!ret && etp) {
 		if (etp->nrefs < T_REFS_MAX) {
 			mdp->type = (DDS_DynamicType) xt_dynamic_ptr (etp, 0);
@@ -6969,7 +6982,6 @@ static size_t xt_finalize_seqmap (size_t   iofs,
 
 	a = ALIGNM1 (ptr_t);
 	iofs = (iofs + ALIGNM1 (ptr_t)) & ~ALIGNM1 (ptr_t);
-	s = sizeof (DDS_VoidSeq);
 	etp = xt_type_ptr (tp->scope, stp->collection.element_type);
 	if (!etp)
 		return (0);
@@ -6978,8 +6990,11 @@ static size_t xt_finalize_seqmap (size_t   iofs,
 		*min_align = a;
 	*fofs = iofs;
 
-	stp->collection.element_size = xt_finalize (iofs, &eofs, min_align, etp,
-							       flags, key_mode);
+	s = xt_finalize (iofs, &eofs, min_align, etp, flags, key_mode);
+	if (!s)
+		return (0);
+
+	stp->collection.element_size = s;
 	*flags |= FF_DYNAMIC;
 	if (key_mode) {
 		*flags |= FF_DYN_KEYS;
@@ -6988,7 +7003,7 @@ static size_t xt_finalize_seqmap (size_t   iofs,
 	if (!stp->collection.element_size)
 		return (0);
 
-	return (s);
+	return (sizeof (DDS_VoidSeq));
 }
 
 static size_t xt_finalize_string (size_t   iofs,
@@ -7016,7 +7031,7 @@ static size_t xt_finalize_string (size_t   iofs,
 	*fofs = iofs;
 	stp->collection.element_size = s;
 	if (stp->bound)
-		return (s * stp->bound);
+		return (s * (stp->bound + 1));
 	else
 		return (sizeof (void *));
 }
@@ -7033,6 +7048,7 @@ static size_t xt_finalize_union (size_t   iofs,
 	size_t		ds, s, dsize, o, offset;
 	UnionMember	*mp;
 	unsigned	i, min_align;
+	int		dstring;
 
 	min_align = 0;
 	utp->size = 0;
@@ -7050,10 +7066,13 @@ static size_t xt_finalize_union (size_t   iofs,
 	dsize = 0;
 	for (i = 1, mp = &utp->member [1]; i < utp->nmembers; i++, mp++) {
 		ftp = xt_type_ptr (utp->type.scope, mp->member.id);
-		if (mp->member.is_optional ||
-		    mp->member.is_shareable ||
-		    (ftp->kind == DDS_STRING_TYPE && !((StringType *) ftp)->bound))
+		dstring = (ftp->kind == DDS_STRING_TYPE && !((StringType *) ftp)->bound);
+		if (mp->member.is_optional || mp->member.is_shareable || dstring) {
 			s = xt_finalize_pointer (iofs + ds, &o, &min_align);
+			*flags |= FF_DYNAMIC;
+			if (key_mode && mp->member.is_key && dstring)
+				*flags |= FF_DYN_KEYS;
+		}
 		else
 			s = xt_finalize (iofs + ds, &o, &min_align, ftp, 
 							       flags, key_mode);
@@ -7239,7 +7258,8 @@ DDS_ReturnCode_t xt_type_finalize (Type   *tp,
 				   size_t *ssize,
 				   int    *keys,
 				   int    *fkeysize,
-				   int    *dkeys)
+				   int    *dkeys,
+				   int    *dynamic)
 {
 	size_t		s;
 	size_t		ofs = 0;
@@ -7266,6 +7286,8 @@ DDS_ReturnCode_t xt_type_finalize (Type   *tp,
 		*fkeysize = (flags & FF_FKSIZE) != 0;
 	if (dkeys)
 		*dkeys = (flags & FF_DYN_KEYS) != 0;
+	if (dynamic)
+		*dynamic = (flags & FF_DYNAMIC) != 0;
 	return (DDS_RETCODE_OK);
 }
 
@@ -7323,9 +7345,10 @@ DDS_DynamicType DDS_DynamicTypeBuilder_build (DDS_DynamicTypeBuilder self)
 	size_t		size;
 	unsigned	oid;
 	int		oindex;
-	int		keys, *keysp;
+	int		keys;
 	int		fksize;
 	int		dkeys;
+	int		dynamic;
 	DDS_ReturnCode_t rc;
 
 	if (!self)
@@ -7393,23 +7416,25 @@ DDS_DynamicType DDS_DynamicTypeBuilder_build (DDS_DynamicTypeBuilder self)
 	rcl_access (tp);
 	tp->nrefs++;
 	rcl_done (tp);
+	tp->root = 1;
 	keys = 0;
 	if (tp->kind != DDS_ANNOTATION_TYPE) {
 		if (tp->kind == DDS_STRUCTURE_TYPE) {
 			stp = (StructureType *) tp;
 			if (stp->keyed)
 				keys = 1;
-			keysp = &keys;
 		}
 		else if (tp->kind == DDS_UNION_TYPE) {
 			utp = (UnionType *) tp;
 			if (utp->keyed)
 				keys = 1;
-			keysp = &keys;
 		}
-		else
-			keysp = NULL;
-		rc = xt_type_finalize (tp, &size, keysp, &fksize, &dkeys);
+		rc = xt_type_finalize (tp,
+				       &size,
+				       (keys) ? &keys : NULL,
+				       &fksize,
+				       &dkeys,
+				       &dynamic);
 		if (rc) {
 			xd_dyn_type_free (ndtp);
 			xt_lib_release (def_lib);
@@ -7421,12 +7446,14 @@ DDS_DynamicType DDS_DynamicTypeBuilder_build (DDS_DynamicTypeBuilder self)
 		stp->keys = (keys != 0);
 		stp->fksize = fksize;
 		stp->dkeys = dkeys;
+		stp->dynamic = dynamic;
 	}
 	else if (tp->kind == DDS_UNION_TYPE) {
 		utp = (UnionType *) tp;
 		utp->keys = (keys != 0);
 		utp->fksize = fksize;
 		utp->dkeys = dkeys;
+		utp->dynamic = dynamic;
 	}
 	xt_type_freeze (tp);
 	xt_lib_release (def_lib);
@@ -7571,7 +7598,8 @@ DDS_ReturnCode_t xt_type_member_flags_modify (Type     *tp,
 					      unsigned mask,
 					      unsigned flags)
 {
-	Member	*mp = xt_type_member (tp, index);
+	StructureType	*stp;
+	Member		*mp = xt_type_member (tp, index);
 
 	if (!mp || !mask)
 		return (DDS_RETCODE_BAD_PARAMETER);
@@ -7580,8 +7608,13 @@ DDS_ReturnCode_t xt_type_member_flags_modify (Type     *tp,
 		mp->is_key = (flags & XMF_KEY) != 0;
 		xt_key_update (tp);
 	}
-	if ((mask & XMF_OPTIONAL) != 0)
+	if ((mask & XMF_OPTIONAL) != 0) {
 		mp->is_optional = (flags & XMF_OPTIONAL) != 0;
+		if (mp->is_optional && tp->kind == DDS_STRUCTURE_TYPE) {
+			stp = (StructureType *) tp;
+			stp->optional = 1;
+		}
+	}
 	if ((mask & XMF_SHAREABLE) != 0)
 		mp->is_shareable = (flags & XMF_SHAREABLE) != 0;
 	return (DDS_RETCODE_OK);
@@ -7864,6 +7897,8 @@ void xt_data_free (const Type *tp, void *sample_data, int ptr)
 			int			found = 0;
 
 			ntp = xt_type_ptr (tp->scope, ump->member.id);
+                        if (!ntp) 
+                                break;
 			label = (int32_t) cdr_union_label (ntp, dp);
 			for (i = 1, ++ump, def_mp = NULL;
 			     i < utp->nmembers;
@@ -7891,7 +7926,9 @@ void xt_data_free (const Type *tp, void *sample_data, int ptr)
 					ump = def_mp;
 
 				ntp = xt_type_ptr (tp->scope, ump->member.id);
-				xt_data_free (ntp, dp + ump->member.offset,
+				if (!ntp) 
+                                        break;
+                                xt_data_free (ntp, dp + ump->member.offset,
 					      ump->member.is_optional ||
 					      ump->member.is_shareable);
 			}
@@ -8042,11 +8079,11 @@ int xt_data_copy (const Type *tp,
 			else {
 				n = strlen (sdata) + 1;
 				if (n >= stp->bound)
-					memcpy (ddata, sdata, stp->bound);
+					memcpy (ddata, sdata, stp->bound + 1);
 				else {
 					memcpy (ddata, sdata, n);
 					memset ((unsigned char *) ddata + n, 0, 
-						stp->bound - n);
+						stp->bound - n + 1);
 				}
 			}
 			return (DDS_RETCODE_OK);
@@ -8442,14 +8479,16 @@ static void xt_dump_alias (unsigned indent, AliasType *tp, int def, unsigned fla
 {
 	Type	*bp;
 
+	dbg_printf ("typedef ");
+	bp = xt_type_ptr (tp->type.scope, tp->base_type);
 	if (def) {
-		dbg_printf ("typedef ");
-		bp = xt_type_ptr (tp->type.scope, tp->base_type);
 		if (bp->kind == DDS_ALIAS_TYPE)
 			dbg_printf ("%s", str_ptr (bp->name));
 		else
 			xt_dump (indent + 1, bp, flags);
 	}
+	else
+		dbg_printf ("%s", str_ptr (bp->name));
 	dbg_printf (" %s", str_ptr (tp->type.name));
 }
 
@@ -8469,7 +8508,10 @@ static void xt_dump_array (unsigned indent, ArrayType *tp, int post, unsigned fl
 	else {
 		ep = xt_type_ptr (tp->collection.type.scope,
 				  tp->collection.element_type);
-		xt_dump (indent, ep, flags);
+		if (ep->root)
+			dbg_printf ("%s", str_ptr (ep->name));
+		else
+			xt_dump (indent, ep, flags);
 	}
 }
 
@@ -8482,7 +8524,10 @@ static void xt_dump_sequence (unsigned indent, SequenceType *tp, unsigned flags)
 	dbg_printf ("sequence<");
 	if (tp->collection.type.shared)
 		dbg_printf ("@Shared ");
-	xt_dump (indent, ep, flags);
+	if (ep->root)
+		dbg_printf ("%s", str_ptr (ep->name));
+	else
+		xt_dump (indent, ep, flags);
 	dbg_printf (">");
 	if (tp->bound)
 		dbg_printf ("<%u>", tp->bound);
@@ -8512,11 +8557,17 @@ static void xt_dump_map (unsigned indent, MapType *tp, unsigned flags)
 	dbg_printf ("map<");
 	kp = xt_type_ptr (tp->collection.type.scope, sp->member [0].id);
 	ep = xt_type_ptr (tp->collection.type.scope, sp->member [1].id);
-	xt_dump (indent, kp, flags);
+	if (kp->root)
+		dbg_printf ("%s", str_ptr (kp->name));
+	else
+		xt_dump (indent, kp, flags);
 	dbg_printf (", ");
 	if (tp->collection.type.shared)
 		dbg_printf ("@Shared ");
-	xt_dump (indent + 1, ep, flags);
+	if (ep->root)
+		dbg_printf ("%s", str_ptr (ep->name));
+	else
+		xt_dump (indent + 1, ep, flags);
 	if (tp->bound)
 		dbg_printf (", %u", tp->bound);
 	dbg_printf (">");
@@ -8567,7 +8618,10 @@ static void xt_dump_union (unsigned indent, UnionType *tp, unsigned flags)
 			}
 		dbg_print_indent (indent, NULL);
 		xtp = xt_type_ptr (tp->type.scope, mp->member.id);
-		xt_dump (indent, xtp, flags);
+		if (xtp->root)
+			dbg_printf ("%s", str_ptr (xtp->name));
+		else
+			xt_dump (indent, xtp, flags);
 		dbg_printf (" %s", str_ptr (mp->member.name));
 		if (xtp->kind == DDS_ARRAY_TYPE)
 			xt_dump_array (indent, (ArrayType *) xtp, 1, flags);
@@ -8614,7 +8668,10 @@ static void xt_dump_struct (unsigned indent, StructureType *tp, unsigned flags)
 			dbg_printf ("/*%lu*/", (unsigned long) mp->offset);
 		dbg_print_indent (indent, NULL);
 		xtp = xt_type_ptr (tp->type.scope, mp->id);
-		xt_dump (indent, xtp, flags);
+		if (xtp->root)
+			dbg_printf ("%s", str_ptr (xtp->name));
+		else
+			xt_dump (indent, xtp, flags);
 		dbg_printf (" %s", str_ptr (mp->name));
 		if (xtp->kind == DDS_ARRAY_TYPE)
 			xt_dump_array (indent, (ArrayType *) xtp, 1, flags);

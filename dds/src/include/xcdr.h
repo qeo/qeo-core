@@ -37,14 +37,15 @@ size_t cdr_marshalled_size (size_t           hsize,
    If successful, a non-0 length is returned.  If not, 0 will be returned and
    *error will be set to an error code. */
 
-DDS_ReturnCode_t cdr_marshall (void       *dest,
-			       size_t     hsize,
-			       const void *data,
-			       const Type *type,
-			       int        dynamic,
-			       int        key,
-			       int        msize,
-			       int        swap);
+size_t cdr_marshall (void             *dest,
+		     size_t           hsize,
+		     const void       *data,
+		     const Type       *type,
+		     int              dynamic,
+		     int              key,
+		     int              msize,
+		     int              swap,
+		     DDS_ReturnCode_t *error);
 
 /* Marshall a data sample (data) either from native data (dynamic=0) or from
    dynamic data (dynamic=1) in CDR format in the given buffer (dest) with the
@@ -53,8 +54,8 @@ DDS_ReturnCode_t cdr_marshall (void       *dest,
    fields are processed.  If key is set, the msize parameter indicates whether
    strings need to be padded to their maximum length.
    If swap is set, then the endianness of the marshalled data is reversed.
-   If successful, DDS_RETCODE_OK is returned. If not, a specific error is
-   returned. */
+   If successful, a non-0 length is returned.  If not, 0 will be returned and
+   a specific error code is returned in *error. */
 
 size_t cdr_unmarshalled_size (const void       *data,
 			      size_t           hsize,
@@ -62,6 +63,7 @@ size_t cdr_unmarshalled_size (const void       *data,
 			      int              key,
 			      int              msize,
 			      int              swap,
+			      size_t           size,
 			      DDS_ReturnCode_t *error);
 
 /* Get the unmarshalled, i.e. native data size from CDR-encoded source data
@@ -73,6 +75,8 @@ size_t cdr_unmarshalled_size (const void       *data,
    fields are padded to their maximum sizes.
    If swap is set, then the marshalled data is swapped and needs to have its
    endianness reversed for the correct byte order.
+   If size is given it overrides the actual type size, which can be useful for
+   storing extra data fields which are not marshalled/unmarshalled.
    If successful, a non-0 length is returned.  If not, 0 will be returned and
    *error will be set to an error code. */
 
@@ -82,7 +86,8 @@ DDS_ReturnCode_t cdr_unmarshall (void       *dest,
 				 const Type *type,
 				 int        key,
 			         int        msize,
-				 int        swap);
+				 int        swap,
+				 size_t     size);
 
 /* Get the unmarshalled, i.e. native data from a CDR-encoded source data sample
    (data) with the given alignment (hsize) into the given destination buffer
@@ -92,6 +97,8 @@ DDS_ReturnCode_t cdr_unmarshall (void       *dest,
    fields are padded to their maximum sizes.
    If swap is set, then the marshalled data is swapped and needs to have its
    endianness reversed for the correct byte order.
+   If size is given it overrides the actual type size, which can be useful for
+   storing extra data fields which are not marshalled/unmarshalled.
    If successful, DDS_RETCODE_OK will be returned.  If not, a specific error is
    returned. */
 
@@ -192,7 +199,7 @@ DDS_ReturnCode_t cdr_dump_native (unsigned   indent,
 DDS_ReturnCode_t cdr_dump_cdr (unsigned   indent,
 			       const void *data,
 			       size_t     hsize,
-			       Type       *type,
+			       const Type *type,
 			       int        key,
 			       int        msize,
 			       int        swap,

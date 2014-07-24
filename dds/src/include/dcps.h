@@ -248,6 +248,7 @@ HCI handle_get (Topic_t          *tp,
 		Cache_t          *cp,
 		const void       *data,
 		int              dynamic,
+		int              secure,
 		InstanceHandle   *h,
 		DDS_ReturnCode_t *ret);
 

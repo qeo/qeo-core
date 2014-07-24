@@ -25,5 +25,9 @@ int sfw_send_heartbeat (WRITER *wp, int alive);
 
 /* Send a Heartbeat message. */
 
+void sfw_restart (RemReader_t *rrp);
+
+/* Restart a stateful reliable remote reader proxy . */
+
 #endif /* !__rtps_sfrw_h_ */
 

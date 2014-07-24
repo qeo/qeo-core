@@ -15,6 +15,7 @@
 /* rtps_slbr.c -- Implements the RTPS Best-effort Reader. */
 
 #include "log.h"
+#include "prof.h"
 #include "error.h"
 #include "list.h"
 #include "rtps_cfg.h"

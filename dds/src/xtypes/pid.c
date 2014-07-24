@@ -12,6 +12,20 @@
  * See LICENSE file for more details.
  */
 
+/*
+ * Copyright (c) 2014 - Qeo LLC
+ *
+ * The source code form of this Qeo Open Source Project component is subject
+ * to the terms of the Clear BSD license.
+ *
+ * You can redistribute it and/or modify it under the terms of the Clear BSD
+ * License (http://directory.fsf.org/wiki/License:ClearBSD). See LICENSE file
+ * for more details.
+ *
+ * The Qeo Open Source Project also includes third party Open Source Software.
+ * See LICENSE file for more details.
+ */
+
 /* pid.c -- ParameterId handling functionality. */
 
 #include <stdio.h>
@@ -19,6 +33,7 @@
 #include "log.h"
 #include "sys.h"
 #include "error.h"
+#include "set.h"
 #include "pid.h"
 #ifdef DDS_TYPECODE
 #include "vtc.h"
@@ -26,6 +41,10 @@
 #include "md5.h"
 #include "thread.h"
 #include "dds/dds_aux.h"
+#ifdef DDS_NATIVE_SECURITY
+#include "sec_data.h"
+#include "xcdr.h"
+#endif
 
 /*#define INLINE_QOS_SUPPORT	** Define this to add Inline-QoS parameters. */
 /*#define LOCK_PARSE		** Define this to lock parsing. */
@@ -75,6 +94,10 @@ typedef enum pid_parameter_type {
 	PT_KeyHash,
 	PT_StatusInfo
 #ifdef DDS_SECURITY
+#ifdef DDS_NATIVE_SECURITY
+      ,	PT_Token,
+	PT_VToken
+#endif
       ,	PT_SecLoc
 #endif
 #ifdef DDS_TYPECODE
@@ -301,7 +324,9 @@ static PIDDesc_t known_pids [] = {
 		  offsetof (SPDPdiscoveredParticipantData, proxy.builtins),
 		  -1, -1, -1 }},
 	{ "PROPERTY_LIST",      PID_PROPERTY_LIST,              PT_PropertySequence,
-		{ -1, -1, -1, -1, -1 }},
+		{ -1,
+		  offsetof (SPDPdiscoveredParticipantData, properties),
+		  -1, -1, -1 }},
 	{ "ENDPOINT_GUID",      PID_ENDPOINT_GUID,              PT_GUID,
 		{ -1, -1,
 		  offsetof (DiscoveredReaderData, proxy.guid),
@@ -331,11 +356,34 @@ static PIDDesc_t known_pids [] = {
 	{ "STATUS_INFO",        PID_STATUS_INFO,                PT_StatusInfo,
 		{ offsetof (InlineQos_t, status_info),
 		  -1, -1, -1, -1 }},
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	{ "ID_TOKEN", 		PID_ID_TOKEN,			PT_Token,
+		{ -1,
+		  offsetof (SPDPdiscoveredParticipantData, id_tokens),
+		  -1, -1, -1 }},
+	{ "PERMISSIONS_TOKEN", 	PID_PERMISSIONS_TOKEN,		PT_Token,
+		{ -1,
+		  offsetof (SPDPdiscoveredParticipantData, p_tokens),
+		  -1, -1, -1 }},
+	{ "DATA_TAGS", 		PID_DATA_TAGS,			PT_PropertySequence,
+		{ -1, -1,
+		  offsetof (DiscoveredReaderData, tags),
+		  offsetof (DiscoveredWriterData, tags),
+		  -1 }},
+#endif
 	{ "SENTINEL",           PID_SENTINEL,                   PT_End,
 		{  0,  0,  0,  0,  0 }}
 };
 
 #define	N_VENDOR_PIDS	(sizeof (vendor_pids) / sizeof (PIDDesc_t))
+
+#ifdef DDS_SECURITY
+#ifdef DDS_NATIVE_SECURITY
+#define	PT_TOKEN	PT_VToken
+#else
+#define	PT_TOKEN	PT_Data
+#endif
+#endif
 
 static PIDDesc_t vendor_pids [] = {
 	{ "VERSION",		PID_V_VERSION,			PT_Long,
@@ -355,13 +403,13 @@ static PIDDesc_t vendor_pids [] = {
 		{ -1,
 		  offsetof (SPDPdiscoveredParticipantData, proxy.sec_locs),
 		  -1, -1, -1 }},
-	{ "SEC_ID",		PID_V_IDENTITY,			PT_Data,
+	{ "SEC_ID",		PID_V_IDENTITY,			PT_TOKEN,
 		{ -1,
-		  offsetof (SPDPdiscoveredParticipantData, identity),
+		  offsetof (SPDPdiscoveredParticipantData, id_tokens),
 		  -1, -1, -1 }},
-	{ "SEC_PERMS",		PID_V_PERMS,			PT_Data,
+	{ "SEC_PERMS",		PID_V_PERMS,			PT_TOKEN,
 		{ -1,
-		  offsetof (SPDPdiscoveredParticipantData, permissions),
+		  offsetof (SPDPdiscoveredParticipantData, p_tokens),
 		  -1, -1, -1 }}
 #endif
 #ifdef DDS_TYPECODE
@@ -735,40 +783,6 @@ static PIDParDesc_t pid_uint32_desc = {
 };
 
 
-/* PID functions on StatusInfo_t:
-   ------------------------------ */
-
-static int pid_sinfo_parse (ParameterId_t       id,
-			    void                *dst,
-			    const unsigned char *p,
-			    unsigned            maxsize,
-			    int                 swap)
-{
-	ARG_NOT_USED (id)
-	ARG_NOT_USED (maxsize)
-	ARG_NOT_USED (swap)
-
-	memcpy32 ((unsigned char *) dst, p);
-	return (DDS_RETCODE_OK);
-}
-
-static ssize_t pid_sinfo_write (unsigned char *dst, const void *src)
-{
-	memcpy32 (dst, src);
-
-	return (4);
-}
-
-
-static PIDParDesc_t pid_sinfo_desc = {
-	PPF_SWAP,
-	4,
-	pid_sinfo_parse,
-	NULL,
-	pid_sinfo_write
-};
-
-
 /* PID functions on SequenceNumber_t:
    --------------------------------- */
 
@@ -930,17 +944,16 @@ static int pid_data_parse (ParameterId_t       id,
 		walk->data = walk->dbp->data;
 		walk->left = walk->dbp->size;
 
-		csize = walk->dbp->size >= len ? len : walk->dbp->size;
+		csize = (walk->dbp->size >= len) ? len : walk->dbp->size;
 
 		if (str_set_chunk (*strpp, walk->data, off, csize))
 			return (DDS_RETCODE_BAD_PARAMETER);
-		off += csize;
 
+		off += csize;
 		len -= csize;
 		maxsize -= csize;
 	}
-
-	if (len != 0)
+	if (len)
 		return (DDS_RETCODE_BAD_PARAMETER);
 
 	walk->left -= csize;
@@ -1225,94 +1238,6 @@ static PIDParDesc_t pid_locator_desc = {
 	NULL,
 	pid_locator_write
 };
-
-#ifdef DDS_SECURITY
-
-/* PID functions on Security Locator fields:
-   ----------------------------------------- */
-
-/* Security locators are encoded as:
-	SecurityProtocol proto;			{uint32}
-	LocatorKind kind;			{uint32}
-	ulong port;				{uint32}
-	unsigned char address [16];		{16*uint8}
- */
-
-#define	PID_SECLOC_SIZE	(sizeof (uint32_t) * 3 + 16)
-
-static int pid_secloc_parse (ParameterId_t       id,
-		             void                *dst,
-			     const unsigned char *p,
-			     unsigned            maxsize,
-			     int                 swap)
-{
-	Locator_t	loc;
-	LocatorList_t	*lp = (LocatorList_t *) dst;
-	LocatorNode_t	*np;
-	Scope_t		scope;
-	unsigned	flags;
-	uint32_t	proto;
-
-	ARG_NOT_USED (id)
-
-	if (maxsize != PID_SECLOC_SIZE)
-		return (DDS_RETCODE_BAD_PARAMETER);
-
-	if (swap) {
-		memcswap32 (&proto, p);
-		p += sizeof (uint32_t);
-		memcswap32 (&loc.kind, p);
-		p += sizeof (uint32_t);
-		memcswap32 (&loc.port, p);
-	}
-	else {
-		memcpy (&proto, p, sizeof (uint32_t));
-		p += sizeof (uint32_t);
-		memcpy (&loc.kind, p, sizeof (uint32_t));
-		p += sizeof (uint32_t);
-		memcpy (&loc.port, p, sizeof (uint32_t));
-	}
-	p += sizeof (uint32_t);
-	memcpy (loc.address, p, sizeof (loc.address));
-
-	if (loc.kind == LOCATOR_KIND_UDPv4)
-		scope = sys_ipv4_scope (loc.address + 12);
-#ifdef DDS_IPV6
-	else if (loc.kind == LOCATOR_KIND_UDPv6)
-		scope = sys_ipv6_scope (loc.address);
-#endif
-	else
-		scope = UNKNOWN_SCOPE;
-	flags = LOCF_DATA | LOCF_META | LOCF_UCAST | LOCF_SECURE | LOCF_SERVER;
-	np = locator_list_add (lp, loc.kind, loc.address, loc.port, 0, scope, flags, proto);
-	return ((np) ? DDS_RETCODE_OK : DDS_RETCODE_OUT_OF_RESOURCES);
-}
-
-static ssize_t pid_secloc_write (unsigned char *dst, const void *src)
-{
-	const Locator_t	*lp = (const Locator_t *) src;
-	uint32_t	proto;
-
-	proto = lp->sproto;
-	memcpy (dst, &proto, sizeof (uint32_t));
-	dst += sizeof (uint32_t);
-	memcpy (dst, &lp->kind, sizeof (uint32_t));
-	dst += sizeof (uint32_t);
-	memcpy (dst, &lp->port, sizeof (uint32_t));
-	dst += sizeof (uint32_t);
-	memcpy (dst, lp->address, sizeof (lp->address));
-	return (sizeof (uint32_t) * 3 + sizeof (lp->address));
-}
-
-static PIDParDesc_t pid_secloc_desc = {
-	PPF_SWAP | PPF_MULTIPLE,
-	sizeof (uint32_t) * 3 + 16,
-	pid_secloc_parse,
-	NULL,
-	pid_secloc_write
-};
-
-#endif
 
 /* pid_uia_parse -- Parse an array of 32-bit integers. */
 
@@ -1890,7 +1815,7 @@ static int pid_content_f_property_parse (ParameterId_t       id,
 	if (ret)
 		goto error;
 
-	ret= pid_cdr_strings_parse (&fp->expression_pars, walk, &maxsize, swap);
+	ret = pid_cdr_strings_parse (&fp->expression_pars, walk, &maxsize, swap);
 	if (ret)
 		goto error;
 
@@ -2007,44 +1932,111 @@ static PIDParDesc_t pid_res_limits_desc = {
 	 } Property_t
 	> */
 
+static void free_properties (Property_t *list)
+{
+	Property_t	*pp;
+
+	while (list) {
+		pp = list;
+		list = list->next;
+		if (pp->name)
+			str_unref (pp->name);
+		if (pp->value)
+			str_unref (pp->value);
+		xfree (pp);
+	}
+}
+
 static int pid_propertyseq_parse (ParameterId_t       id,
 		                  void                *dst,
 			          const unsigned char *p,
 			          unsigned            maxsize,
 			          int                 swap)
 {
+	Property_t		*head, *tail, *pp, **ppp = (Property_t **) dst;
+	uint32_t		n, i;
+	unsigned char		buffer [4];
+	const unsigned char	*q;
+	DBW			*walk = (DBW *) p;
+	int			ret;
+
 	ARG_NOT_USED (id)
-	ARG_NOT_USED (dst)
-	ARG_NOT_USED (p)
-	ARG_NOT_USED (maxsize)
-	ARG_NOT_USED (swap)
 
-	/* ... TBC ... */
+	if (maxsize < sizeof (uint32_t))
+		return (DDS_RETCODE_BAD_PARAMETER);
 
-	return (DDS_RETCODE_UNSUPPORTED);
+	DB_DATA_GET (q, unsigned char *, walk, 4, buffer);
+	if (swap)
+		memcswap32 (&n, q);
+	else
+		memcpy32 (&n, q);
+	maxsize -= sizeof (uint32_t);
+	head = tail = NULL;
+	for (i = 0; i < n; i++) {
+		pp = xmalloc (sizeof (Property_t));
+		if (!pp)
+			goto failed;
+
+		pp->name = pp->value = NULL;
+		pp->next = NULL;
+		ret = pid_cdr_string_parse (&pp->name, walk, &maxsize, swap);
+		if (ret) {
+			xfree (pp);
+			goto failed;
+		}
+		ret = pid_cdr_string_parse (&pp->value, walk, &maxsize, swap);
+		if (ret) {
+			if (pp->name)
+				str_unref (pp->name);
+			xfree (pp);
+			goto failed;
+		}
+		if (head)
+			tail->next = pp;
+		else
+			head = pp;
+		tail = pp;
+	}
+	return (DDS_RETCODE_OK);
+
+    failed:
+	free_properties (head);
+	*ppp = NULL;
+	return (DDS_RETCODE_OUT_OF_RESOURCES);
 }
 
 static ssize_t pid_propertyseq_wsize (const void *data)
 {
-	ARG_NOT_USED (data)
+	Property_t	*pp;
+	ssize_t		len = sizeof (uint32_t);
 
-	/* ... TBC ... */
-
-	return (-DDS_RETCODE_UNSUPPORTED);
+	for (pp = (Property_t *) data; pp; pp = pp->next) {
+		len += pid_cdr_string_wsize (pp->name);
+		len += pid_cdr_string_wsize (pp->value);
+	}
+	return (len);
 }
 
 static ssize_t pid_propertyseq_write (unsigned char *dst, const void *src)
 {
-	ARG_NOT_USED (dst)
-	ARG_NOT_USED (src)
+	Property_t	*pp = (Property_t *) src;
+	ssize_t		len;
+	unsigned char	*start = dst;
+	uint32_t	*lenp = (uint32_t *) dst;
 
-	/* ... TBC ... */
-
-	return (-DDS_RETCODE_UNSUPPORTED);
+	len = sizeof (uint32_t);
+	while (pp) {
+		len = pid_cdr_string_write (dst, pp->name);
+		dst += len;
+		len = pid_cdr_string_write (dst, pp->value);
+		dst += len;
+		(*lenp)++;
+	}
+	return (dst - start);
 }
 
 static PIDParDesc_t pid_propertyseq_desc = {
-	PPF_SWAP,
+	PPF_SWAP | PPF_LONG,
 	0,
 	pid_propertyseq_parse,
 	pid_propertyseq_wsize,
@@ -2141,6 +2133,365 @@ static PIDParDesc_t pid_hash_desc = {
 	pid_hash_key_write
 };
 
+/* PID functions on StatusInfo_t:
+   ------------------------------ */
+
+static int pid_sinfo_parse (ParameterId_t       id,
+			    void                *dst,
+			    const unsigned char *p,
+			    unsigned            maxsize,
+			    int                 swap)
+{
+	ARG_NOT_USED (id)
+	ARG_NOT_USED (maxsize)
+	ARG_NOT_USED (swap)
+
+	memcpy32 ((unsigned char *) dst, p);
+	return (DDS_RETCODE_OK);
+}
+
+static ssize_t pid_sinfo_write (unsigned char *dst, const void *src)
+{
+	memcpy32 (dst, src);
+
+	return (4);
+}
+
+
+static PIDParDesc_t pid_sinfo_desc = {
+	PPF_SWAP,
+	4,
+	pid_sinfo_parse,
+	NULL,
+	pid_sinfo_write
+};
+
+#ifdef DDS_SECURITY
+#ifdef DDS_NATIVE_SECURITY
+
+/* PID functions on Security Tokens with CDR-ed DataHolder encoding.
+   ----------------------------------------------------------------- */
+
+static int pid_token_parse (ParameterId_t       id,
+			    void                *dst,
+			    const unsigned char *p,
+			    unsigned            maxsize,
+			    int                 swap)
+{
+	DDS_DataHolder	 	*hp;
+	Token_t		 	*token, **prev_tokenp = (Token_t **) dst;
+	Type		 	*tp = DataHolder_ts->ts_pl->xtype;
+	DBW		 	*walk = (DBW *) p;
+	unsigned char	 	*bp;
+	const unsigned char	*dp;
+	size_t		 	s;
+	DDS_ReturnCode_t	error;
+
+	ARG_NOT_USED (id);
+	ARG_NOT_USED (maxsize);
+
+	if (walk->left >= maxsize) {
+		dp = walk->data;
+		bp = NULL;
+	}
+	else {
+		bp = xmalloc (maxsize);
+		if (!bp)
+			return (DDS_RETCODE_OUT_OF_RESOURCES);
+
+		DB_DATA_GET (dp, unsigned char *, walk, maxsize, bp);
+	}
+	s = cdr_unmarshalled_size (dp, 0, tp, 0, 0, swap, sizeof (DDS_DataHolder), &error);
+	if (!s) {
+		if (bp)
+			xfree (bp);
+		return (error);
+	}
+	token = xmalloc (sizeof (Token_t));
+	if (!token)
+		return (DDS_RETCODE_OUT_OF_RESOURCES);
+
+	hp = xmalloc (s);
+	if (!hp) {
+		xfree (token);
+		return (DDS_RETCODE_OUT_OF_RESOURCES);
+	}
+	memset (hp, 0, s);
+	error = cdr_unmarshall (hp, dp, 0, tp, 0, 0, swap, sizeof (DDS_DataHolder));
+	if (error) {
+		if (bp)
+			xfree (bp);
+		xfree (hp);
+		xfree (token);
+		return (error);
+	}
+	token->data = hp;
+	token->encoding = 0;
+	token->integral = 1;
+	token->nusers = 1;
+	token->next = *prev_tokenp;
+	*prev_tokenp = token;
+
+	DB_DATA_SKIP (walk, maxsize);
+
+	return (DDS_RETCODE_OK);
+}
+
+static ssize_t pid_token_wsize (const void *src)
+{
+	Token_t			*token = (Token_t *) src;
+	Type			*tp = DataHolder_ts->ts_pl->xtype;
+	size_t			s;
+	DDS_ReturnCode_t	error;
+
+	s = cdr_marshalled_size (0, token->data, tp, 0, 0, 0, &error);
+	return (s);
+}
+
+static ssize_t pid_token_write (unsigned char *dst, const void *src)
+{
+	Token_t			*token = (Token_t *) src;
+	Type			*tp = DataHolder_ts->ts_pl->xtype;
+	size_t			s;
+	DDS_ReturnCode_t	error;
+
+	s = cdr_marshall (dst, 0, token->data, tp, 0, 0, 0, 0, &error);
+	if (!s)
+		return (-error);
+	else
+		return (s);
+}
+
+static PIDParDesc_t pid_token_desc = {
+	PPF_SWAP | PPF_LONG,
+	0,
+	pid_token_parse,
+	pid_token_wsize,
+	pid_token_write
+};
+
+
+/* PID functions on Security Tokens with vendor data encoding.
+   ----------------------------------------------------------- */
+
+static int pid_vtoken_parse (ParameterId_t       id,
+			     void                *dst,
+			     const unsigned char *p,
+			     unsigned            maxsize,
+			     int                 swap)
+{
+	DDS_DataHolder	*hp;
+	Token_t		*token, **prev_tokenp = (Token_t **) dst;
+	unsigned char 	*q, *dp;
+	uint32_t	len;
+	size_t		csize, s;
+	DDS_OctetSeq	*sp;
+	DBW		*walk = (DBW *) p;
+	unsigned char 	buffer [4];
+
+	ARG_NOT_USED (id)
+
+	if (maxsize < sizeof (len))
+		return (DDS_RETCODE_BAD_PARAMETER);
+
+	DB_DATA_GET (q, unsigned char *, walk, 4, buffer); 
+
+	if (swap)
+		memcswap32 (&len, q);
+	else
+		memcpy32 (&len, q);
+
+	maxsize -= sizeof (uint32_t);
+
+	if (!len || len > maxsize)
+		return (DDS_RETCODE_BAD_PARAMETER);
+
+	token = xmalloc (sizeof (Token_t));
+	if (!token)
+		return (DDS_RETCODE_OUT_OF_RESOURCES);
+
+	s = sizeof (DDS_DataHolder) + sizeof (DDS_OctetSeq) + len;
+	hp = xmalloc (s);
+	if (!hp) {
+		xfree (token);
+		return (DDS_RETCODE_OUT_OF_RESOURCES);
+	}
+	memset (hp, 0, sizeof (DDS_DataHolder));
+	hp->class_id = (id == PID_V_IDENTITY) ?
+				GMCLASSID_SECURITY_DTLS_ID_TOKEN :
+				GMCLASSID_SECURITY_DTLS_PERM_TOKEN;
+
+	hp->binary_value1 = sp = (DDS_OctetSeq *) (hp + 1);
+	DDS_SEQ_INIT (*sp);
+	DDS_SEQ_DATA (*sp) = dp = (unsigned char *) (sp + 1);
+	DDS_SEQ_LENGTH (*sp) = DDS_SEQ_MAXIMUM (*sp) = len;
+
+	csize = walk->left >= len ? len : walk->left;
+	while (len) {
+		memcpy (dp, walk->data, csize);
+		len -= csize;
+		walk->left -= csize;
+		walk->data += csize;
+		maxsize -= csize;
+
+		if (!len || !walk->dbp->next)
+			break;
+
+		dp += csize;
+
+		walk->dbp = walk->dbp->next;
+		walk->data = walk->dbp->data;
+		walk->left = walk->dbp->size;
+
+		csize = (walk->dbp->size >= len) ? len : walk->dbp->size;
+	}
+	if (len) {
+		xfree (token);
+		xfree (hp);
+		return (DDS_RETCODE_BAD_PARAMETER);
+	}
+	DB_DATA_SKIP (walk, maxsize);
+
+	token->data = hp;
+	token->encoding = id;
+	token->integral = 1;
+	token->nusers = 1;
+	token->next = *prev_tokenp;
+	*prev_tokenp = token;
+	return (DDS_RETCODE_OK);
+}
+
+static ssize_t pid_vtoken_wsize (const void *src)
+{
+	const Token_t		*token = (const Token_t *) src;
+	const DDS_DataHolder	*hp = token->data;
+	unsigned		n;
+
+	n = sizeof (uint32_t) * 2 - 1 + DDS_SEQ_LENGTH (*hp->binary_value1);
+	n &= ~(sizeof (uint32_t) - 1);
+	return (n);
+}
+
+static ssize_t pid_vtoken_write (unsigned char *dst, const void *src)
+{
+	const Token_t		*token = (const Token_t *) src;
+	const DDS_DataHolder	*hp = token->data;
+	uint32_t		len;
+	unsigned char		*start = dst;
+
+	/* Add data length. */
+	len = DDS_SEQ_LENGTH (*hp->binary_value1);
+	memcpy32 (dst, &len);
+	dst += sizeof (uint32_t);
+
+	/* Add actual data. */
+	memcpy (dst, DDS_SEQ_DATA (*hp->binary_value1), len);
+	dst += len;
+
+	/* Pad with '\0' chars. */
+	while (((uintptr_t) dst & 0x3) != 0)
+		*dst++ = '\0';
+
+	return (dst - start);
+}
+
+static PIDParDesc_t pid_vtoken_desc = {
+	PPF_SWAP | PPF_LONG,
+	0,
+	pid_vtoken_parse,
+	pid_vtoken_wsize,
+	pid_vtoken_write
+};
+
+#endif /* DDS_NATIVE_SECURITY */
+
+
+/* PID functions on Security Locator fields:
+   ----------------------------------------- */
+
+/* Security locators are encoded as:
+	SecurityProtocol proto;			{uint32}
+	LocatorKind kind;			{uint32}
+	ulong port;				{uint32}
+	unsigned char address [16];		{16*uint8}
+ */
+
+#define	PID_SECLOC_SIZE	(sizeof (uint32_t) * 3 + 16)
+
+static int pid_secloc_parse (ParameterId_t       id,
+		             void                *dst,
+			     const unsigned char *p,
+			     unsigned            maxsize,
+			     int                 swap)
+{
+	Locator_t	loc;
+	LocatorList_t	*lp = (LocatorList_t *) dst;
+	LocatorNode_t	*np;
+	Scope_t		scope;
+	unsigned	flags;
+	uint32_t	proto;
+
+	ARG_NOT_USED (id)
+
+	if (maxsize != PID_SECLOC_SIZE)
+		return (DDS_RETCODE_BAD_PARAMETER);
+
+	if (swap) {
+		memcswap32 (&proto, p);
+		p += sizeof (uint32_t);
+		memcswap32 (&loc.kind, p);
+		p += sizeof (uint32_t);
+		memcswap32 (&loc.port, p);
+	}
+	else {
+		memcpy (&proto, p, sizeof (uint32_t));
+		p += sizeof (uint32_t);
+		memcpy (&loc.kind, p, sizeof (uint32_t));
+		p += sizeof (uint32_t);
+		memcpy (&loc.port, p, sizeof (uint32_t));
+	}
+	p += sizeof (uint32_t);
+	memcpy (loc.address, p, sizeof (loc.address));
+
+	if (loc.kind == LOCATOR_KIND_UDPv4)
+		scope = sys_ipv4_scope (loc.address + 12);
+#ifdef DDS_IPV6
+	else if (loc.kind == LOCATOR_KIND_UDPv6)
+		scope = sys_ipv6_scope (loc.address);
+#endif
+	else
+		scope = UNKNOWN_SCOPE;
+	flags = LOCF_DATA | LOCF_META | LOCF_UCAST | LOCF_SECURE | LOCF_SERVER;
+	np = locator_list_add (lp, loc.kind, loc.address, loc.port, 0, scope, flags, proto);
+	return ((np) ? DDS_RETCODE_OK : DDS_RETCODE_OUT_OF_RESOURCES);
+}
+
+static ssize_t pid_secloc_write (unsigned char *dst, const void *src)
+{
+	const Locator_t	*lp = (const Locator_t *) src;
+	uint32_t	proto;
+
+	proto = lp->sproto;
+	memcpy (dst, &proto, sizeof (uint32_t));
+	dst += sizeof (uint32_t);
+	memcpy (dst, &lp->kind, sizeof (uint32_t));
+	dst += sizeof (uint32_t);
+	memcpy (dst, &lp->port, sizeof (uint32_t));
+	dst += sizeof (uint32_t);
+	memcpy (dst, lp->address, sizeof (lp->address));
+	return (sizeof (uint32_t) * 3 + sizeof (lp->address));
+}
+
+static PIDParDesc_t pid_secloc_desc = {
+	PPF_SWAP | PPF_MULTIPLE,
+	sizeof (uint32_t) * 3 + 16,
+	pid_secloc_parse,
+	NULL,
+	pid_secloc_write
+};
+
+#endif /* DDS_SECURITY */
+
 #ifdef DDS_TYPECODE
 
 /* PID functions on Typecode.
@@ -2163,11 +2514,12 @@ static int pid_typecode_parse (ParameterId_t       id,
 			       unsigned            maxsize,
 			       int                 swap)
 {
-	DBW		*walk = (DBW *) p; 
-	unsigned char	*bp, *tcp, **dstp = (unsigned char **) dst;
-	VTC_Header_t	*hp;
-	unsigned	ofs;
-	uint16_t	ext;
+	DBW			*walk = (DBW *) p; 
+	unsigned char		*bp, **dstp = (unsigned char **) dst;
+	const unsigned char	*tcp;
+	VTC_Header_t		*hp;
+	unsigned		ofs;
+	uint16_t		ext;
 
 	ARG_NOT_USED (id)
 
@@ -2297,6 +2649,10 @@ static const PIDParDesc_t *pid_type_desc [] = {
 	&pid_hash_desc,		/* KeyHash. */
 	&pid_sinfo_desc		/* StatusInfo. */
 #ifdef DDS_SECURITY
+#ifdef DDS_NATIVE_SECURITY
+      ,	&pid_token_desc,	/* DataHolder (CDR). */
+	&pid_vtoken_desc	/* DataHolder (Data). */
+#endif
       ,	&pid_secloc_desc	/* Security Locator. */
 #endif
 #ifdef DDS_TYPECODE
@@ -2333,6 +2689,8 @@ static void pid_init_entry (PIDDesc_t *pp)
 
 	vendor = (pp->pid & PID_VENDOR_SPECIFIC) >> 15;
 	value = pp->pid & PID_VALUE;
+	if (!vendor && pp->pid >= PID_ID_TOKEN && pp->pid <= PID_DATA_TAGS)
+		value -= PID_ADJUST_P0;
 	if (value > pid_max [vendor])
 		pid_max [vendor] = value;
 	if ((vendor &&
@@ -2377,15 +2735,18 @@ static const char *pid_name (unsigned pid)
 	unsigned	value;
 	static char	buf [32];
 
-	if ((pid & PID_VENDOR_SPECIFIC) != 0 ||
-	    (value = (pid & PID_VALUE)) >= sizeof (std_pids) / sizeof (PIDDesc_t *) ||
-	    !std_pids [value] ||
-	    !std_pids [value]->name) {
-		snprintf (buf, sizeof (buf), "?(0x%x)", pid);
-		return (buf);
+	if ((pid & PID_VENDOR_SPECIFIC) == 0) {
+		value = (pid & PID_VALUE);
+		if (value >= PID_ID_TOKEN && value <= PID_DATA_TAGS)
+			value -= PID_ADJUST_P0;
+
+		if (value < sizeof (std_pids) / sizeof (PIDDesc_t *) &&
+		    std_pids [value] &&
+		    std_pids [value]->name)
+			return (std_pids [value]->name);
 	}
-	else
-		return (std_pids [value]->name);
+	snprintf (buf, sizeof (buf), "?(0x%x)", pid);
+	return (buf);
 }
 
 #define	SHORT_PID_SIZE	256	/* Maximum length of a short parameter. */
@@ -2435,6 +2796,8 @@ static ssize_t pid_parse (DBW         *walk,
 		}
 		vendor_bit = (parameter_id & PID_VENDOR_SPECIFIC) >> 15;
 		value = parameter_id & PID_VALUE;
+		if (value >= PID_ID_TOKEN && value <= PID_DATA_TAGS)
+			value -= PID_ADJUST_P0;
 		if (log_pids)
 			log_printf (RTPS_ID, 0, "pid_parse: parameter_id=%s, length=%u\r\n",
 				pid_name (parameter_id), length);
@@ -2566,6 +2929,10 @@ ssize_t pid_parse_participant_data (DBW                           *walk,
 	locator_list_flags_set (dp->proxy.meta_ucast, LOCF_MASK, LOCF_META | LOCF_UCAST);
 	locator_list_flags_set (dp->proxy.meta_mcast, LOCF_MASK, LOCF_META | LOCF_MCAST);
 #undef LOCF_MASK
+#ifdef DDS_NATIVE_SECURITY
+	if (!PID_INSET (pids [1], (PID_V_SEC_CAPS ^ PID_VENDOR_SPECIFIC)))
+		dp->proxy.sec_caps = (SECC_DDS_SEC << SECC_LOCAL) | SECC_DDS_SEC;
+#endif
 	return (s);
 }
 
@@ -2790,6 +3157,15 @@ int pid_parse_topic_key (DBW walk, unsigned char *key, int swap)
 	return (DDS_RETCODE_OK);
 }
 
+#ifdef DDS_NATIVE_SECURITY
+
+static void free_tokens (Token_t *list)
+{
+	token_unref (list);
+}
+
+#endif
+
 /* pid_participant_data_cleanup -- Cleanup received participant data extra
 				   allocations. */
 
@@ -2814,14 +3190,17 @@ void pid_participant_data_cleanup (SPDPdiscoveredParticipantData *dp)
 #ifdef DDS_SECURITY
 	if (dp->proxy.sec_locs)
 		locator_list_delete_list (&dp->proxy.sec_locs);
-	if (dp->identity) {
-		str_unref (dp->identity);
-		dp->identity = NULL;
-	}
-	if (dp->permissions) {
-		str_unref (dp->permissions);
-		dp->permissions = NULL;
-	}
+#ifdef DDS_NATIVE_SECURITY
+	free_tokens (dp->id_tokens);
+	free_tokens (dp->p_tokens);
+#else
+	if (dp->id_tokens)
+		str_unref (dp->id_tokens);
+	if (dp->p_tokens)
+		str_unref (dp->p_tokens);
+#endif
+	dp->id_tokens = NULL;
+	dp->p_tokens = NULL;
 #endif
 }
 
@@ -2962,6 +3341,8 @@ ssize_t pid_size (unsigned pid, const void *data)
 	int			vendor_bit = (pid & PID_VENDOR_SPECIFIC) >> 15;
 	unsigned		value = pid & PID_VALUE;
 
+	if (!vendor_bit && value >= PID_ID_TOKEN && value <= PID_DATA_TAGS)
+		value -= PID_ADJUST_P0;
 	if (value > pid_max [vendor_bit] ||
 	    (dp = pid_descs [vendor_bit][value]) == NULL)
 	    	return (-DDS_RETCODE_BAD_PARAMETER);
@@ -2993,6 +3374,8 @@ ssize_t pid_add (unsigned char *buf, unsigned pid, const void *data)
 	int			vendor_bit = (pid & PID_VENDOR_SPECIFIC) >> 15;
 	unsigned		value = pid & PID_VALUE;
 
+	if (!vendor_bit && value >= PID_ID_TOKEN && value <= PID_DATA_TAGS)
+		value -= PID_ADJUST_P0;
 	if (value > pid_max [vendor_bit] ||
 	    (dp = pid_descs [vendor_bit][value]) == NULL)
 	    	return (-DDS_RETCODE_BAD_PARAMETER);
@@ -3079,8 +3462,11 @@ ssize_t pid_locators_size (unsigned pid, const LocatorRef_t *lp)
 
 ssize_t pid_participant_data_size (const SPDPdiscoveredParticipantData *dp)
 {
-	ssize_t	s, size = 0;
-	uint32_t version;
+	ssize_t		s, size = 0;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	Token_t		*tp;
+#endif
+	uint32_t	version;
 
 	SCHK (pid_size (PID_PARTICIPANT_GUID, &dp->proxy.guid_prefix), s, size);
 	SCHK (pid_size (PID_BUILTIN_ENDPOINT_SET, &dp->proxy.builtins), s, size);
@@ -3106,13 +3492,30 @@ ssize_t pid_participant_data_size (const SPDPdiscoveredParticipantData *dp)
 		SCHK (pid_size (PID_V_NO_MCAST, &dp->proxy.no_mcast), s, size);
 #ifdef DDS_SECURITY
 	if (dp->proxy.sec_caps)
-		SCHK (pid_size (PID_V_SEC_CAPS, &dp->proxy.no_mcast), s, size);
+		SCHK (pid_size (PID_V_SEC_CAPS, &dp->proxy.sec_caps), s, size);
 	if (dp->proxy.sec_locs)
 		SCHK (pid_locators_size (PID_V_SEC_LOC, dp->proxy.sec_locs), s, size);
-	if (dp->identity)
-		SCHK (pid_size (PID_V_IDENTITY, dp->identity), s, size);
-	if (dp->permissions)
-		SCHK (pid_size (PID_V_PERMS, dp->permissions), s, size);
+#ifdef DDS_NATIVE_SECURITY
+	for (tp = dp->id_tokens; tp; tp = tp->next)
+		if (tp->encoding) {
+			SCHK (pid_size (tp->encoding, tp), s, size);
+		}
+		else {
+			SCHK (pid_size (PID_ID_TOKEN, tp), s, size);
+		}
+	for (tp = dp->p_tokens; tp; tp = tp->next)
+		if (tp->encoding) {
+			SCHK (pid_size (tp->encoding, tp), s, size);
+		}
+		else {
+			SCHK (pid_size (PID_PERMISSIONS_TOKEN, tp), s, size);
+		}
+#else
+	if (dp->id_tokens)
+		SCHK (pid_size (PID_V_IDENTITY, dp->id_tokens), s, size);
+	if (dp->p_tokens)
+		SCHK (pid_size (PID_V_PERMS, dp->p_tokens), s, size);
+#endif
 #endif
 #ifdef DDS_FORWARD
 	if (dp->proxy.forward)
@@ -3271,6 +3674,9 @@ ssize_t pid_add_participant_data (unsigned char                       *p,
 {
 	ssize_t		s;
 	unsigned char	*sp;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	Token_t		*tp;
+#endif
 	static uint32_t	version = TDDS_VERSION;
 
 	sp = p;
@@ -3301,10 +3707,27 @@ ssize_t pid_add_participant_data (unsigned char                       *p,
 		SCHK (pid_add (p, PID_V_SEC_CAPS, &dp->proxy.sec_caps), s, p);
 	if (dp->proxy.sec_locs)
 		SCHK (pid_locators_add (p, PID_V_SEC_LOC, dp->proxy.sec_locs), s, p);
-	if (dp->identity)
-		SCHK (pid_add (p, PID_V_IDENTITY, dp->identity), s, p);
-	if (dp->permissions)
-		SCHK (pid_add (p, PID_V_PERMS, dp->permissions), s, p);
+#ifdef DDS_NATIVE_SECURITY
+	for (tp = dp->id_tokens; tp; tp = tp->next)
+		if (tp->encoding) {
+			SCHK (pid_add (p, tp->encoding, tp), s, p);
+		}
+		else {
+			SCHK (pid_add (p, PID_ID_TOKEN, tp), s, p);
+		}
+	for (tp = dp->p_tokens; tp; tp = tp->next)
+		if (tp->encoding) {
+			SCHK (pid_add (p, tp->encoding, tp), s, p);
+		}
+		else {
+			SCHK (pid_add (p, PID_PERMISSIONS_TOKEN, tp), s, p);
+		}
+#else
+	if (dp->id_tokens)
+		SCHK (pid_add (p, PID_V_IDENTITY, dp->id_tokens), s, p);
+	if (dp->p_tokens)
+		SCHK (pid_add (p, PID_V_PERMS, dp->p_tokens), s, p);
+#endif
 #endif
 #ifdef DDS_FORWARD
 	if (dp->proxy.forward)
@@ -3354,6 +3777,10 @@ ssize_t pid_add_reader_data (unsigned char *p, const DiscoveredReaderData *dp)
 		SCHK (pid_add (p, PID_GROUP_DATA, dp->qos.group_data), s, p);
 	if (dp->filter)
 		SCHK (pid_add (p, PID_CONTENT_FILTER_PROPERTY, dp->filter), s, p);
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	if (dp->tags)
+		SCHK (pid_add (p, PID_DATA_TAGS, dp->tags), s, p);
+#endif
 #ifdef DDS_TYPECODE
 	if (dp->typecode) {
 		SCHK (pid_add (p, PID_VENDOR_ID, dp->vendor_id), s, p);
@@ -3400,6 +3827,10 @@ ssize_t pid_add_writer_data (unsigned char *p, const DiscoveredWriterData *dp)
 		SCHK (pid_add (p, PID_TOPIC_DATA, dp->qos.topic_data), s, p);
 	if (dp->qos.group_data)
 		SCHK (pid_add (p, PID_GROUP_DATA, dp->qos.group_data), s, p);
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	if (dp->tags)
+		SCHK (pid_add (p, PID_DATA_TAGS, dp->tags), s, p);
+#endif
 #ifdef DDS_TYPECODE
 	if (dp->typecode) {
 		SCHK (pid_add (p, PID_VENDOR_ID, dp->vendor_id), s, p);

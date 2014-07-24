@@ -25,6 +25,7 @@
 #include <string.h>
 #include <limits.h>
 #include <qeo/log.h>
+#include <qeo/platform.h>
 /*#######################################################################
  # TYPES SECTION                                                         #
  ########################################################################*/
@@ -41,6 +42,8 @@ static uintptr_t _app_ctx;
 
 static const qeo_platform_device_info *_device_info;
 static const char *_device_storage_path;
+static const char *_ca_file = NULL;
+static const char *_ca_path = NULL;
 
 static qeo_platform_callbacks_t _cbs;
 
@@ -192,6 +195,14 @@ qeo_util_retcode_t qeo_platform_set_device_storage_path(const char* path){
     return QEO_UTIL_OK;
 }
 
+qeo_util_retcode_t qeo_platform_set_cacert_path(const char* ca_file,
+                                                const char* ca_path)
+{
+    _ca_file = ca_file;
+    _ca_path = ca_path;
+    return QEO_UTIL_OK;
+}
+
 qeo_util_retcode_t qeo_platform_set_device_info(const qeo_platform_device_info *device_info){
 
     _device_info = device_info;
@@ -230,6 +241,25 @@ qeo_util_retcode_t qeo_platform_get_device_storage_path(const char* file_name, c
     return rc;
 }
 
+qeo_util_retcode_t qeo_platform_get_cacert_path(const char** ca_file,
+                                                const char** ca_path)
+{
+    qeo_util_retcode_t rc = QEO_UTIL_EINVAL;
+
+    if ((ca_file == NULL) && (ca_path == NULL)) {
+        qeo_log_e("Called with NULL pointer argument");
+    }
+    else {
+        if (NULL != ca_file) {
+            *ca_file = _ca_file;
+        }
+        if (NULL != ca_path) {
+            *ca_path = _ca_path;
+        }
+        rc = QEO_UTIL_OK;
+    }
+    return rc;
+}
 
 qeo_util_retcode_t qeo_platform_set_key_value(const char *key, char *value)
 {
@@ -332,3 +362,19 @@ qeo_util_retcode_t qeo_platform_get_key_value(const char *key, char **value)
 
     return ret;
 } 
+
+static qeo_platform_custom_certificate_validator validator = NULL;
+
+qeo_util_retcode_t qeo_platform_set_custom_certificate_validator(qeo_platform_custom_certificate_validator validator_function) {
+    if (validator) {
+        return QEO_UTIL_EBADSTATE;
+    }
+    qeo_log_i("Setting custom certificate validator %p", validator_function);
+    validator = validator_function;
+    return QEO_UTIL_OK;
+}
+
+qeo_platform_custom_certificate_validator qeo_platform_get_custom_certificate_validator() {
+    return validator;
+}
+

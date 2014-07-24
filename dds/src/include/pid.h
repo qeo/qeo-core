@@ -105,6 +105,16 @@ typedef uint16_t ParameterId_t;
 #define PID_KEY_HASH			112	/* KeyHash_t */
 #define PID_STATUS_INFO			113	/* StatusInfo_t */
 
+#define	PID_ID_TOKEN_ADJ		116	/* Identity Token (adjusted). */
+#define	PID_PERMISSIONS_TOKEN_ADJ	117	/* Permissions Token (adjusted). */
+#define	PID_DATA_TAGS_ADJ		118	/* DataTags Token (adjusted). */
+
+#define	PID_ID_TOKEN			0x1001	/* Identity Token. */
+#define	PID_PERMISSIONS_TOKEN		0x1002	/* Permissions Token. */
+#define	PID_DATA_TAGS			0x1003	/* DataTags Token. */
+
+#define	PID_ADJUST_P0			(PID_ID_TOKEN - PID_ID_TOKEN_ADJ)
+
 #define	PID_V_VERSION	(PID_VENDOR_SPECIFIC + 0)	/* Software version. */
 #define	PID_V_NO_MCAST	(PID_VENDOR_SPECIFIC + 1)	/* Multicast suppress.*/
 #define	PID_V_SEC_CAPS	(PID_VENDOR_SPECIFIC + 2)	/* Security capability*/
@@ -147,9 +157,10 @@ typedef struct spdp_discovered_participant_data_st {
 	String_t		*entity_name;		/* Entity name. */
 	Duration_t		lease_duration;		/* Timeout to remove. */
 #ifdef DDS_SECURITY
-	String_t		*identity;
-	String_t		*permissions;
+	Token_t			*id_tokens;		/* Identity Token(s). */
+	Token_t			*p_tokens;		/* Permission Token(s). */
 #endif
+	Property_t		*properties;		/* Extra properties. */
 } SPDPdiscoveredParticipantData;
 
 typedef struct discovered_topic_data_st {
@@ -173,6 +184,9 @@ typedef struct discovered_writer_data_st {
 	String_t		*topic_name;
 	String_t		*type_name;
 	DiscoveredWriterQos	qos;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	Property_t		*tags;
+#endif
 #ifdef DDS_TYPECODE
 	unsigned char		*typecode;
 	VendorId_t		vendor_id;
@@ -192,6 +206,9 @@ typedef struct discovered_reader_data_st {
 	String_t		*type_name;
 	DiscoveredReaderQos	qos;
 	FilterData_t		*filter;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	Property_t		*tags;
+#endif
 #ifdef DDS_TYPECODE
 	unsigned char		*typecode;
 	VendorId_t		vendor_id;
@@ -230,7 +247,7 @@ typedef struct inline_qos_st {
 	DDS_GUIDSeq			directed_write;
 	OriginalWriterInfo_t		original_writer_info;
 	KeyHash_t			key_hash;
-	StatusInfo_t			status_info;	
+	StatusInfo_t			status_info;
 } InlineQos_t;
 
 

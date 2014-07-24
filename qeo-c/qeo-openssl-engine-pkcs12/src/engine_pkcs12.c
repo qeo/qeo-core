@@ -852,6 +852,7 @@ static int parse_bag(PKCS12_SAFEBAG *bag,
                 TRACE_EXTRA("NID_keyBag");
 
                 if ((bagFriendlyName == NULL )|| (strcmp(bagFriendlyName, friendlyName) != 0)){
+                    qeo_log_w("KeyBag name mismatch: %s != %s", bagFriendlyName, friendlyName);
                     rc = 0;
                     break;
                 }
@@ -872,6 +873,7 @@ static int parse_bag(PKCS12_SAFEBAG *bag,
                 TRACE_EXTRA("NID_pkcs8ShroudedKeyBag");
 
                 if ((bagFriendlyName == NULL) || (strcmp(bagFriendlyName, friendlyName) != 0)) {
+                    qeo_log_w("ShroudedKeyBag name mismatch: %s != %s", bagFriendlyName, friendlyName);
                     rc = 0;
                     break;
                 }

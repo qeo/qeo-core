@@ -103,6 +103,7 @@ Type *tsm_create_struct_union (TypeLib                    *lp,
 			xt_lib_release (lp);
 			return (NULL);
 		}
+		member_id = 1;
 	}
 	else {
 		tp = xt_struct_type_create (lp, name, nelem, stsm->size);
@@ -110,6 +111,7 @@ Type *tsm_create_struct_union (TypeLib                    *lp,
 			xt_lib_release (lp);
 			return (NULL);
 		}
+		member_id = 0;
 	}
 	mutable = stsm->flags & TSMFLAG_MUTABLE;
 	for (i = 0; i < nelem; i++) {
@@ -142,19 +144,16 @@ Type *tsm_create_struct_union (TypeLib                    *lp,
 			xt_type_delete (tp);
 			return (NULL);
 		}
-		if (mutable && (stsm->flags & TSMFLAG_GENID) != 0)
-			member_id = generate_member_id (&tsm_ori);
-		else if (mutable) {
-			if (stsm->tc == CDR_TYPECODE_UNION)
+		if (mutable) {
+			if ((stsm->flags & TSMFLAG_GENID) != 0)
+				member_id = generate_member_id (&tsm_ori);
+			else if (stsm->tc == CDR_TYPECODE_UNION &&
+				 tsm_ori->nelem)
 				member_id = tsm_ori->nelem;
-			else
+			else if (stsm->tc == CDR_TYPECODE_STRUCT &&
+				 tsm_ori->label)
 				member_id = tsm_ori->label;
 		}
-		else if (stsm->tc == CDR_TYPECODE_UNION)
-			member_id = i + 1;
-		else
-			member_id = i;
-
 		if (stsm->tc == CDR_TYPECODE_UNION) {
 			union_label = tsm_ori->label;
 			ret = xt_union_type_member_set (tp, i + 1, 1,
@@ -182,6 +181,8 @@ Type *tsm_create_struct_union (TypeLib                    *lp,
 
 		if (tc_ori == CDR_TYPECODE_TYPEREF)
 			*tsm = tsm_ori;
+
+		member_id++;
 	}
 	if ((stsm->flags & TSMFLAG_MUTABLE) != 0)
 		flags = XTF_MUTABLE;
@@ -274,10 +275,10 @@ static Type *tsm_create_sequence (TypeLib                    *lp,
 				  const DDS_TypeSupport_meta **tsm,
 				  unsigned                   *iflags)
 {
-	size_t			nelem = (*tsm)->nelem, esize;
+	size_t			size, nelem = (*tsm)->nelem, esize;
 	Type			*tp, *element_type;
 	uint32_t		bound;
-	int 			shared;
+	int 			shared, keys, fksize, dkeys, dynamic;
 
 	bound = (nelem) ? nelem : DDS_UNBOUNDED_COLLECTION;
 	(*tsm)++;
@@ -297,6 +298,7 @@ static Type *tsm_create_sequence (TypeLib                    *lp,
 	xt_lib_access (lp->scope);
 	if (shared)
 		xt_type_flags_modify (element_type, XTF_SHARED, XTF_SHARED);
+	xt_type_finalize (tp, &size, &keys, &fksize, &dkeys, &dynamic);
 	return (tp);
 }
 
@@ -304,11 +306,11 @@ static Type *tsm_create_array (TypeLib                    *lp,
 			       const DDS_TypeSupport_meta **tsm,
 			       unsigned                   *iflags)
 {
-	size_t			nelem = (*tsm)->nelem, esize;
+	size_t			size, nelem = (*tsm)->nelem, esize;
 	Type			*tp, *element_type;
 	uint32_t		bound [9];
 	unsigned		nbounds;
-	int 			shared;
+	int 			shared, keys, fksize, dkeys, dynamic;
 	DDS_BoundSeq		bseq;
 
 	if (!nelem) {
@@ -345,6 +347,7 @@ static Type *tsm_create_array (TypeLib                    *lp,
 	xt_lib_access (lp->scope);
 	if (shared)
 		xt_type_flags_modify (element_type, XTF_SHARED, XTF_SHARED);
+	xt_type_finalize (tp, &size, &keys, &fksize, &dkeys, &dynamic);
 	return (tp);
 }
 
@@ -353,6 +356,7 @@ static Type *tsm_create_type (TypeLib                    *lp,
 			      unsigned                   *iflags)
 {
 	Type			   *tp;
+	unsigned		   bound;
 	const DDS_TypeSupport_meta *tref_tsm;
 
 	switch ((*tsm)->tc) {
@@ -407,10 +411,17 @@ static Type *tsm_create_type (TypeLib                    *lp,
 		/* String types: */
 		case CDR_TYPECODE_CSTRING:
 		case CDR_TYPECODE_WSTRING:
-			if ((*tsm)->tc == CDR_TYPECODE_CSTRING)
-				tp = (Type *) xt_string_type_create (lp, (*tsm)->size, DDS_CHAR_8_TYPE);
+			if ((*tsm)->size > 1)
+				bound = (*tsm)->size - 1;
+			else if (!(*tsm)->size)
+				bound = 0;
 			else
-				tp = (Type *) xt_string_type_create (lp, (*tsm)->size, DDS_CHAR_32_TYPE);
+				return (NULL);
+
+			if ((*tsm)->tc == CDR_TYPECODE_CSTRING)
+				tp = (Type *) xt_string_type_create (lp, bound, DDS_CHAR_8_TYPE);
+			else
+				tp = (Type *) xt_string_type_create (lp, bound, DDS_CHAR_32_TYPE);
 
 			if (!tp)
 				xt_lib_release (lp);
@@ -453,6 +464,12 @@ static Type *tsm_create_type (TypeLib                    *lp,
 			*tsm = tref_tsm;
 			break;
 
+		/* Type: */
+		case CDR_TYPECODE_TYPE:
+			tp = (Type *) (*tsm)->tsm;
+			xt_type_ref (tp);
+			break;
+
 		/* Anything else: */
 		default:
 			warn_printf ("tsm_create_type: Unknown or unsupported type: %d", (*tsm)->tc);
@@ -462,6 +479,64 @@ static Type *tsm_create_type (TypeLib                    *lp,
 	return (tp);
 }
 
+/* tsm_substitute_typeref -- Substitute TYPEREF fields that refer to the
+			     ref_tsm field into TYPE fields that refer to the
+			     real type. */ 
+ 
+void tsm_typeref_set_type (DDS_TypeSupport_meta       *tsm,
+			   unsigned                   n,
+			   const Type                 *type)
+{
+	tsm += n;
+	if (tsm->tc == CDR_TYPECODE_TYPEREF ||
+	    tsm->tc == CDR_TYPECODE_TYPE) {
+		tsm->tsm = (const DDS_TypeSupport_meta *) type;
+		tsm->tc = CDR_TYPECODE_TYPE;
+	}
+}
+
+/* tsm_create_typedef -- Create a type that is a Typedef to an existing
+			 Structure or Union type or to another Typedef. */
+
+Type *tsm_create_typedef (TypeLib                    *lp,
+			  const DDS_TypeSupport_meta *tsm,
+			  unsigned                   *info_flags)
+{
+	Type		*tp, *btp, *xtp;
+	AliasType	*atp;
+	StructureType	*stp;
+	UnionType	*utp;
+
+	if (!tsm ||
+	    tsm->tc != CDR_TYPECODE_TYPE ||
+	    !tsm->tsm)
+		return (NULL);
+
+	btp = xtp = (Type *) tsm->tsm;
+	while (xtp->kind == DDS_ALIAS_TYPE) {
+		atp = (AliasType *) xtp;
+		xtp = xt_type_ptr (xtp->scope, atp->base_type);
+		if (!xtp)
+			return (NULL);
+	}
+	if (xtp->kind != DDS_STRUCTURE_TYPE &&
+	    xtp->kind != DDS_UNION_TYPE)
+		return (NULL);
+
+	tp = xt_alias_type_create (lp, tsm->name, btp);
+	if (!tp)
+		return (NULL);
+
+	if (xtp->kind == DDS_STRUCTURE_TYPE) {
+		stp = (StructureType *) xtp;
+		*info_flags = (stp->dynamic) ? IF_DYNAMIC : 0;
+	}
+	else {
+		utp = (UnionType *) xtp;
+		*info_flags = (utp->dynamic) ? IF_DYNAMIC : 0;
+	}
+	return (tp);
+}
 
 /* DDS_SampleFree -- Free the memory used up by a data sample, using the type
  		     support metadata. Only use this if the allocated memory

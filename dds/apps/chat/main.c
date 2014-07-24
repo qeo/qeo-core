@@ -22,6 +22,17 @@
 #include "libx.h"
 #include "tty.h"
 #include "chat_msg.h"
+#ifdef DDS_SECURITY
+#include "dds/dds_security.h"
+#ifdef DDS_NATIVE_SECURITY
+#include "nsecplug/nsecplug.h"
+#else
+#include "msecplug/msecplug.h"
+#include "assert.h"
+#include "../../plugins/secplug/xmlparse.h"
+#endif
+#include "../../plugins/security/engine_fs.h"
+#endif
 #include "dds/dds_aux.h"
 #include "dds/dds_debug.h"
 
@@ -38,6 +49,12 @@ char			user_name [64];			/* User name. */
 unsigned		domain_id;			/* Domain identifier. */
 int			verbose, aborting;
 thread_t		rt;
+#ifdef DDS_SECURITY
+char                    *engine_id;		/* Engine id. */
+char                    *cert_path;		/* Certificates path. */
+char                    *key_path;		/* Private key path. */
+char                    *realm_name;		/* Realm name. */
+#endif
 
 DDS_DomainParticipant	part;
 DDS_DynamicTypeSupport	ts;
@@ -59,6 +76,12 @@ void usage (void)
 	fprintf (stderr, "   -r <chatroom>     Chatroom name (default=DDS).\r\n");
 	fprintf (stderr, "   -u <name>         User name (default=.pid.$PID).\r\n");
 	fprintf (stderr, "   -i <domain_id>    Domain identifier.\r\n");
+#ifdef DDS_SECURITY
+	fprintf (stderr, "   -e <name>         Pass the name of the engine.\r\n");
+	fprintf (stderr, "   -c <path>         Path of the certificate to use.\r\n");
+	fprintf (stderr, "   -k <path>         Path of the private key to use.\r\n");
+	fprintf (stderr, "   -z <realm>        The realm name.\r\n");
+#endif
 	fprintf (stderr, "   -v                Verbose.\r\n");
 	fprintf (stderr, "   -vv               Very verbose.\r\n");
 	fprintf (stderr, "   -h                Show some program help.\r\n");
@@ -112,7 +135,9 @@ int do_switches (int argc, const char **argv)
 {
 	int		i;
 	const char	*cp, *user, *room;
-
+#ifdef DDS_SECURITY
+	const char      *arg_input;
+#endif
 	progname = argv [0];
 	for (i = 1; i < argc; i++) {
 		cp = argv [i];
@@ -147,6 +172,37 @@ int do_switches (int argc, const char **argv)
 					trace = 1;
 					break;
 # endif
+#ifdef DDS_SECURITY
+			        case 'e':
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage ();
+					engine_id = malloc (strlen (arg_input) + 1);
+					strcpy (engine_id, arg_input);
+					break;
+			        case 'c':
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage ();
+					cert_path = malloc (strlen (arg_input) + 1);
+					strcpy (cert_path, arg_input);
+					break;
+			        case 'k':
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage ();
+					key_path = malloc (strlen (arg_input) + 1);
+					strcpy (key_path, arg_input);
+
+					break;
+			        case 'z':
+					INC_ARG ()
+					if (!get_str (&cp, &arg_input))
+						usage ();
+					realm_name = malloc (strlen (arg_input) + 1);
+					strcpy (realm_name, arg_input);
+					break;
+#endif
 				case 'v':
 					verbose = 1;
 					if (*cp == 'v') {
@@ -359,6 +415,68 @@ static DDS_DataReaderListener msg_listener = {
 };
 
 #endif
+#ifdef DDS_SECURITY
+
+#define fail_unless     assert
+
+static void enable_security (void)
+{
+	DDS_Credentials		credentials;
+	DDS_ReturnCode_t	error;
+#ifdef MSECPLUG_WITH_SECXML
+	/*int dhandle, thandle;*/
+#endif
+	error = DDS_SP_set_policy ();
+	if (error)
+		fatal ("DDS_SP_set_policy() returned error (%s)!", DDS_error (error));
+
+#ifdef MSECPLUG_WITH_SECXML
+	if (DDS_SP_parse_xml ("security.xml"))
+		fatal ("SP: no DDS security rules in 'security.xml'!\r\n");
+#else
+	DDS_SP_add_domain();
+	if (!realm_name)
+		DDS_SP_add_participant ();
+	else 
+		DDS_SP_set_participant_access (DDS_SP_add_participant (), strcat(realm_name, "*"), 2, 0);
+#endif
+	if (!cert_path || !key_path)
+		fatal ("Error: you must provide a valid certificate path and a valid private key path\r\n");
+
+	if (engine_id) {
+		DDS_SP_init_engine (engine_id, init_engine_fs);
+		credentials.credentialKind = DDS_ENGINE_BASED;
+		credentials.info.engine.engine_id = engine_id;
+		credentials.info.engine.cert_id = cert_path;
+		credentials.info.engine.priv_key_id = key_path;
+	}
+	else {
+		credentials.credentialKind = DDS_FILE_BASED;
+		credentials.info.filenames.private_key_file = key_path;
+		credentials.info.filenames.certificate_chain_file = cert_path;
+	}
+
+	error = DDS_Security_set_credentials ("Technicolor Chatroom", &credentials);
+}
+
+static void cleanup_security (void)
+{
+	/* Cleanup security submodule. */
+	DDS_SP_access_db_cleanup ();
+	DDS_SP_engine_cleanup ();
+
+	/* Cleanup malloc-ed memory. */
+	if (engine_id)
+		free (engine_id);
+	if (cert_path)
+		free (cert_path);
+	if (key_path)
+		free (key_path);
+	if (realm_name)
+		free (realm_name);
+}
+
+#endif
 
 int main (int argc, const char **argv)
 {
@@ -373,6 +491,10 @@ int main (int argc, const char **argv)
 
 	DDS_entity_name ("Technicolor Chatroom");
 
+#ifdef DDS_SECURITY
+	if (cert_path || key_path || engine_id)
+		enable_security ();
+#endif
 	part = DDS_DomainParticipantFactory_create_participant (domain_id, NULL, NULL, 0);
 	if (!part) {
 		printf ("Can't create participant!\r\n");
@@ -498,6 +620,10 @@ int main (int argc, const char **argv)
 	if (verbose)
 		printf ("DDS Participant deleted (error = %u).\r\n", error);
 
+#ifdef DDS_SECURITY
+	if (cert_path || key_path || engine_id)
+		cleanup_security ();
+#endif
 	return (0);
 }
 

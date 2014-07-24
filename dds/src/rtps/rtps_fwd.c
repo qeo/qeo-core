@@ -36,6 +36,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "log.h"
+#include "prof.h"
 #include "error.h"
 #include "debug.h"
 #include "sock.h"
@@ -111,6 +112,7 @@ typedef struct fwd_stats_st {
 
 typedef struct fwd_data_st {
 	Domain_t	*domain;
+	unsigned	dindex;
 	FTTable_t	*table;
 	FwdStats_t	stats;
 } FwdData_t;
@@ -243,7 +245,12 @@ static void fwd_populate_locators (FTEntry_t *p, Participant_t *pp, int update)
 	kinds = pp->p_domain->kinds;
 	ekinds = 0;
 #ifdef DDS_SECURITY
-	if (pp->p_domain->security && (kinds & LOCATOR_KINDS_UDP) != 0) {
+	if (pp->p_domain->security 
+	    /* If native security, allow UDP locators */
+#ifdef DDS_NATIVE_SECURITY
+	    && (pp->p_sec_caps & (SECC_DDS_SEC | (SECC_DDS_SEC << SECC_LOCAL))) == 0
+#endif
+	    && (kinds & LOCATOR_KINDS_UDP) != 0) {
 		loc_list_set (&p->locs [META_UCAST][0], pp->p_sec_locs, LOCATOR_KINDS_UDP, 0, &ekinds);
 		loc_list_set (&p->locs [USER_UCAST][0], pp->p_sec_locs, LOCATOR_KINDS_UDP, 0, &ekinds);
 		kinds &= ~LOCATOR_KINDS_UDP;
@@ -520,7 +527,7 @@ static void fwd_learn_source (FwdData_t       *fp,
 
 		/* Remember the reply locator for this mode. */
 		p->ttl = MAX_FWD_TTL;
-		if (pp)
+		if (pp) {
 			foreach_locator (p->locs [mode][0], rp, np)
 				if (locator_addr_equal (&np->locator, src)) {
 					locator_list_copy_node (&p->locs [mode][1], np);
@@ -529,6 +536,7 @@ static void fwd_learn_source (FwdData_t       *fp,
 							guid_prefix_str (prefix, buffer));
 					return;
 				}
+        }
 		else {
 			fwd_print2 ("..FWD-LearnSrc: add locator (%s) for prefix (%s)!\r\n",
 							locator_str (src),
@@ -707,7 +715,8 @@ static void fwd_parse (FwdData_t       *fp,
 				p = ft_add (fp->table, h, &src_prefix, 0, LTF_AGE);
 				if (!p) {
 					warn_printf ("FWD: ft_add returned NULL!");
-					return;
+					ft_exit (fp->table);
+                                        return;
 				}
 				p->local = LT_LOCAL_TO;
 			}
@@ -832,7 +841,7 @@ static void fwd_parse (FwdData_t       *fp,
 	/********************************************/
 
 	fwd_print (".FWD-Parse: parsing complete.\r\n");
-	if (learn && !learned && src->port)
+	if (learn && !learned && src && src->port)
 		fwd_learn_source (fp, &src_prefix, src_p, mode, src);
 
 	ft_exit (fp->table);
@@ -1008,7 +1017,8 @@ static void rfwd_forward (FwdData_t *fp, LocatorList_t dests, RMBUF *msg, Mode_t
 	new_mep->header.length = 0;
 	new_mep->pad = 0;
 #ifdef DDS_SECURITY
-	if (fp->domain->security) {
+	if (fp->domain->security && 
+	    (fp->domain->participant.p_sec_caps & SECC_DDS_SEC) == 0) {
 		uc_list = rfwd_uc_secure_locators (&fp->domain->participant, m);
 		mc_list = NULL;
 	}
@@ -1050,7 +1060,8 @@ static void rfwd_forward (FwdData_t *fp, LocatorList_t dests, RMBUF *msg, Mode_t
 		rfwd_add_info_reply_locators (dp, mc_list);
 	new_mp->size += new_mep->length + sizeof (SubmsgHeader);
 #ifdef DDS_SECURITY
-	if (fp->domain->security)
+	if (fp->domain->security &&
+	    (fp->domain->participant.p_sec_caps & SECC_DDS_SEC) == 0)
 		locator_list_delete_list (&uc_list);
 #endif
 
@@ -1114,9 +1125,9 @@ static void rfwd_forward (FwdData_t *fp, LocatorList_t dests, RMBUF *msg, Mode_t
 #endif
 #endif
 	if (dests->next)
-		rtps_locator_send_ll (fp->domain->index, dests, 1, new_mp);
+		rtps_locator_send_ll (fp->dindex, dests, 1, new_mp);
 	else
-		rtps_locator_send_ll (fp->domain->index, &dests->data->locator, 0, new_mp);
+		rtps_locator_send_ll (fp->dindex, &dests->data->locator, 0, new_mp);
 	rtps_free_messages (new_mp);
 }
 
@@ -1325,6 +1336,7 @@ static int rfwd_domain_init (unsigned index)
 		fwd [index] = NULL;
 		return (DDS_RETCODE_ALREADY_DELETED);
 	}
+	fp->dindex = fp->domain->index;
 	if (fwd_table) {
 		fp->table = fwd_table;
 		ft_reuse (fp->table);
@@ -1352,7 +1364,7 @@ static void rfwd_domain_final (unsigned index)
 		return;
 
 	fwd [index] = NULL;
-	fwd_table = ft_cleanup (fp->table, fp->domain->index);
+	fwd_table = ft_cleanup (fp->table, fp->dindex);
 	fp->domain = NULL;
 	xfree (fp);
 }
@@ -1423,8 +1435,8 @@ int rfwd_locator_add (unsigned      domain_id,
 	FTEntry_t	*p;
 #ifdef DDS_SECURITY
 	Domain_t	*dp;
-	DDS_ReturnCode_t ret;
 #endif
+	DDS_ReturnCode_t ret;
 	unsigned	h;
 
 	ARG_NOT_USED (domain_id)

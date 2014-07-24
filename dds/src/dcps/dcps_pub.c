@@ -39,7 +39,12 @@
 #include "dcps_event.h"
 #include "dcps_pub.h"
 #ifdef DDS_SECURITY
+#ifdef DDS_NATIVE_SECURITY
+#include "sec_access.h"
+#include "sec_crypto.h"
+#else
 #include "security.h"
+#endif
 #endif
 
 static DDS_ReturnCode_t delete_datawriter_l (Publisher_t *up, Writer_t *wp);
@@ -158,7 +163,7 @@ static void unsuspend_publications (Publisher_t *pp)
 		}
 		else {
 			hc_qos_update (wp->w_cache);
-			disc_writer_update (pp->domain, wp);
+			disc_writer_update (pp->domain, wp, 1, 0);
 		}
 	}
 }
@@ -180,7 +185,7 @@ int dcps_update_writer_qos (Skiplist_t *list, void *node, void *arg)
 #endif
 		if ((wp->w_publisher->entity.flags & EF_SUSPEND) == 0) {
 			hc_qos_update (wp->w_cache);
-			disc_writer_update (pp->domain, wp);
+			disc_writer_update (pp->domain, wp, 1, 0);
 		}
 		else if ((wp->w_flags & EF_PUBLISH) == 0)
 			dcps_suspended_publication_add (pp, wp, 0);
@@ -643,6 +648,10 @@ DDS_DataWriter DDS_Publisher_create_datawriter (DDS_Publisher                up,
 	Writer_t	*wp;
 	Cache_t		cp;
 	EntityId_t	eid;
+#ifdef DDS_NATIVE_SECURITY
+	unsigned	secure;
+	DDS_ReturnCode_t ret;
+#endif
 	const TypeSupport_t *ts;
 
 	ctrc_begind (DCPS_ID, DCPS_P_C_DW, &up, sizeof (up));
@@ -681,8 +690,16 @@ DDS_DataWriter DDS_Publisher_create_datawriter (DDS_Publisher                up,
 #ifdef DDS_SECURITY
 
 	/* Check if security policy allows this datawriter. */
+
+#ifdef DDS_NATIVE_SECURITY
+	if (sec_check_create_writer (dp->participant.p_permissions,
+				     str_ptr (tp->name),
+				     NULL, qos, up->qos.partition,
+				     NULL, &secure)) {
+#else
 	if (check_create_writer (dp->participant.p_permissions, tp,
 						qos, up->qos.partition)) {
+#endif
 		log_printf (DCPS_ID, 0, "create_data_writer: reader create not allowed!\r\n");
 		goto done;
 	}
@@ -731,6 +748,32 @@ DDS_DataWriter DDS_Publisher_create_datawriter (DDS_Publisher                up,
 	wp->w_topic = tp;
 	wp->w_next = tp->writers;
 	tp->writers = &wp->w_ep;
+
+#ifdef DDS_NATIVE_SECURITY
+
+	/* Set security attributes. */
+	wp->w_access_prot = 0;
+	wp->w_disc_prot = 0;
+	wp->w_submsg_prot = 0;
+	wp->w_payload_prot = 0;
+	wp->w_crypto_type = 0;
+	wp->w_crypto = 0;
+	if (secure && 
+	    (dp->participant.p_sec_caps & (SECC_DDS_SEC | (SECC_DDS_SEC << SECC_LOCAL))) != 0) {
+		log_printf (DCPS_ID, 0, "DDS: Writer security attributes: 0x%x\r\n", secure);
+		wp->w_access_prot = (secure & DDS_SECA_ACCESS_PROTECTED) != 0;
+		wp->w_disc_prot = (secure & DDS_SECA_DISC_PROTECTED) != 0;
+		wp->w_submsg_prot = (secure & DDS_SECA_SUBMSG_PROTECTED) != 0;
+		wp->w_payload_prot = (secure & DDS_SECA_PAYLOAD_PROTECTED) != 0;
+		if (wp->w_submsg_prot || wp->w_payload_prot) {
+			wp->w_crypto_type = secure >> DDS_SECA_ENCRYPTION_SHIFT;
+			wp->w_crypto = sec_register_local_datawriter (dp->participant.p_crypto,
+								             wp, &ret);
+		}
+	}
+#endif
+
+	/* Create history cache. */
 	wp->w_cache = cp = hc_new (&wp->w_lep, 1);
 	if (!cp) {
 		warn_printf ("create_data_writer: out of memory for history cache!\r\n");
@@ -782,11 +825,12 @@ static DDS_ReturnCode_t delete_datawriter_l (Publisher_t *up, Writer_t *wp)
 		log_printf (DCPS_ID, 0, "delete_datawriter: can't take topic lock!\r\n");
 		return (DDS_RETCODE_BAD_PARAMETER);
 	}
+
 #ifdef RW_LOCKS
 	lock_take (wp->w_lock);
 #endif
 
-	/* Still exists? */
+	/* Check if it still exists? */
 	for (prev_ep = NULL, ep = tp->writers;
 	     ep && ep != &wp->w_ep;
 	     prev_ep = ep, ep = ep->next)
@@ -796,8 +840,18 @@ static DDS_ReturnCode_t delete_datawriter_l (Publisher_t *up, Writer_t *wp)
 		goto no_writer_locked;
 	}
 
+	/* Remove outstanding listener callbacks. */
+        if (!dds_purge_notifications ((Entity_t *) wp, DDS_ALL_STATUS, 1)) {
+		ret = DDS_RETCODE_PRECONDITION_NOT_MET;
+		log_printf (DCPS_ID, 0, "delete_datawriter_l: active listener - can't delete!\r\n");
+		goto no_writer_locked;
+	}
+
+	/* Writer definitely exists, all locks taken and no active listeners. */
+
+	/* Signal that writer is shutting down. */
+	wp->w_flags |= EF_SHUTDOWN;
 #if 0
-	/* Writer definitely exists and all locks taken. */
 	printf ("DDS: deleting datawriter (%s/%s)\r\n",
 				str_ptr (tp->name),
 				str_ptr (tp->type->type_name));
@@ -813,17 +867,17 @@ static DDS_ReturnCode_t delete_datawriter_l (Publisher_t *up, Writer_t *wp)
 	if (rtps_used && wp->w_rtps)
 		rtps_writer_delete (wp);
 #endif
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+
+	/* Unregister for crypto operations. */
+	if (wp->w_crypto)
+		sec_unregister_datawriter (wp->w_crypto);
+#endif
 
 	/* If publisher was suspended, remove from suspend list. */
 	if ((wp->w_flags & EF_PUBLISH) != 0)
 		dcps_suspended_publication_remove (up, wp);
 
-	/* Remove outstanding listener callbacks. */
-        if (!dds_purge_notifications ((Entity_t *) wp, DDS_ALL_STATUS, 1)) {
-		ret = DDS_RETCODE_PRECONDITION_NOT_MET;
-		log_printf (DCPS_ID, 0, "delete_datawriter_l: active listener - can't delete!");
-		goto no_writer_locked;
-	}
 	wp->w_flags &= ~EF_ENABLED;
 
 	up->nwriters--;
@@ -870,7 +924,7 @@ DDS_ReturnCode_t DDS_Publisher_delete_datawriter (DDS_Publisher  up,
 	ctrc_contd (&wp, sizeof (wp));
 	ctrc_endd ();
 
-	prof_start (ddcps_delete_writer_p);
+	prof_start (dcps_delete_writer_p);
 
 	if (!publisher_ptr (up, &ret))
 		return (ret);

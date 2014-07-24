@@ -12,7 +12,7 @@
  * See LICENSE file for more details.
  */
 
-/* random.h -- Fast random number generator, based on the LCG algorithm. */
+/* random.h -- Fast pseudo random number generator, based on a LCG algorithm. */
 
 #ifndef __fastrand_h_
 #define __fastrand_h_
@@ -21,11 +21,15 @@
 
 void fastsrand (unsigned seed);
 
-/* Seed the random number generator. */
+/* Seed the pseudo random number generator. */
 
 unsigned fastrand (void);
 
-/* Return a random number with 15 significant bits. */
+/* Return a pseudo random number with 15 significant bits. */
+
+unsigned fastrandn (unsigned n);
+
+/* Return a pseudo random number in the range (0..n-1) where n < 2^16. */
 
 #endif /* !__fastrand_h_ */
 

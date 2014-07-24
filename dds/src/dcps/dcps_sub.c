@@ -44,7 +44,12 @@
 #include "dcps_pub.h"
 #include "dcps_sub.h"
 #ifdef DDS_SECURITY
+#ifdef DDS_NATIVE_SECURITY
+#include "sec_access.h"
+#include "sec_crypto.h"
+#else
 #include "security.h"
+#endif
 #endif
 
 DDS_ReturnCode_t DDS_Subscriber_get_qos (DDS_Subscriber sp,
@@ -53,7 +58,7 @@ DDS_ReturnCode_t DDS_Subscriber_get_qos (DDS_Subscriber sp,
 	Domain_t		*dp;
 	DDS_ReturnCode_t	ret;
 
-	ctrc_begind (DCPS_ID, DCPS_S_G_QOS, &p, sizeof (p));
+	ctrc_begind (DCPS_ID, DCPS_S_G_QOS, &sp, sizeof (sp));
 	ctrc_contd (&qos, sizeof (qos));
 	ctrc_endd ();
 
@@ -87,7 +92,7 @@ static int update_reader_qos (Skiplist_t *list, void *node, void *arg)
 		lock_take (rp->r_lock);
 #endif
 		hc_qos_update (rp->r_cache);
-		disc_reader_update (sp->domain, rp);
+		disc_reader_update (sp->domain, rp, 1, 0);
 #ifdef RW_LOCKS
 		lock_release (rp->r_lock);
 #endif
@@ -249,7 +254,7 @@ DDS_StatusCondition DDS_Subscriber_get_statuscondition (DDS_Subscriber sp)
 
 DDS_InstanceHandle_t DDS_Subscriber_get_instance_handle (DDS_Subscriber sp)
 {
-	ctrc_printd (DCPS_ID, DCPS_S_G_HANDLE, &p, sizeof (p));
+	ctrc_printd (DCPS_ID, DCPS_S_G_HANDLE, &sp, sizeof (sp));
 
 	if (!subscriber_ptr (sp, NULL))
 		return (0);
@@ -497,6 +502,10 @@ DDS_DataReader DDS_Subscriber_create_datareader (DDS_Subscriber               sp
 	Reader_t	*rp;
 	Cache_t		cp;
 	EntityId_t	eid;
+#ifdef DDS_NATIVE_SECURITY
+	unsigned	secure;
+	DDS_ReturnCode_t ret;
+#endif
 	const TypeSupport_t *ts;
 	int		error;
 
@@ -537,8 +546,15 @@ DDS_DataReader DDS_Subscriber_create_datareader (DDS_Subscriber               sp
 #ifdef DDS_SECURITY
 
 	/* Check if security policy allows this datareader. */
+#ifdef DDS_NATIVE_SECURITY
+	if (sec_check_create_reader (dp->participant.p_permissions,
+				     str_ptr (tp->name),
+				     NULL, qos, sp->qos.partition,
+				     NULL, &secure)) {
+#else
 	if (check_create_reader (dp->participant.p_permissions, tp,
 						qos, sp->qos.partition)) {
+#endif
 		log_printf (DCPS_ID, 0, "create_datareader: reader create not allowed!\r\n");
 		goto done;
 	}
@@ -608,6 +624,30 @@ DDS_DataReader DDS_Subscriber_create_datareader (DDS_Subscriber               sp
 	rp->r_next = tp->readers;
 	tp->readers = &rp->r_ep;
 
+#ifdef DDS_NATIVE_SECURITY
+
+	/* Set security attributes. */
+	rp->r_access_prot = 0;
+	rp->r_disc_prot = 0;
+	rp->r_submsg_prot = 0;
+	rp->r_payload_prot = 0;
+	rp->r_crypto_type = 0;
+	rp->r_crypto = 0;
+	if (secure && 
+	    (dp->participant.p_sec_caps & (SECC_DDS_SEC | (SECC_DDS_SEC << SECC_LOCAL))) != 0) {
+		log_printf (DCPS_ID, 0, "DDS: Reader security attributes: 0x%x\r\n", secure);
+		rp->r_access_prot = (secure & DDS_SECA_ACCESS_PROTECTED) != 0;
+		rp->r_disc_prot = (secure & DDS_SECA_DISC_PROTECTED) != 0;
+		rp->r_submsg_prot = (secure & DDS_SECA_SUBMSG_PROTECTED) != 0;
+		rp->r_payload_prot = (secure & DDS_SECA_PAYLOAD_PROTECTED) != 0;
+		if (rp->r_submsg_prot || rp->r_payload_prot) {
+			rp->r_crypto_type = secure >> DDS_SECA_ENCRYPTION_SHIFT;
+			rp->r_crypto = sec_register_local_datareader (dp->participant.p_crypto,
+								             rp, &ret);
+		}
+	}
+#endif
+
 	/* Allocate a history cache. */
 	rp->r_cache = cp = hc_new (&rp->r_lep, ts != NULL);
 	if (!cp) {
@@ -615,6 +655,7 @@ DDS_DataReader DDS_Subscriber_create_datareader (DDS_Subscriber               sp
 		goto free_node;
 	}
 	sp->nreaders++;
+
 	error = hc_request_notification (rp->r_cache, dcps_data_available, (uintptr_t) rp);
 	if (error)
 		warn_printf ("create_data_reader: RTPS reader data available listener registration problem.\r\n");
@@ -683,12 +724,32 @@ static DDS_ReturnCode_t delete_datareader_l (Subscriber_t *sp, Reader_t *rp, int
 		goto no_reader_locked;
 	}
 
+	/* Check if still conditions attached to reader, which is only allowed
+	   from a *_delete_contained_entities() function call. */
+	if (!all)
+		for (cp = rp->r_conditions; cp; cp = cp->e_next)
+			if (cp->class == CC_READ || cp->class == CC_QUERY) {
+				ret = DDS_RETCODE_PRECONDITION_NOT_MET;
+				goto no_reader_locked;
+			}
+
+	if (!dds_purge_notifications ((Entity_t *) rp, DDS_ALL_STATUS, 1)) {
+		log_printf (DCPS_ID, 0, "delete_datareader_l: has an active listener.\r\n");
+		ret = DDS_RETCODE_PRECONDITION_NOT_MET;
+		goto no_reader_locked;
+	}
+
+	/* Reader definitely exists and all locks taken. */
+
 #if 0
 	/* Reader definitely exists and all locks taken. */
 	printf ("DDS: deleting datareader (%s/%s)\r\n",
 				str_ptr (tp->name),
 				str_ptr (tp->type->type_name));
 #endif
+	/* Signal that reader is shutting down. */
+	rp->r_flags |= EF_SHUTDOWN;
+
 	/* Remove subscription endpoint from discovery subsystem. */
 	if ((sp->entity.flags & EF_BUILTIN) == 0 && (rp->r_flags & EF_ENABLED) != 0)
 		disc_reader_remove (dp, rp);
@@ -700,22 +761,6 @@ static DDS_ReturnCode_t delete_datareader_l (Subscriber_t *sp, Reader_t *rp, int
 		rtps_reader_delete (rp);
 #endif
 
-	/* Reader definitely exists and all locks taken. */
-
-	/* Check if still conditions attached to reader, which is only allowed
-	   from a *_delete_contained_entities() function call. */
-	if (!all)
-		for (cp = rp->r_conditions; cp; cp = cp->e_next)
-			if (cp->class == CC_READ || cp->class == CC_QUERY) {
-				ret = DDS_RETCODE_PRECONDITION_NOT_MET;
-				goto no_reader_locked;
-			}
-
-	if (!dds_purge_notifications ((Entity_t *) rp, DDS_ALL_STATUS, 1)) {
-		log_printf (DCPS_ID, 0, "delete_datareader: has an active listener.\r\n");
-		ret = DDS_RETCODE_PRECONDITION_NOT_MET;
-		goto no_reader_locked;
-	}
 	rp->r_flags &= ~EF_ENABLED;
 
 	/* Delete StatusCondition if it exists. */

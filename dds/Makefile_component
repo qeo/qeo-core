@@ -1,9 +1,13 @@
 ifneq ($($(dds_INCLUDED)),1)
 
 override COMPONENT          := technicolor.middleware.core.servicefw.dds
+override COMPONENT_SEARCH_PATH_PREFIX := $(projectdir/)../*/%/Makefile_component
 
 # Force to use dds_SECURITY in this branch
 dds_SECURITY := 1
+dds_NATIVE_SECURITY := 1
+dds_QEO_SECURITY := 1
+#dds_DTLS_SECURITY := 1
 
 # The license of this component
 
@@ -26,21 +30,35 @@ dds_PARTS_INSTALL           := libdds.so@$$(libdir/)libdds.so:644 ddsfreeshm@$$(
 endif
 
 # Test parts of this component
+ifneq ($(dds_OLD_SECURITY), 1)
 dds_TEST_PARTS_INSTALL       = libsystests.so@$$(libdir/)unittests/libsystests.so:644 \
                                dcps_test@$$(bindir/)dcps_test:755 \
                                skiplist_test@$$(bindir/)skiplist_test:755 \
                                latency_test@$$(bindir/)latency_test:755 \
                                api_test@$$(bindir/)api_test:755 \
-			       reqresp_test@$$(bindir/)reqresp_test:755 \
-			       chat@$$(bindir/)chat:755
+                               reqresp_test@$$(bindir/)reqresp_test:755 \
+                               chat@$$(bindir/)chat:755 \
+                               aac_test@$$(bindir/)aac_test:755
                                #filter_test@$$(bindir/)filter_test:755 
                                #type_test@$$(bindir/)type_test:755 
-                               #disc_test@$$(bindir/)disc_test:755 \
-
+                               #disc_test@$$(bindir/)disc_test:755
+else
+dds_TEST_PARTS_INSTALL       = libsystests.so@$$(libdir/)unittests/libsystests.so:644 \
+                               dcps_test@$$(bindir/)dcps_test:755 \
+                               skiplist_test@$$(bindir/)skiplist_test:755 \
+                               latency_test@$$(bindir/)latency_test:755 \
+                               api_test@$$(bindir/)api_test:755 \
+                               reqresp_test@$$(bindir/)reqresp_test:755 \
+                               chat@$$(bindir/)chat:755
+endif
 dds_TEST_PARTS_INSTALL       += fwd@$$(bindir/)fwd:755
 
-
+ifneq ($(dds_OLD_SECURITY), 1)
+dds_TEST_RUN                 = $$(bindir/)dcps_test -wl -n 100 -d 10 && $$(bindir/)dcps_test -v -wl -n 2 -d 10000 && $$(bindir/)skiplist_test && $$(bindir/)testScript.sh aac_test 1 security.xml $(bindir)/
+else
 dds_TEST_RUN                 = $$(bindir/)dcps_test -wl -n 100 -d 10 && $$(bindir/)dcps_test -v -wl -n 2 -d 10000 && $$(bindir/)skiplist_test
+endif
+
 #TODO JaSm: Enable test again -- && $$(bindir/)api_test -vv -r
 #$$(bindir/)test_run && $$(bindir/)filter_test && $$(bindir/)type_test
 dds_DOCS_INSTALL            := user.pdf@UserManual.pdf
@@ -60,7 +78,7 @@ DDS_TYPE_SYSTEM:=XTYPES
 
 # Workaround for raw multicast to different endian hosts
 
-dds_EXTRA_DEFINES           += -DRTPS_MARSHALL_ALWAYS
+dds_EXTRA_DEFINES           += -DRTPS_MARSHALL_ALWAYS -DDDS_HIST_PURGE_NA
 
 dds.LIBRARIES               := libdds
 
@@ -73,7 +91,9 @@ dds.libdds_SRCS             := \
 			                                     dcps_part.c dcps_pub.c dcps_qos.c dcps_reader.c dcps_sub.c dcps_topic.c \
 							     dcps_waitset.c dcps_writer.c) \
                                $(addprefix src/dds/,         dds.c dds_seq.c domain.c guard.c guid.c locator.c uqos.c) \
-                               $(addprefix src/disc/,        disc.c) \
+                               $(addprefix src/disc/,        disc_tc.c disc_ep.c disc_match.c disc_sub.c disc_pub.c disc_msg.c \
+							     disc_sedp.c disc_spdp.c disc_main.c disc_ctt.c disc_psmp.c disc_cdd.c \
+							     disc_policy_updater.c) \
                                $(addprefix src/rtps/,        rtps_check.c rtps_clist.c rtps_dbg.c rtps_frag.c rtps_main.c rtps_msg.c \
 			                                     rtps_mux.c rtps_sfbr.c rtps_sfbw.c rtps_sfrr.c rtps_sfrw.c rtps_slbr.c \
 							     rtps_slbw.c rtps_slrw.c rtps_trace.c) \
@@ -108,9 +128,29 @@ dds_EXTRA_DEFINES           += -DLOG_FILE
 endif
 ifeq ($(dds_SECURITY), 1)
 dds_EXTRA_DEFINES           += -DDDS_SECURITY
-dds.libdds_SRCS             += $(addprefix src/security/, security.c)
-dds.libdds_SRCS             += $(addprefix apps/secplug/, msecplug.c)
-dds.libdds_SRCS             += $(addprefix apps/security/, engine_fs.c)
+ifneq ($(dds_OLD_SECURITY), 1)
+dds_EXTRA_DEFINES           += -DDDS_NATIVE_SECURITY
+dds_EXTRA_DEFINES           += -DCOMMON_NAME_ALTERATION
+dds_EXTRA_DEFINES	    += -DDDS_QEO_TYPES
+dds.libdds_SRCS             += $(addprefix src/nsec/,		sec_access.c sec_auth.c sec_a_std.c sec_compat.c sec_id.c sec_logging.c \
+								sec_main.c sec_perm.c sec_p_std.c sec_util.c sec_cdata.c sec_c_std.c \
+								sec_crypto.c)
+ifeq ($(dds_QEO_SECURITY), 1)
+dds_EXTRA_DEFINES           += -DQEO_SECURITY
+dds.libdds_SRCS             += $(addprefix src/nsec/,		sec_a_qeo.c sec_p_qeo.c sec_qeo_policy.c)
+endif
+ifeq ($(dds_DTLS_SECURITY), 1)
+dds_EXTRA_DEFINES           += -DDTLS_SECURITY
+dds.libdds_SRCS             += $(addprefix src/nsec/,		sec_a_dtls.c sec_p_dtls.c)
+endif
+dds.libdds_SRCS             += $(addprefix plugins/nsecplug/,	sp_access.c sp_access_db.c sp_access_populate.c sp_auth.c sp_cert.c \
+								sp_sys_cert_none.c sp_cred.c sp_crypto.c sp_main.c sp_sys.c \
+								sp_sys_cert.c sp_sys_crypto.c)
+else
+dds.libdds_SRCS             += $(addprefix src/security/,	security.c)
+dds.libdds_SRCS             += $(addprefix plugins/secplug/,	msecplug.c)
+dds.libdds_SRCS             += $(addprefix plugins/security/,	engine_fs.c)
+endif
 dds_INCLUDES                += $(openssl_INCLUDES)
 dds_EXTRA_LIBS              += $(openssl_LIBS)
 ifdef ANDROID_ARCH
@@ -119,29 +159,35 @@ endif
 dds_LIBS                    += $(dds_EXTRA_LIBS)
 endif
 dds_EXTRA_DEFINES           += -DDDS_FORWARD
-dds.libdds_SRCS             += $(addprefix src/rtps/, rtps_ft.c rtps_fwd.c)
+dds.libdds_SRCS             += $(addprefix src/rtps/,		rtps_ft.c rtps_fwd.c)
 
 dds.PEDANTIC                :=
 ifneq ($(E), GOOG_X86ANDROID)
+ifneq ($(E), GOOG_ARMANDROID)
 dds.PEDANTIC                := -pedantic
+endif
 endif
 dds.libdds_LOCALINCLUDES    := $(dds_INCLUDES) src/include
 dds.libdds_LOCALDEFINES     := -Wextra -Wall -Wno-long-long $(dds.PEDANTIC) $(dds_EXTRA_DEFINES) -DNO_ATOMIC -DDCPS_ZERO_BUFFER -DPTHREADS_USED -D_XOPEN_SOURCE=600 -D_SVID_SOURCE -DRTPS_USED -DDDS_AUTO_LIVELINESS -DDDS_DYN_IP -DDDS_TYPECODE -DDDS_TCP -DBIGDATA -DNO_CERTIFICATE_TIME_VALIDITY_CHECK # -DDDS_IPV6 -DLOG_FILE  -DCTRACE_USED -DCTRACE_ATEXIT 
+ifeq ($(dds_WERROR), 1)
+dds.libdds_LOCALDEFINES     += -Werror
+endif
 
 ifeq ($(dds_DEBUG), 1)
-dds.libdds_LOCALDEFINES     += -DDDS_DEBUG -DDDS_SERVER -DEXTRA_STATS -DDDS_TRACE -DRTPS_TRACE -DFORWARD_TRC -DFORWARD_TRC_FWD -DUSE_ABORT
+dds.libdds_LOCALDEFINES     += -DDDS_DEBUG -DDDS_SERVER -DEXTRA_STATS -DDDS_TRACE -DRTPS_TRACE -DMSG_TRACE -DFORWARD_TRC -DFORWARD_TRC_FWD -DUSE_ABORT
 endif
 dds.libdds_LDADD            += $(dds_EXTRA_LIBS) $(rt_LIBS)
 
 
 dds.PROGRAMS                += ddsfreeshm
 
-dds.ddsfreeshm_SRCS	    := tools/shm/freeshm.c
+dds.ddsfreeshm_SRCS         := tools/shm/freeshm.c
 dds.ddsfreeshm_LOCALDEFINES := -Wextra -Wall -Wno-long-long $(dds.PEDANTIC)
 
 ##< Test Parts
 dds.LIBRARIES               += libend2end libsystests
-                               
+       
+ifneq ($(dds_OLD_SECURITY), 1)
 dds.PROGRAMS                += unittest \
                                dcps_test \
                                rtps_test \
@@ -151,7 +197,21 @@ dds.PROGRAMS                += unittest \
                                reqresp_test \
                                type_test \
                                chat \
-			       api_test
+                               api_test \
+                               aac_test
+else
+dds.PROGRAMS                += unittest \
+                               dcps_test \
+                               rtps_test \
+                               skiplist_test \
+                               latency_test \
+                               filter_test \
+                               reqresp_test \
+                               type_test \
+                               chat \
+                               api_test
+endif
+
 # TODO JaSm
 #                               disc_test \
 
@@ -242,6 +302,16 @@ dds.latency_test_LOCALDEFINES   := $(dds.libdds_LOCALDEFINES)
 dds.latency_test_LDADD          := -Wl,-Bstatic -L$(dds_PREFIX) -ldds -Wl,-Bdynamic $(rt_LIBS) $(dds_EXTRA_LIBS)
 dds.latency_test_LDDEPS         := libdds.a
 
+ifneq ($(dds_OLD_SECURITY), 1)
+dds.aac_test_SRCS               := apps/dcps/main.c src/dbg/debug.c $(dds.libdds_SRCS) src/dds/dds.c plugins/nsecplug/sp_xml.c src/co/tty.c
+dds.aac_test_LOCALINCLUDES      := $(dds_INCLUDES) src/include /usr/include/libxml2/
+dds.aac_test_LOCALDEFINES       := -Wextra -Wall -Wno-long-long $(dds.PEDANTIC) -DDDS_NO_MCAST -DXTYPES_USED -DNO_ATOMIC -DDCPS_ZERO_BUFFER -DPTHREADS_USED -D_XOPEN_SOURCE=600 -D_SVID_SOURCE -DRTPS_USED -DDDS_AUTO_LIVELINESS -DDDS_DYN_IP -DDDS_TYPECODE -DDDS_TCP -DBIGDATA -DMSECPLUG_WITH_SECXML -DDDS_DEBUG -DLOG_FILE -DDDS_NATIVE_SECURITY -DDDS_SECURITY -DDDS_FORWARD -DDDS_QEO_TYPES
+dds.aac_test_LDADD              := -Wl,-Bstatic -L$(dds_PREFIX) -Wl,-Bdynamic $(rt_LIBS) $(dds_EXTRA_LIBS) -lm -lxml2
+dds.aac_test_LDDEPS             := 
+dds_$(E)_TEST_INSTALL           += && cp $(projectdir/)apps/dcps/testScript.sh $(bindir/)testScript.sh \
+                                   && cp $(projectdir/)apps/dcps/securityQeo.xml $(bindir/)security.xml \
+                                   && cp -r $(projectdir)/apps/dcps/qeoCerts/ $(bindir/)qeoCerts/
+endif
 ##>
 
 

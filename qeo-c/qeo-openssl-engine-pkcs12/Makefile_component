@@ -9,11 +9,10 @@ override COMPONENT_SEARCH_PATH_PREFIX := $(projectdir/)../../*/%/Makefile_compon
 # The license of the component
 
 # The exported header files for this component
-qeo-openssl-engine-pkcs12_INCLUDES     := api/headers  
+qeo-openssl-engine-pkcs12_INCLUDES     := api/headers $$(openssl_INCLUDES)
 
 # The compiler flags that have to be added to use the libraries of this component
-# Pass on ddsAL CFLAGS
-qeo-openssl-engine-pkcs12_CFLAGS     := -std=gnu99 -Wall -Werror -O0
+qeo-openssl-engine-pkcs12_CFLAGS     := -std=gnu99
 
 # The linker flags that have to be added to use the libraries of this component
 qeo-openssl-engine-pkcs12_LIBS       :=  -lqeo-openssl-engine-pkcs12 $$(openssl_LIBS)
@@ -65,13 +64,14 @@ qeo-openssl-engine-pkcs12.libqeo-openssl-engine-pkcs12_LDADD  := $(openssl_LIBS)
 
 qeo-openssl-engine-pkcs12.libqeo-openssl-engine-pkcs12_LDDEPS := 
 qeo-openssl-engine-pkcs12.libqeo-openssl-engine-pkcs12_LDFLAGS :=
-qeo-openssl-engine-pkcs12.libqeo-openssl-engine-pkcs12_LOCALDEFINES   = $(qeo-openssl-engine-pkcs12_CFLAGS) -D_GNU_SOURCE 
+qeo-openssl-engine-pkcs12.libqeo-openssl-engine-pkcs12_LOCALDEFINES   = $(qeo-openssl-engine-pkcs12_CFLAGS) -D_GNU_SOURCE -Wall -Werror
 qeo-openssl-engine-pkcs12.libqeo-openssl-engine-pkcs12_LOCALINCLUDES :=  $(qeo-openssl-engine-pkcs12_INCLUDES) $(openssl_INCLUDES) $(qeo-c-util_INCLUDES)
 qeo-openssl-engine-pkcs12.libqeo-openssl-engine-pkcs12_SRCS          := $(addprefix src/, engine_pkcs12.c)
 
 ##< Test Parts
 # Unit testing libraries
 
+include $($(COMPONENT)_COMP_DIR/)test/unit/Makefile_part
 ##>
 
 include $(projectdir/)build/Makefile_component_bot

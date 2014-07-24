@@ -20,6 +20,9 @@
 ########################################################################*/                                                                           
 #include <qeo/error.h>
 #include <stdbool.h>
+#include <nsecplug/nsecplug.h>
+#include <openssl/ssl.h>
+#include "topic_participant_list_node.h"
  
 /*#######################################################################
 #                           TYPES SECTION                               #
@@ -28,7 +31,7 @@ typedef struct {
     bool read;
     bool write;
     bool blacklist;
-}policy_dds_sp_perms_t;
+} policy_dds_sp_perms_t;
 
 /*#######################################################################
 #                   PUBLIC FUNCTION DECLARATION                         #
@@ -38,10 +41,14 @@ typedef struct {
 qeo_retcode_t policy_dds_sp_init(void); 
 void policy_dds_sp_destroy(void); 
 qeo_retcode_t policy_dds_sp_flush(void);
+qeo_retcode_t policy_dds_sp_set_policy_cb(sp_dds_policy_content_fct policy_cb, uintptr_t userdata);
 void policy_dds_sp_update_start(void);
 void policy_dds_sp_update_done(void);
 qeo_retcode_t policy_dds_sp_add_domain(unsigned int domain_id);
 qeo_retcode_t policy_dds_sp_add_participant(uintptr_t *cookie, const char *participant_id);
-qeo_retcode_t policy_dds_sp_add_partition(uintptr_t cookie, const char *name, policy_dds_sp_perms_t *perms);
+qeo_retcode_t policy_dds_sp_add_topic(uintptr_t cookie, const char *name, policy_dds_sp_perms_t *perms);
+qeo_retcode_t policy_dds_sp_add_topic_fine_grained(uintptr_t cookie, const char *name, policy_dds_sp_perms_t * perms,
+                                                   struct topic_participant_list_node *read_participant_list,
+                                                   struct topic_participant_list_node *write_participant_list);
  
 #endif

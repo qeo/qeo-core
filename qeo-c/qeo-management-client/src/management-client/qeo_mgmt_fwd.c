@@ -113,13 +113,13 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_register_forwarder(qeo_mgmt_client_ctx
         }
         locked = true;
 
-        ret = qeo_mgmt_url_get(ctx->url_ctx, ssl_cb,cookie, base_url, QMGMT_URL_REGISTER_FORWARDER, &url);
+        ret = qeo_mgmt_url_get(ctx, ssl_cb,cookie, base_url, QMGMT_URL_REGISTER_FORWARDER, &url);
         if (ret != QMGMTCLIENT_OK) {
             qeo_log_w("Failed to retrieve url from root resource.");
             break;
         }
 
-        ret = qeo_mgmt_curl_util_https_put(ctx->curl_ctx, url, QMGMTCLIENT_CONTENT_TYPE_FWD, ssl_cb, cookie, message, length);
+        ret = qeo_mgmt_curl_util_https_put(ctx, url, QMGMTCLIENT_CONTENT_TYPE_FWD, ssl_cb, cookie, message, length);
         if (ret != QMGMTCLIENT_OK) {
             qeo_log_w("Failed to upload forwarder.");
             break;
@@ -164,12 +164,12 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_get_forwarders_sync(qeo_mgmt_client_ct
         }
         locked = true;
 
-        ret = qeo_mgmt_url_get(ctx->url_ctx, ssl_cb, ssl_cookie, base_url, QMGMT_URL_REGISTER_FORWARDER, &url);
+        ret = qeo_mgmt_url_get(ctx, ssl_cb, ssl_cookie, base_url, QMGMT_URL_REGISTER_FORWARDER, &url);
         if (ret != QMGMTCLIENT_OK) {
             //qeo_log_w("Failed to retrieve url from root resource.");
             break;
         }
-        ret = qeo_mgmt_curl_util_https_get(ctx->curl_ctx, url, QMGMTCLIENT_ACCEPT_HEADER_FWD, ssl_cb, ssl_cookie, &data, &length);
+        ret = qeo_mgmt_curl_util_https_get(ctx, url, QMGMTCLIENT_ACCEPT_HEADER_FWD, ssl_cb, ssl_cookie, &data, &length);
         if (ret != QMGMTCLIENT_OK) {
             break;
         }
@@ -273,6 +273,4 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_free_forwarder(qeo_mgmt_client_forward
     }
     return QMGMTCLIENT_OK;
 }
-
-
 

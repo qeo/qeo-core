@@ -15,7 +15,7 @@ More information about Qeo can be found on the [qeo.org](http://www.qeo.org/) we
 
 ## Supported Platforms ##
 
-The open source version of Qeo is validated on Redhat Enterprice Linux version 6.1 and Ubuntu version 12 using GNU Make 3.81. Other distributions might be supported as well. 
+The open source version of Qeo is validated on Redhat Enterprice Linux version 6.1 and Ubuntu version 12.04 using GNU Make 3.81. Other distributions might be supported as well.
 
 Before building the source, make sure your system meets the following requirements:
 

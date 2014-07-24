@@ -140,7 +140,9 @@ int rtps_stateless_resend (Writer_t *w)
 		ret = DDS_RETCODE_ALREADY_DELETED;
 		goto done;
 	}
-	if (wp->endpoint.stateful) {	/* Not applicable in stateless mode. */
+	if (wp->endpoint.stateful ||!wp->endpoint.resends) {
+
+		/* Not applicable in stateless mode. */
 		ret = DDS_RETCODE_BAD_PARAMETER;
 		goto done;
 	}
@@ -202,7 +204,7 @@ static void slw_be_start (RemReader_t *rrp)
 		rtps_marker_notify (wp->endpoint.endpoint, EM_START, "slw_be_start");
 #endif
 	NEW_RR_CSTATE (rrp, RRCS_INITIAL, 1);
-	if (!wp->rh_timer) {
+	if (wp->endpoint.resends && !wp->rh_timer) {
 
 		/* Start a new Resend timer. */
 		RESEND_TMR_ALLOC (wp);
@@ -262,6 +264,10 @@ int be_send_data (RemReader_t *rrp, DiscoveredReader_t *reader)
 {
 	CCREF			*rp, *next_rp;
 	DiscoveredReader_t	*drp;
+	Participant_t		*pp;
+	GuidPrefix_t		*prefix;
+	const EntityId_t	*eid;
+	DDS_HANDLE		dest;
 	int			error;
 
 	while ((rp = rrp->rr_unsent_changes) != NULL) {
@@ -283,9 +289,35 @@ int be_send_data (RemReader_t *rrp, DiscoveredReader_t *reader)
 		else
 			drp = NULL;
 
+		if (drp && drp->dr_participant) {
+			prefix = &drp->dr_participant->p_guid_prefix;
+			eid = &drp->dr_entity_id;
+		}
+		else if (!rrp->rr_writer->endpoint.stateful &&
+		         (dest = rp->u.c.change->c_dests [0]) != 0 &&
+			 (pp = (Participant_t *) entity_ptr (dest)) != NULL) {
+			prefix = &pp->p_guid_prefix;
+#ifdef DDS_NATIVE_SECURITY
+			if (entity_id_eq (rrp->rr_writer->endpoint.endpoint->ep.entity_id,
+					  rtps_builtin_eids [EPB_PARTICIPANT_SL_W]))
+				eid = &rtps_builtin_eids [EPB_PARTICIPANT_SL_R];
+			else
+#endif
+			if (entity_id_eq (rrp->rr_writer->endpoint.endpoint->ep.entity_id,
+					  rtps_builtin_eids [EPB_PARTICIPANT_W]))
+				eid = &rtps_builtin_eids [EPB_PARTICIPANT_R];
+			else
+				eid = NULL;
+		}
+		else {
+			prefix = NULL;
+			eid = NULL;
+		}
+
 		/* Add DATA submessage (possibly preceeded by INFO_TS). */
 		error = rtps_msg_add_data (rrp,
-					   drp,
+					   prefix,
+					   eid,
 					   rp->u.c.change,
 					   rp->u.c.hci,
 					   next_rp == NULL
@@ -299,7 +331,8 @@ int be_send_data (RemReader_t *rrp, DiscoveredReader_t *reader)
 		}
 
 		/* If stateless best-effort writer, we're done. */
-	    	if (!rrp->rr_writer->endpoint.stateful)
+	    	if (!rrp->rr_writer->endpoint.stateful &&
+		    rrp->rr_writer->endpoint.resends)
 			continue;
 
 	    skip_tx:

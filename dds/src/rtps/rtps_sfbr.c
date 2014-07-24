@@ -20,6 +20,9 @@
 #include "ctrace.h"
 #include "list.h"
 #include "dcps.h"
+#ifdef DDS_NATIVE_SECURITY
+#include "sec_crypto.h"
+#endif
 #include "rtps_cfg.h"
 #include "rtps_data.h"
 #include "rtps_msg.h"
@@ -91,6 +94,12 @@ static void sfr_be_data (RemWriter_t         *rwp,
 	CCREF		*refp;
 	FragInfo_t	*fip;
 	unsigned	max_frags = 0;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	DB		*dbp;
+	DBW		walk;
+	int		error;
+#endif
+	size_t		ofs;
 #endif
 
 	ctrc_printd (RTPS_ID, RTPS_SFR_BE_DATA, &rwp, sizeof (rwp));
@@ -191,14 +200,37 @@ static void sfr_be_data (RemWriter_t         *rwp,
 			return;
 		}
 
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+
+		/* Decrypt payload data if an encrypted payload is present. */
+		if (rwp->rw_endpoint &&
+		    rwp->rw_crypto &&
+		    fip->length) {
+			walk.dbp = fip->data;
+			walk.data = fip->data->data;
+			walk.length = walk.left = fip->length;
+			dbp = sec_decode_serialized_data (&walk,
+							  0,
+							  rwp->rw_crypto,
+							  &fip->length,
+							  &ofs,
+							  (DDS_ReturnCode_t *) &error);
+			if (!dbp)
+				return;
+
+			fip->data = dbp;
+		}
+		else
+#endif
+			ofs = 0;
+
 		/* Cleanup the context. */
 		ncp->c_db = fip->data;
 		ncp->c_length = fip->length;
-		ncp->c_data = fip->data->data;
+		ncp->c_data = fip->data->data + ofs;
 		rcl_access (fip->data);
 		fip->data->nrefs++;
 		rcl_done (fip->data);
-		rfraginfo_delete (refp);
 		cp = ncp;
 		FRAGSC_TMR_STOP (rwp, &fip->timer);
 		rfraginfo_delete (refp);

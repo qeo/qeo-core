@@ -298,6 +298,13 @@ void fwd_destroy(qeo_factory_t *factory)
 {
     lock(&factory->mutex);
     if (true == factory->fwd.rqst_pending) {
+        qeo_security_hndl         qeo_sec = factory->qeo_sec;
+        qeo_mgmt_client_ctx_t     *mgmt_client_ctx = NULL;
+
+        if (qeo_security_get_mgmt_client_ctx(qeo_sec, &mgmt_client_ctx) == QEO_OK) {
+            qeo_mgmt_client_ctx_stop(mgmt_client_ctx);
+        }
+
         /* Wait untill the fwd request is finished before continuing. */
         qeo_log_i("waiting for the fwd request to finish.");
         pthread_cond_wait(&factory->fwd.wait_rqst_finished, &factory->mutex);
@@ -805,7 +812,7 @@ static qeo_retcode_t client_start_timer(qeo_factory_t *factory, bool reset)
     if (reset) {
         factory->fwd.timeout = qeocore_parameter_get_number("FWD_LOC_SRV_MIN_TIMEOUT");
     }
-    qeo_log_i("retry contacting location service after %d s", factory->fwd.timeout/1000);
+    qeo_log_i("retry contacting location service after %ds", factory->fwd.timeout/1000);
     rc = ddsrc_to_qeorc(DDS_Timer_start(factory->fwd.timer, factory->fwd.timeout, (uintptr_t)factory,
                                         fwd_client_discovery_timeout));
     return rc;

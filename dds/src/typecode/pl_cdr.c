@@ -68,12 +68,12 @@ static void pl_cache_participant (const Participant_t *p)
 	p_data.lease_duration = p->p_domain->participant.p_lease_duration;
 #ifdef DDS_SECURITY
 	if (p->p_domain->security) {
-		p_data.identity = p->p_domain->identity;
-		p_data.permissions = p->p_domain->ptoken;
+		p_data.id_tokens = p->p_domain->participant.p_id_tokens;
+		p_data.p_tokens = p->p_domain->participant.p_p_tokens;
 	}
 	else {
-		p_data.identity = NULL;
-		p_data.permissions = 0;
+		p_data.id_tokens = NULL;
+		p_data.p_tokens = NULL;
 	}
 #endif
 	last_p = p;

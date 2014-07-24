@@ -143,6 +143,10 @@ qeo_mgmt_client_ctx_t *qeo_mgmt_client_init(void)
         if (pthread_mutex_init(&ctx->mutex, NULL ) != 0) {
             break;
         }
+        if (pthread_mutex_init(&ctx->fd_mutex, NULL ) != 0) {
+            pthread_mutex_destroy(&ctx->mutex);
+            break;
+        }
         ctx->mutex_init = true;
         return ctx;
     } while (0);
@@ -200,7 +204,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_enroll_device(qeo_mgmt_client_ctx_t *c
         break;
     }
     locked = true;
-    ret = qeo_mgmt_url_get(ctx->url_ctx, cb, cookie, base_url, QMGMT_URL_ENROLL_DEVICE, (const char**)&url);
+    ret = qeo_mgmt_url_get(ctx, cb, cookie, base_url, QMGMT_URL_ENROLL_DEVICE, (const char**)&url);
     if (ret != QMGMTCLIENT_OK) {
         qeo_log_w("Failed to retrieve url from root resource.");
         break;
@@ -210,7 +214,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_enroll_device(qeo_mgmt_client_ctx_t *c
     op_info->curl_ctx = ctx->curl_ctx;
 
     reset = true;
-    if (curl_util_set_opts(opts, sizeof(opts) / sizeof(curl_opt_helper), ctx->curl_ctx) != CURLE_OK) {
+    if (qeo_mgmt_curl_util_set_opts(opts, sizeof(opts) / sizeof(curl_opt_helper), ctx) != CURLE_OK) {
         ret = QMGMTCLIENT_EINVAL;
         break;
     }
@@ -312,12 +316,12 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_get_policy(qeo_mgmt_client_ctx_t *ctx,
         break;
     }
     locked = true;
-    ret = qeo_mgmt_url_get(ctx->url_ctx, ssl_cb, cookie, base_url, QMGMT_URL_GET_POLICY, &url);
+    ret = qeo_mgmt_url_get(ctx, ssl_cb, cookie, base_url, QMGMT_URL_GET_POLICY, &url);
     if (ret != QMGMTCLIENT_OK) {
         qeo_log_w("Failed to retrieve url from root resource.");
         break;
     }
-    ret = qeo_mgmt_curl_util_https_get_with_cb(ctx->curl_ctx, url, NULL, ssl_cb, cookie, &_curl_data_cb, &curldatahelper);
+    ret = qeo_mgmt_curl_util_https_get_with_cb(ctx, url, NULL, ssl_cb, cookie, &_curl_data_cb, &curldatahelper);
     if (ret != QMGMTCLIENT_OK) {
         qeo_log_w("Failed to retrieve policy file from <%s>.", url);
         break;
@@ -361,7 +365,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_check_policy(qeo_mgmt_client_ctx_t *ct
         }
         locked = true;
         reset = true;
-        ret = qeo_mgmt_url_get(ctx->url_ctx, ssl_cb, ssl_cookie, base_url, QMGMT_URL_CHECK_POLICY, &url);
+        ret = qeo_mgmt_url_get(ctx, ssl_cb, ssl_cookie, base_url, QMGMT_URL_CHECK_POLICY, &url);
         if (ret != QMGMTCLIENT_OK) {
             qeo_log_w("Failed to retrieve url from root resource.");
             break;
@@ -382,7 +386,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_check_policy(qeo_mgmt_client_ctx_t *ct
 
         reset = true;
         curl_easy_reset(ctx->curl_ctx);
-        if (CURLE_OK != curl_util_set_opts(opts, sizeof(opts) / sizeof(curl_opt_helper), ctx->curl_ctx)) {
+        if (CURLE_OK != qeo_mgmt_curl_util_set_opts(opts, sizeof(opts) / sizeof(curl_opt_helper), ctx)) {
             ret = QMGMTCLIENT_EINVAL;
             break;
         }
@@ -449,10 +453,17 @@ void qeo_mgmt_client_clean(qeo_mgmt_client_ctx_t *ctx)
         if (ctx->curl_global_init) {
             curl_global_cleanup();
         }
+        qeo_mgmt_curl_util_clean_fd_list(ctx);
         if (ctx->mutex_init) {
+            ctx->mutex_init = false;
             pthread_mutex_destroy(&ctx->mutex);
+            pthread_mutex_destroy(&ctx->fd_mutex);
         }
         free(ctx);
     }
+}
+
+void qeo_mgmt_client_ctx_stop(qeo_mgmt_client_ctx_t *ctx) {
+    qeo_mgmt_curl_util_shutdown_connections(ctx);
 }
 

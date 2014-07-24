@@ -20,6 +20,10 @@
 #ifdef _WIN32
 #include "win.h"
 #else
+#include <fcntl.h>
+#include <unistd.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #endif
 #include <string.h>
@@ -33,10 +37,8 @@
 #include "dds.h"
 #include "debug.h"
 #include "sock.h"
-#include <fcntl.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 
 static int n_ready;
 static lock_t sock_lock;
@@ -562,6 +564,7 @@ void sock_fd_remove (int fd)
 	for (i = 0; i < n; i++)
 		if ((*fds) [i].fd == fd) {
 			lock_take (poll_lock);
+			n = atomic_get_w (num_fds);
 			if (i + 1 < n) {
 				memmove (&(*fds) [i],
 						&(*fds) [i + 1],

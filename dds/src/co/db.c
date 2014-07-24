@@ -456,11 +456,11 @@ void db_put_data (DB *dbp, size_t ofs, const void *sp, size_t length)
 /* db_get_data -- Copy data from a buffer chain {dbp,data,ofs,length} to a 
                   linear data buffer {dp,length}. */
 
-void db_get_data (void      *dp,
-		  DB        *dbp,
-		  void      *data,
-		  size_t    ofs,
-		  size_t    length)
+void db_get_data (void       *dp,
+		  const DB   *dbp,
+		  const void *data,
+		  size_t     ofs,
+		  size_t     length)
 {
 	unsigned	n, size;
 
@@ -504,7 +504,7 @@ void db_get_data (void      *dp,
 
 /* dbw_inc -- Increment the walk pointer n bytes. */
 
-unsigned char *dbw_inc (DBW *p, size_t n)
+const unsigned char *dbw_inc (DBW *p, size_t n)
 {
 	while (p->left < n) {
 		n -= p->left;

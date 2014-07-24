@@ -55,11 +55,19 @@
 #include "dynip.h"
 #include "ri_data.h"
 #include "rtps.h"
+#include "rtps_cfg.h"
 #include "rtps_ip.h"
 #include "disc.h"
 #include "dcps.h"
 #ifdef DDS_SECURITY
+#ifdef DDS_NATIVE_SECURITY
+#include "nsecplug/nsecplug.h"
+#include "sec_data.h"
+#include "sec_crypto.h"
+#include "sec_plugin.h"
+#else
 #include "msecplug/msecplug.h"
+#endif
 #endif
 #ifdef DDS_FORWARD
 #include "rtps_fwd.h"
@@ -114,8 +122,8 @@ void debug_help (void)
 	dbg_printf ("\tscxq                  Display queued connections.\r\n");
 #endif
 	dbg_printf ("\tsloc                  Display locators.\r\n");
-	dbg_printf ("\tsdomain <d> <lf> <rf> Display domain (d) info.\r\n");
 	dbg_printf ("\tsconfig               Display configuration data.\r\n");
+	dbg_printf ("\tsdomain <d> <lf> <rf> Display domain (d) info.\r\n");
 	dbg_printf ("\t                      <lf> and <rf> are bitmaps for local/remote info.\r\n");
 	dbg_printf ("\t                      1=Locator, 2=Builtin, 4=Endp, 8=Type, 10=Topic.\r\n");
 	dbg_printf ("\tsdisc                 Display discovery info.\r\n");
@@ -133,9 +141,17 @@ void debug_help (void)
 	dbg_printf ("\tqcache <ep> [<query>] Query cache data of the specified endpoint:\r\n");
 	dbg_printf ("\t                      where: <ep>: endpoint, <query>: SQL Query string.\r\n");
 #ifdef RTPS_USED
-	dbg_printf ("\tsproxy [<ep>]         Display Proxy contexts (1 entry or all).\r\n");
+	dbg_printf ("\tsproxy [<ep>]         Display Proxy contexts.\r\n");
+#ifdef RTPS_PROXY_INST
+	dbg_printf ("\trproxy [<ep>]         Restart Proxy context.\r\n");
+#endif
 #endif
 	dbg_printf ("\tseqos <ep>            Display endpoint QoS parameters.\r\n");
+#ifdef DDS_NATIVE_SECURITY
+	dbg_printf ("\tscrypto <ep>          Display entity crypto parameters.\r\n");
+	dbg_printf ("\tsscache               Display security cache.\r\n");
+	dbg_printf ("\trehs                  Request a rehandshake.\r\n");
+#endif
 #ifdef RTPS_USED
 	dbg_printf ("\tsrx                   Display the RTPS Receiver context.\r\n");
 	dbg_printf ("\tstx                   Display the RTPS Transmitter context.\r\n");
@@ -143,8 +159,8 @@ void debug_help (void)
 #ifndef _WIN32
 	dbg_printf ("\tsfd                   Display the status of the file descriptors.\r\n");
 #endif
-	if (paused || session->in_fd != tty_stdin) {
-		if (session->in_fd != tty_stdin)
+	if (paused || (session && session->in_fd != tty_stdin)) {
+		if (session && session->in_fd != tty_stdin)
 			data = "logging";
 		else
 			data = "traffic";
@@ -160,6 +176,12 @@ void debug_help (void)
 #endif
 #ifdef DDS_SECURITY
 	dbg_printf ("\tdtls                  Display DTLS connection related info.\r\n");
+#ifdef DDS_NATIVE_SECURITY
+	dbg_printf ("\tspdb                  Display the policy database.\r\n");
+#ifdef DDS_QEO_TYPES
+	dbg_printf ("\tspv                   Display the policy version numbers.\r\n");
+#endif
+#endif
 #endif
 #ifdef RTPS_USED
 #ifdef DDS_FORWARD
@@ -382,6 +404,10 @@ void debug_pool_dump (int wide)
 	dbg_printf ("XTYPES:\r\n");
 	xd_pool_dump (sizes);
 #endif
+#ifdef DDS_NATIVE_SECURITY
+	dbg_printf ("SECURITY:\r\n");
+	sec_pool_dump (sizes);
+#endif
 	print_pool_end (sizes);
 }
 
@@ -451,6 +477,22 @@ static void proxy_dump (const char *cmd)
 		}
 	}
 	rtps_proxy_dump (ep);
+}
+
+static void proxy_restart (const char *cmd)
+{
+	Endpoint_t	*ep;
+
+	if (!cmd || *cmd == '\0' || (*cmd == '*' && cmd [1] == '\0'))
+		ep = NULL;
+	else {
+		ep = endpoint_ptr (atoi (cmd), 1);
+		if (!ep) {
+			dbg_printf ("Not a valid proxy!\r\n");
+			return;
+		}
+	}
+	rtps_proxy_restart (ep);
 }
 
 #endif
@@ -1198,7 +1240,7 @@ void debug_command (const char *buf)
 		debug_data_dump ();
 	else if (!strncmp (cmd, "stimer", 3))
 		tmr_dump ();
-	else if (!strncmp (cmd, "sstr", 2))
+	else if (!strncmp (cmd, "sstr", 3))
 		str_dump ();
 	else if (!strncmp (cmd, "spoola", 6))
 		debug_pool_dump (1);
@@ -1252,9 +1294,19 @@ void debug_command (const char *buf)
 #ifdef RTPS_USED
 	else if (!strncmp (cmd, "sproxy", 3))
 		proxy_dump (buf);
+	else if (!strncmp (cmd, "rproxy", 3))
+		proxy_restart (buf);
 #endif
 	else if (!strncmp (cmd, "seqos", 3))
 		dbg_entity_qos_dump (buf);
+#ifdef DDS_NATIVE_SECURITY
+	else if (!strncmp (cmd, "scrypto", 3))
+		sec_crypto_dump (atoi (buf));
+	else if (!strncmp (cmd, "sscache", 3))
+		sec_cache_dump ();
+	else if (!strncmp (cmd, "rehs", 3))
+		DDS_Security_permissions_changed ();
+#endif
 #ifdef RTPS_USED
 	else if (!strncmp (cmd, "srx", 3))
 		rtps_receiver_dump ();
@@ -1276,8 +1328,14 @@ void debug_command (const char *buf)
 #ifdef DDS_SECURITY
 	else if (!strncmp (cmd, "dtls", 4))
 		rtps_dtls_dump ();
+#ifdef DDS_NATIVE_SECURITY
 	else if (!strncmp (cmd, "spdb", 4))
-		access_db_dump ();
+		DDS_SP_access_db_dump ();
+#ifdef DDS_QEO_TYPES
+	else if (!strncmp (cmd, "spv", 3))
+		dump_policy_version_list ();
+#endif
+#endif
 #endif
 #ifdef DDS_FORWARD
 	else if (!strncmp (cmd, "sfwd", 2))
@@ -1295,9 +1353,9 @@ void debug_command (const char *buf)
 	else if (!strncmp (cmd, "cprof", 4))
 		restart_profs (buf);
 #endif
-	else if ((paused || session->in_fd != tty_stdin) &&
+	else if ((paused || (session && session->in_fd != tty_stdin)) &&
 	         !strncmp (cmd, "pause", 1))
-		if (session->in_fd != tty_stdin) {
+		if (session && session->in_fd != tty_stdin) {
 			if (session->log_events) {
 				session->log_events = 0;
 				log_debug_count--;
@@ -1305,9 +1363,9 @@ void debug_command (const char *buf)
 		}
 		else
 			*paused = 1;
-	else if ((paused || session->in_fd != tty_stdin) &&
+	else if ((paused || (session && session->in_fd != tty_stdin)) &&
 		 !strncmp (cmd, "resume", 1))
-		if (session->in_fd != tty_stdin) {
+		if (session && session->in_fd != tty_stdin) {
 			if (!session->log_events)
 				log_debug_count++;
 			if (*buf >= '1' && *buf <= '9')
@@ -1335,7 +1393,7 @@ void debug_command (const char *buf)
 			mode = DDS_TRACE_MODE_TOGGLE;
 		DDS_Trace_defaults_set (mode);
 	}
-	else if (!strncmp (cmd, "trace", 1)) {
+	else if (!strncmp (cmd, "trace", 2)) {
 		if (*buf >= '0' && *buf <= '9') {
 			skip_string (&buf, cmd);
 			ep = endpoint_ptr (atoi (cmd), 0);
@@ -2044,7 +2102,7 @@ int debug_server_start (unsigned maxclients, unsigned short port)
 	if (serverfd < 0) {
     		perror ("TDDS Debug: socket()");
 		printf ("\r\n");
-		return (DDS_RETCODE_ACCESS_DENIED);
+		return (DDS_RETCODE_NOT_ALLOWED_BY_SEC);
 	}
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons (port);
@@ -2057,7 +2115,7 @@ int debug_server_start (unsigned maxclients, unsigned short port)
 #endif
 		perror ("TDDS Debug: bind()");
 		printf ("\r\n");
-		return (DDS_RETCODE_ACCESS_DENIED);
+		return (DDS_RETCODE_NOT_ALLOWED_BY_SEC);
 	}
 	listen (serverfd, maxclients);
 	printf ("TDDS Debug: server started on port %u.\r\n", port);

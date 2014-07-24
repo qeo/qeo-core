@@ -3,7 +3,7 @@ ifneq ($($(qeo-c-core_INCLUDED)),1)
 override COMPONENT := technicolor.middleware.core.qeo-c-core
 override COMPONENT_SEARCH_PATH_PREFIX := $(projectdir/)../../*/%/Makefile_component
 
-qeo-c-core_INCLUDES := api/headers $$(dds_INCLUDES) $$(qeo-c-util_INCLUDES) $$(uthash_INCLUDES)
+qeo-c-core_INCLUDES := api/headers $$(dds_INCLUDES) $$(qeo-c-util_INCLUDES) $$(uthash_INCLUDES) $$(openssl_INCLUDES)
 qeo-c-core_CFLAGS   := -std=gnu99 -D_GNU_SOURCE
 qeo-c-core_LIBS     := -lqeocore $$(dds_LIBS) $$(qeo-c-util_LIBS) $$(openssl_LIBS) $$(qeo-openssl-engine-pkcs12_LIBS) $$(qeo-management-client_LIBS)
 
@@ -64,11 +64,11 @@ qeo-c-core_TEST_PARTS_INSTALL += \
 	libutcoreapi.so@$$(libdir/)unittests/libutcoreapi.so:755 \
 	libutcorelist.so@$$(libdir/)unittests/libutcorelist.so:755 \
 	libutcorestore.so@$$(libdir/)unittests/libutcorestore.so:755 \
-	libutcorepart.so@$$(libdir/)unittests/libutcorepart.so:755 \
 	libutcorefactory.so@$$(libdir/)unittests/libutcorefactory.so:755 \
 	libutcoresecurity.so@$$(libdir/)unittests_novg/libutcoresecurity.so:755 \
 	libutcorepolicy.so@$$(libdir/)unittests/libutcorepolicy.so:755\
 	libutcorepolicyapi.so@$$(libdir/)unittests/libutcorepolicyapi.so:755 \
+#	libutcorepart.so@$$(libdir/)unittests/libutcorepart.so:755 \
 
 qeo-c-core_TEST_ELEM_INSTALL  := \
 	test/script/qeo_test_run.sh@$$(bindir/)qeo_test_run.sh:755 \
@@ -92,19 +92,16 @@ include $(projectdir/)build/Makefile_component_top
 qeo-c-core.LIBRARIES := libqeocore
 
 qeo-c-core.libqeocore_LDADD         := $(dds_LIBS) $(qeo-c-util_LIBS) $(openssl_LIBS) $(qeo-openssl-engine-pkcs12_LIBS) $(qeo-management-client_LIBS) 
-qeo-c-core.libqeocore_LOCALDEFINES  := $(qeo-c-core_CFLAGS) -DXTYPES_USED -Wall -Werror
+qeo-c-core.libqeocore_LOCALDEFINES  := $(qeo-c-core_CFLAGS) -DXTYPES_USED -DDDS_NATIVE_SECURITY -Wall -Werror
 qeo-c-core.libqeocore_LOCALINCLUDES := src/ src/qdm src/deviceinfo src/security src/security/scep src/uthash/src $(qeo-c-core_INCLUDES) $(openssl_INCLUDES) $(qeo-openssl-engine-pkcs12_INCLUDES) $(qeo-management-client_INCLUDES) 
 qeo-c-core.libqeocore_SRCS          := $(addprefix src/, crc32.c core_util.c core.c config.c language_binding.c typesupport.c samplesupport.c forwarder.c)
-qeo-c-core.libqeocore_SRCS          += $(addprefix src/, samplesupport_sequence.c list.c entity_store.c partitions.c factory.c)
+qeo-c-core.libqeocore_SRCS          += $(addprefix src/, samplesupport_sequence.c list.c entity_store.c user_data.c factory.c)
 qeo-c-core.libqeocore_SRCS          += $(addprefix src/deviceinfo/, deviceinfo_writer.c)
 qeo-c-core.libqeocore_SRCS          += $(addprefix src/qdm/, qeo_DeviceInfo.c qeo_Policy.c qeo_types.c qeo_RegistrationRequest.c qeo_RegistrationCredentials.c qeo_Forwarder.c)
 qeo-c-core.libqeocore_SRCS          += $(addprefix src/security/, security.c policy.c security_util.c policy_parser.c policy_dds_sp.c policy_cache.c remote_registration.c)
 
 ifdef PROJECT_VERSION
 qeo-c-core.libqeocore_LOCALDEFINES  += -DQEO_VERSION=\"$(PROJECT_VERSION)\"
-endif
-ifeq ($(qeo-c-core_DDS_NATIVE_SECURITY), 1)
-qeo-c-core.libqeocore_LOCALDEFINES  += -DQEO_USE_DDS_NATIVE_SECURITY
 endif
 
 ### System tests ###
@@ -123,7 +120,6 @@ qeo-c-core_SYSTESTS  = event state state_no_writers reg_unreg reg_unreg_random
 qeo-c-core_SYSTESTS += reader_close nested_type security de1764 de1804 de2763 de2760_bigstring de2760_bigstruct
 qeo-c-core_SYSTESTS += state_close sequence_type interop interop_1proc bigdata bigdata_dyn
 qeo-c-core_SYSTESTS += state_open_realm state_open_realm_multiple_factories open_realm_forbidden_topics state_open_default_realm
-qeo-c-core_SYSTESTS += type_reuse location_service de2975 de3420 encrypt_otc
 qeo-c-core_SYSTESTS += type_reuse location_service de2975 de3420 de2599 encrypt_otc
 qeo-c-core_SYSTESTS += comp_v1-tsm_to_v2-tsm comp_v1-tsm_to_v3-tsm
 qeo-c-core_SYSTESTS += comp_v2-tsm_to_v1-tsm comp_v3-tsm_to_v1-tsm 
@@ -149,7 +145,8 @@ $(foreach test, $(qeo-c-core_SYSTESTS), $(eval $(call qeo-c-core_SYSTEST_TEMPL,$
 
 ### Unit test libraries ###
 qeo-c-core.LIBRARIES += libutcoretypes libutcoreapi libutcorelist libutcoresecurity libutcorepolicy libutcorestore
-qeo-c-core.LIBRARIES += libutcorepart libutcorefactory
+#qeo-c-core.LIBRARIES += libutcorepart libutcorefactory
+qeo-c-core.LIBRARIES += libutcorefactory
 
 qeo-c-core.libutcoretypes_SRCS          := $(addprefix libqeocore:src/, typesupport.c crc32.c core_util.c) \
                                            $(addprefix test/unittest/suite_types/, test.c) \
@@ -161,7 +158,7 @@ qeo-c-core.libutcoretypes_LDDEPS        := libqeocore.so
 
 qeo-c-core.libutcoreapi_SRCS          := $(addprefix libqeocore:src/, core.c language_binding.c typesupport.c core_util.c config.c crc32.c factory.c) \
                                          $(addprefix test/unittest/suite_api/, test.c) \
-                                         $(addprefix test/unittest/mocks/Mock, samplesupport.c forwarder.c dds_aux.c security.c security_util.c policy.c entity_store.c deviceinfo_writer.c partitions.c mgmt_client_forwarder.c)
+                                         $(addprefix test/unittest/mocks/Mock, samplesupport.c forwarder.c dds_aux.c security.c security_util.c policy.c entity_store.c deviceinfo_writer.c user_data.c mgmt_client_forwarder.c)
 qeo-c-core.libutcoreapi_LOCALINCLUDES := src src/deviceinfo src/security test/unittest/mocks src/uthash/src $(qeo-c-core_INCLUDES) $(cmock_INCLUDES) $(unittest-check_INCLUDES)  $(qeo-management-client_INCLUDES)
 qeo-c-core.libutcoreapi_LOCALDEFINES  := -Wall -Werror
 qeo-c-core.libutcoreapi_LDADD         := $(dds_LIBS) $(qeo-c-util_LIBS) $(cmock_LIBS) $(unittest-check_LIBS) -L$(qeo-c-core_PREFIX)
@@ -176,14 +173,14 @@ qeo-c-core.libutcorelist_LDDEPS        := libqeocore.so
 
 qeo-c-core.libutcorestore_SRCS          := $(addprefix libqeocore:src/, list.c entity_store.c) \
                                            $(addprefix test/unittest/suite_entity_store/, test.c) \
-                                           $(addprefix test/unittest/mocks/Mock, api.c partitions.c)
+                                           $(addprefix test/unittest/mocks/Mock, api.c user_data.c)
 qeo-c-core.libutcorestore_LOCALINCLUDES := src src/security src/uthash/src test/unittest/mocks $(qeo-c-core_INCLUDES) $(cmock_INCLUDES) $(unittest-check_INCLUDES) $(qeo-management-client_INCLUDES)
 qeo-c-core.libutcorestore_LOCALDEFINES  := -Wall -Werror -std=gnu99
 qeo-c-core.libutcorestore_LDADD         := $(qeo-c-util_LIBS) $(cmock_LIBS) $(unittest-check_LIBS) -L$(qeo-c-core_PREFIX) 
 qeo-c-core.libutcorestore_LDDEPS        := libqeocore.so
 
-qeo-c-core.libutcorepart_SRCS          := $(addprefix libqeocore:src/, core_util.c partitions.c list.c) \
-                                           $(addprefix test/unittest/suite_partitions/, test.c) \
+qeo-c-core.libutcorepart_SRCS          := $(addprefix libqeocore:src/, core_util.c user_data.c list.c) \
+                                           $(addprefix test/unittest/suite_user_datas/, test.c) \
                                            $(addprefix test/unittest/mocks/Mock, policy.c)
 qeo-c-core.libutcorepart_LOCALINCLUDES := src src/security src/uthash/src test/unittest/mocks $(qeo-c-core_INCLUDES) $(cmock_INCLUDES) $(unittest-check_INCLUDES) $(qeo-management-client_INCLUDES)
 qeo-c-core.libutcorepart_LOCALDEFINES  := -Wall -Werror -std=gnu99
@@ -192,7 +189,7 @@ qeo-c-core.libutcorepart_LDDEPS        := libqeocore.so
 
 qeo-c-core.libutcorefactory_SRCS          := $(addprefix libqeocore:src/, core.c language_binding.c typesupport.c core_util.c config.c) \
                                          $(addprefix test/unittest/suite_factory/, test.c) \
-                                         $(addprefix test/unittest/mocks/Mock, samplesupport.c forwarder.c crc32.c security.c security_util.c policy.c entity_store.c deviceinfo_writer.c partitions.c mgmt_client_forwarder.c)
+                                         $(addprefix test/unittest/mocks/Mock, samplesupport.c forwarder.c crc32.c security.c security_util.c policy.c entity_store.c deviceinfo_writer.c user_data.c mgmt_client_forwarder.c)
 qeo-c-core.libutcorefactory_LOCALINCLUDES := src src/deviceinfo src/security test/unittest/mocks src/uthash/src $(qeo-c-core_INCLUDES) $(cmock_INCLUDES) $(unittest-check_INCLUDES)  $(qeo-management-client_INCLUDES)
 qeo-c-core.libutcorefactory_LOCALDEFINES  := -Wall -Werror
 qeo-c-core.libutcorefactory_LDADD         := $(dds_LIBS) $(qeo-c-util_LIBS) $(cmock_LIBS) $(unittest-check_LIBS) -L$(qeo-c-core_PREFIX)
@@ -230,7 +227,7 @@ qeo-c-core.libutcorepolicy_SRCS          := $(addprefix libqeocore:src/security/
                                      $(addprefix test/unittest/mocks/Mock, core.c api.c dyntype.c factory.c security.c mgmt_client.c mgmt_cert_parser.c)
 qeo-c-core.libutcorepolicy_LOCALINCLUDES := src src/security src/uthash/src test/unittest/suite_policy test/unittest/mocks \
                                                 $(qeo-c-util_INCLUDES) $(qeo-openssl-engine-pkcs12_INCLUDES) $(qeo-c-core_INCLUDES) $(cmock_INCLUDES) $(unittest-check_INCLUDES) $(qeo-management-client_INCLUDES) $(dds_INCLUDES)
-qeo-c-core.libutcorepolicy_LOCALDEFINES  := -Wall -Werror
+qeo-c-core.libutcorepolicy_LOCALDEFINES  := -Wall -Werror -DQEO_USE_DDS_NATIVE_SECURITY
 qeo-c-core.libutcorepolicy_LDADD         := $(dds_LIBS) $(qeo-c-util_LIBS) $(openssl_LIBS) $(qeo-openssl-engine-pkcs12_LIBS) $(cmock_LIBS) $(unittest-check_LIBS) -L$(qeo-c-core_PREFIX)
 qeo-c-core.libutcorepolicy_LDDEPS        := libqeocore.so
 

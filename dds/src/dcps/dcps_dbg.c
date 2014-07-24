@@ -23,6 +23,7 @@
 #endif
 #include "pool.h"
 #include "error.h"
+#include "prof.h"
 #include "dds/dds_dcps.h"
 #include "dcps.h"
 #include "dcps_priv.h"

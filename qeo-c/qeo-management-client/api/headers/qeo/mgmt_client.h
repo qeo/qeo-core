@@ -169,4 +169,11 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_check_policy(qeo_mgmt_client_ctx_t *ct
  */
 void qeo_mgmt_client_clean(qeo_mgmt_client_ctx_t *ctx);
 
+/**
+ * Ask ths management context to stop it's operations. Ongoing request will be stopped as soon as possible returning with errors.
+ * 
+ * \param[in] The handle to clean all resources for.
+ */
+void qeo_mgmt_client_ctx_stop(qeo_mgmt_client_ctx_t *ctx);
+
 #endif /* QEO_MGMT_CLIENT_H_ */

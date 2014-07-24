@@ -76,9 +76,9 @@ typedef struct rtps_tcp_rserver_st {
 typedef struct rtps_tcp_pars_st {
 	int		enabled;	/* State of TCP transport. */
 	RTPS_PORT_PARS	port_pars;	/* Port parameters. */
-	unsigned	sport;		/* Server port (if server). */
+	unsigned	sport_s;	/* Secure server port. */
+	unsigned	sport_ns;	/* Unsecure server port. */
 	unsigned	oport;		/* Public port (if server). */
-	int		secure;		/* Secure connection (if server). */
 	int		oname;		/* Outer IP is a domain name. */
 	IP_Spec_t	oaddr;		/* Optional outer name (if server). */
 	int		private_ok;	/* Use private addresses (if server). */

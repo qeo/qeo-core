@@ -27,6 +27,9 @@
 #include "debug.h"
 #include "dds.h"
 #include "dcps.h"
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+#include "sec_access.h"
+#endif
 #include "cache.h"
 
 #ifndef MIN_XQOS_DELAY
@@ -65,6 +68,10 @@ PROF_PID (cache_lookup_hash)
 PROF_PID (cache_release)
 PROF_PID (cache_add_inst)
 PROF_PID (cache_inst_free)
+#endif
+
+#ifndef DDS_HIST_PURGE_NA
+#define DDS_HIST_PURGE_NA 0
 #endif
 
 /* History cache.
@@ -136,6 +143,14 @@ struct ccref_st {
 	Change_t	*change;	/* Cache change data. */
 };
 
+#if defined (BIGDATA) || (WORDSIZE == 64)
+#define MAX_LIST_CHANGES	0xffffffffU
+typedef unsigned CacheHandle_t;
+#else
+#define MAX_LIST_CHANGES 	0xffffU
+typedef unsigned short CacheHandle_t;
+#endif
+
 /* List of cache changes: */
 typedef struct cclist_st {
 	union {
@@ -149,15 +164,8 @@ typedef struct cclist_st {
 #define l_tail		u.list.tail
 #define l_time		u.time
 #define l_list		u.list
-#if defined (BIGDATA) || (WORDSIZE == 64)
-#define MAX_LIST_CHANGES	0xffffffffU
-	unsigned	l_nchanges;	/* # of changes. */
-	unsigned	l_handle;
-#else
-#define MAX_LIST_CHANGES 	0xffffU
-	unsigned short	l_nchanges;	/* # of changes. */
-	unsigned short	l_handle;
-#endif
+	CacheHandle_t	l_nchanges;	/* # of changes. */
+	CacheHandle_t	l_handle;	/* Handle of instance. */
 } CCLIST;
 
 typedef struct instance_st INSTANCE;
@@ -247,7 +255,12 @@ struct instance_st {
 	KeyHash_t	i_hash;		/* Hash of key fields. */
 	String_t	*i_key;		/* Key fields. */
 	handle_t	i_owner;	/* Current owner. */
+#ifdef HBITMAP_USED
+	unsigned	i_nwriters;	/* Current # of writers. */
+#else
 	unsigned short	i_nwriters;	/* Current # of writers. */
+#endif
+	unsigned	i_ndata;	/* # of alive samples. */
 	unsigned	i_kind:2;	/* Instance state. */
 	unsigned	i_view:1;	/* New instance? */
 	unsigned	i_wait:1;	/* Somebody waiting on instance? */
@@ -281,7 +294,7 @@ struct instance_st {
 	  an entry and with hash collision resolution by comparing keys in a
 	  direct instance chain (as before). */
 
-#define	MAX_INST_LLIST	16	/* Max. length of a simple instance list. */
+#define	MAX_INST_LLIST	12	/* Max. length of a simple instance list. */
 #define	MIN_INST_LLIST	8	/* Min. length of a set of skiplists. */
 
 typedef struct inst_llist_st {
@@ -336,6 +349,8 @@ struct history_cache_st {
 	unsigned	hc_apw_idle:1;	/* Autopurge no-writer checks idle. */
 	unsigned	hc_apd_idle:1;	/* Autopurge disposed checks idle. */
 	unsigned	hc_sl_walk:2;	/* Currently walking over instances. */
+	unsigned	hc_secure_h:1;	/* Use secure hashes. */
+	unsigned	hc_ref_type:1;	/* Purge data on dispose/unregister. */
 	unsigned	hc_max_depth;	/* Max. # of samples/instance. */
 	unsigned	hc_max_inst;	/* Max. # of instances. */
 	unsigned	hc_max_samples;	/* Max. # of samples overall. */
@@ -346,6 +361,7 @@ struct history_cache_st {
 #define hc_list		hc_changes.l_list
 #define	hc_nchanges	hc_changes.l_nchanges /* Total # of changes. */
 #define hc_last_handle	hc_changes.l_handle /* Last assigned instance handle. */
+	unsigned	hc_ndata;	/* Total # of data samples. */
 	SequenceNumber_t hc_last_seqnr;	/* Last assigned sequence number. */
 	union {
 	  union {
@@ -746,7 +762,11 @@ static int handle_cmp_fct (const void *np, const void *data)
 {
 	INSTANCE	**lpp = (INSTANCE **) np;
 
-	return (((int) (*lpp)->i_handle) - ((int) *((InstanceHandle *) data)));
+#if defined (BIGDATA) || (WORDSIZE == 64)
+	return (((int) (*lpp)->i_handle) -  *((int *) data));
+#else
+	return (((short) (*lpp)->i_handle) - *((short *) data));
+#endif
 }
 
 /* hc_cvt_fct -- Utility function called for each list element to convert a
@@ -852,7 +872,7 @@ static INSTANCE *hc_get_instance_handle (HistoryCache_t *hcp,
 				         unsigned       inst_handle)
 {
 	INSTANCE	*p, **pp;
-	InstanceHandle  h = inst_handle;
+	CacheHandle_t	h = inst_handle;
 
 	if (!hcp->hc_skiplists) {
 
@@ -921,12 +941,12 @@ static INSTANCE *hc_check_limits (HistoryCache_t *hcp,
 				  unsigned       ooo,
 				  RejectCause_t  *cause)
 {
-	if (ip->i_nchanges >= hcp->hc_max_depth) {
+	if (ip->i_ndata >= hcp->hc_max_depth) {
 		*cause = RC_SamplesPerInstanceLimit;
 		*handle = 0;
 		return (NULL);
 	}
-	else if (hcp->hc_nchanges + ooo >= hcp->hc_max_samples) {
+	else if (hcp->hc_ndata + ooo >= hcp->hc_max_samples) {
 		*cause = RC_SamplesLimit;
 		*handle = 0;
 		return (NULL);
@@ -993,8 +1013,7 @@ static INSTANCE *hc_get_instance_key (HistoryCache_t  *hcp,
 				dp = p->i_hash.hash;
 				dl = hcp->hc_key_size;
 			}
-			if (dl == sl && 
-			   !memcmp (dp, sp, dl))
+			if (dl == sl && !memcmp (dp, sp, dl))
 
 				/* Check resource limits. */
 				HC_CHECK (hcp, p, handle, add, ooo, cause);
@@ -1025,6 +1044,7 @@ static INSTANCE *hc_get_instance_key (HistoryCache_t  *hcp,
 	/* Derive hashkey if it doesn't exist yet. */
 	if (!hp) {
 		error = DDS_HashFromKey (hash.hash, sp, sl,
+				hcp->hc_secure_h,
 				hcp->hc_endpoint->ep.topic->type->type_support);
 		if (error)
 			goto max_instances;
@@ -1062,7 +1082,8 @@ static INSTANCE *hc_get_instance_key (HistoryCache_t  *hcp,
 		}
 		if (!add || !is_new) {	/* Hash found - check if collision. */
 			if (hcp->hc_key_size &&
-			    hcp->hc_key_size <= sizeof (KeyHash_t))
+			    hcp->hc_key_size <= sizeof (KeyHash_t) &&
+			    !hcp->hc_secure_h)
 
 				/* Check resource limits. */
 				HC_CHECK (hcp, *hash_pp, handle, add, ooo, cause)
@@ -1097,6 +1118,7 @@ static INSTANCE *hc_get_instance_key (HistoryCache_t  *hcp,
 	p->i_next = NULL;
 	FTIME_CLR (p->i_time);
 	p->i_nchanges = 0;
+	p->i_ndata = 0;
 	p->i_nwriters = 0;
 	if (add == LH_ADD_SET_H)
 		p->i_handle = *handle;
@@ -1116,7 +1138,9 @@ static INSTANCE *hc_get_instance_key (HistoryCache_t  *hcp,
 			*handle = p->i_handle;
 	}
 	p->i_hash = *hp;
-	if (!hcp->hc_key_size || hcp->hc_key_size > sizeof (KeyHash_t)) {
+	if (!hcp->hc_key_size ||
+	    hcp->hc_key_size > sizeof (KeyHash_t) ||
+	    hcp->hc_secure_h) {
 		if (!keylen)
 			p->i_key = str_ref ((String_t *) key);
 		else
@@ -1226,7 +1250,7 @@ static void hc_free_instance (HistoryCache_t *hcp, unsigned inst_handle)
 {
 	INSTANCE	*p, *prev, **handle_pp, **hash_pp;
 	CCREF		*crp, *irp;
-	InstanceHandle  h = inst_handle;
+	CacheHandle_t	h = inst_handle;
 
 	prof_start (cache_inst_free);
 
@@ -1266,7 +1290,8 @@ static void hc_free_instance (HistoryCache_t *hcp, unsigned inst_handle)
 			dbg_printf ("hc_free_instance (): instance not in key list!\r\n");
 
 		else if ((hcp->hc_key_size && 
-			  hcp->hc_key_size <= sizeof (KeyHash_t)) || !p->i_next)
+			  hcp->hc_key_size <= sizeof (KeyHash_t) &&
+			  !hcp->hc_secure_h) || !p->i_next)
 			sl_delete (hcp->hc_hashes, p->i_hash.hash, hash_cmp_fct);
 		else {
 			/* Long key! Search instance in collision-list. */
@@ -1299,11 +1324,14 @@ static void hc_free_instance (HistoryCache_t *hcp, unsigned inst_handle)
 
 	/* Free all Cache samples. */
 	while (p->i_nchanges) {
-
 		/*log_printf (CACHE_ID, 0, "hc_inst_free() - remove sample!\r\n");*/
 
 		/* Remove first list entry. */
 		irp = p->i_head;
+		if (irp->change->c_kind == ALIVE) {
+			p->i_ndata--;
+			hcp->hc_ndata--;
+		}
 		LIST_REMOVE (p->i_list, *irp);
 		p->i_nchanges--;
 		if (irp->change->c_wack) {
@@ -1742,8 +1770,14 @@ static void hc_new_writer (HistoryCache_t *hcp, Endpoint_t *readers)
 	Writer_t	*wp;
 	Reader_t	*rp;
 	DDS_QOS_POLICY_ID qid;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	Domain_t	*dp;
+#endif
 
 	wp = (Writer_t *) hcp->hc_endpoint;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	dp = wp->w_publisher->domain;
+#endif
 	for (ep = readers; ep; ep = ep->next) {
 		if (!local_active (ep->entity.flags))
 			continue;
@@ -1761,7 +1795,15 @@ static void hc_new_writer (HistoryCache_t *hcp, Endpoint_t *readers)
 			dcps_requested_incompatible_qos (rp, qid);
 			continue;
 		}
-
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+		if (dp->security &&
+		    dp->access_protected &&
+		    sec_check_local_writer_match (dp->participant.p_permissions,
+		    				  dp->participant.p_permissions,
+						  wp,
+						  ep))
+			continue;
+#endif
 		/* Match detected: connect local endpoint caches. */
 		hc_match_begin (hcp, rp->r_cache);
 	}
@@ -1800,8 +1842,14 @@ static void hc_new_reader (HistoryCache_t *hcp, Endpoint_t *writers)
 	Writer_t	*wep;
 	Reader_t	*rep;
 	DDS_QOS_POLICY_ID qid;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	Domain_t	*dp;
+#endif
 
 	rep = (Reader_t *) hcp->hc_endpoint;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	dp = rep->r_subscriber->domain;
+#endif
 	for (ep = writers; ep; ep = ep->next) {
 		if (!local_active (ep->entity.flags))
 			continue;
@@ -1819,6 +1867,15 @@ static void hc_new_reader (HistoryCache_t *hcp, Endpoint_t *writers)
 			dcps_requested_incompatible_qos (rep, qid);
 			continue;
 		}
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+		if (dp->security &&
+		    dp->access_protected &&
+		    sec_check_local_reader_match (dp->participant.p_permissions,
+		    				  dp->participant.p_permissions,
+						  rep,
+						  ep))
+			continue;
+#endif
 
 		/* Match detected: connect endpoint caches locally. */
 		hc_match_begin (wep->w_cache, rep->r_cache);
@@ -1871,13 +1928,18 @@ Cache_t hc_new (void *endpoint, int prefix)
 	hcp->hc_endpoint = endpoint;
 	qp = &hcp->hc_endpoint->ep.qos->qos;
 	tsp = hcp->hc_endpoint->ep.topic->type->type_support;
-	if ((hcp->hc_endpoint->ep.entity.flags & EF_BUILTIN) != 0) {
-		hcp->hc_multi_inst = 1;
-		if (!tsp)
+	hcp->hc_ref_type = DDS_HIST_PURGE_NA;
+	if ((hcp->hc_endpoint->ep.entity.flags & EF_BUILTIN) != 0)
+		if (!tsp) {
+			hcp->hc_multi_inst = 1;
 			hcp->hc_key_size = sizeof (DDS_BuiltinTopicKey_t);
-		else
+		}
+		else {
+			hcp->hc_multi_inst = tsp->ts_keys;
 			hcp->hc_key_size = tsp->ts_mkeysize;
-	}
+			if (tsp->ts_prefer == MODE_PL_CDR)
+				hcp->hc_ref_type = tsp->ts_pl->builtin;
+		}
 	else {
 		hcp->hc_multi_inst = tsp->ts_keys;
 		hcp->hc_key_size = tsp->ts_mkeysize;
@@ -1896,6 +1958,11 @@ Cache_t hc_new (void *endpoint, int prefix)
 	hcp->hc_auto_disp = !qp->no_autodispose;
 	hcp->hc_prefix = prefix;
 	hcp->hc_blocked = 0;
+#ifdef DDS_NATIVE_SECURITY
+	hcp->hc_secure_h = ENC_DATA (hcp->hc_endpoint);
+#else
+	hcp->hc_secure_h = 0;
+#endif
 	if (qp->history_kind == DDS_KEEP_ALL_HISTORY_QOS) {
 		hcp->hc_must_ack = 1;
 		if (hcp->hc_multi_inst) {
@@ -1923,6 +1990,7 @@ Cache_t hc_new (void *endpoint, int prefix)
 		hcp->hc_max_samples = qp->resource_limits.max_samples;
 	FTIME_CLR (hcp->hc_time);
 	hcp->hc_nchanges = 0;
+	hcp->hc_ndata = 0;
 	hcp->hc_inst_head = hcp->hc_inst_tail = NULL;
 	hcp->hc_ninstances = 0;
 	hcp->hc_notify_fct = NULL;
@@ -2016,8 +2084,14 @@ static void hc_updated_writer_qos (HistoryCache_t *hcp, Endpoint_t *readers)
 	Reader_t	*rp;
 	CacheRef_t	*cp, *prev_cp;
 	DDS_QOS_POLICY_ID qid;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	Domain_t	*dp;
+#endif
 
 	wp = (Writer_t *) hcp->hc_endpoint;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	dp = wp->w_publisher->domain;
+#endif
 	for (ep = readers; ep; ep = ep->next) {
 		if (!local_active (ep->entity.flags))
 			continue;
@@ -2046,6 +2120,18 @@ static void hc_updated_writer_qos (HistoryCache_t *hcp, Endpoint_t *readers)
 			dcps_requested_incompatible_qos (rp, qid);
 			continue;
 		}
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+		if (dp->security &&
+		    dp->access_protected &&
+		    sec_check_local_writer_match (dp->participant.p_permissions,
+		    				  dp->participant.p_permissions,
+						  wp,
+						  ep)) {
+			if (cp)
+				hc_match_end (hcp, rp->r_cache, cp, prev_cp);
+			continue;
+		}
+#endif
 
 		/* Match detected: add to writer's reader list if not yet matched. */
 		if (!cp)
@@ -2064,8 +2150,14 @@ static void hc_updated_reader_qos (HistoryCache_t *hcp, Endpoint_t *writers)
 	CacheRef_t	*cp, *prev_cp;
 	HistoryCache_t	*wcp;
 	DDS_QOS_POLICY_ID qid;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	Domain_t	*dp;
+#endif
 
 	rep = (Reader_t *) hcp->hc_endpoint;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	dp = rep->r_subscriber->domain;
+#endif
 	for (ep = writers; ep; ep = ep->next) {
 		if (!local_active (ep->entity.flags))
 			continue;
@@ -2094,6 +2186,18 @@ static void hc_updated_reader_qos (HistoryCache_t *hcp, Endpoint_t *writers)
 			dcps_requested_incompatible_qos (rep, qid);
 			continue;
 		}
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+		if (dp->security &&
+		    dp->access_protected &&
+		    sec_check_local_reader_match (dp->participant.p_permissions,
+		    				  dp->participant.p_permissions,
+						  rep,
+						  ep)) {
+			if (cp)
+				hc_match_end (wcp, hcp, cp, prev_cp);
+			continue;
+		}
+#endif
 
 		/* Match detected: add to writer's reader list if not matched yet. */
 		if (!cp)
@@ -2311,14 +2415,21 @@ static int hc_remove_i (HistoryCache_t *hcp, INSTANCE *ip, Change_t *cp, int rel
 		crp = irp->mirror;
 		ccref_delete (irp);
 		ccref_remove_ref (&hcp->hc_changes, crp);
+		if (cp->c_kind == ALIVE) {
+			ip->i_ndata--;
+			hcp->hc_ndata--;
+		}
 	}
 	else {
 		crp = ccref_remove_change (&hcp->hc_changes, cp);
 		if (!crp)
 			return (DDS_RETCODE_OK);
 
+		if (cp->c_kind == ALIVE)
+			hcp->hc_ndata--;
 		if (cp->c_nrefs < 1)
 			fatal_printf ("hc_remove_i: invalid change!");
+
 	}
 	if (crp->change)
 		crp->change->c_cached = 0;
@@ -2701,7 +2812,11 @@ static int hc_add_i (HistoryCache_t *hcp, INSTANCE *ip, Change_t *cp)
 		irp->mirror = crp;
 #ifdef EXTRA_STATS
 		sp = &ip->i_stats;
+#endif
 		if (cp->c_kind == ALIVE) {
+			ip->i_ndata++;
+			hcp->hc_ndata++;
+#ifdef EXTRA_STATS
 			sp->i_octets += cp->c_length;
 			sp->i_add++;
 		}
@@ -2712,11 +2827,13 @@ static int hc_add_i (HistoryCache_t *hcp, INSTANCE *ip, Change_t *cp)
 		else {
 			ip->i_unregister++;
 			ip->i_dispose++;
-		}
 #endif
+		}
 	}
 	else {
 		crp->mirror = NULL;
+		if (cp->c_kind == ALIVE)
+			hcp->hc_ndata++;
 #ifdef EXTRA_STATS
 		sp = &hcp->hc_stats;
 		sp->i_octets += cp->c_length;
@@ -2734,10 +2851,10 @@ static int hc_add_i (HistoryCache_t *hcp, INSTANCE *ip, Change_t *cp)
 		if (hcp->hc_must_ack) {
 			if (ip &&
 			    hcp->hc_max_depth != MAX_LIST_CHANGES &&
-			    ip->i_nchanges >= (hcp->hc_max_depth >> 1))
+			    ip->i_ndata >= (hcp->hc_max_depth >> 1))
 				cp->c_urgent = 1;
 			else if (hcp->hc_max_samples != MAX_LIST_CHANGES &&
-			         hcp->hc_nchanges >= (hcp->hc_max_samples >> 1))
+			         hcp->hc_ndata >= (hcp->hc_max_samples >> 1))
 				cp->c_urgent = 1;
 			else
 				cp->c_urgent = 0;
@@ -2840,10 +2957,12 @@ static int hc_change_remove (HistoryCache_t *hcp,
 			     INSTANCE       *ip,
 			     CCREF          *rp)
 {
-	CCLIST	*xlp;
-	CCREF	*xrp;
+	CCLIST		*xlp;
+	CCREF		*xrp;
+	Change_t	*cp;
 
 	ccref_remove_ref (lp, rp);
+	cp = rp->change;
 	if ((xrp = rp->mirror) != NULL) {
 
 		/* Need to remove from other list as well! */
@@ -2855,9 +2974,13 @@ static int hc_change_remove (HistoryCache_t *hcp,
 		}
 		else
 			xlp = &hcp->hc_changes;
+		if (cp->c_kind == ALIVE)
+			ip->i_ndata--;
 		ccref_remove_ref (xlp, xrp);
 		ccref_delete (xrp);
 	}
+	if (cp->c_kind == ALIVE)
+		hcp->hc_ndata--;
 	ccref_delete (rp);
 	return (DDS_RETCODE_OK);
 }
@@ -2888,7 +3011,6 @@ void hc_free (Cache_t cache)
 	/* Remove Time-based filter contexts. */
 	while (hcp->hc_filters)
 		hc_tbf_free (hcp, hcp->hc_filters->proxy);
-
 
 	/* Remove cache changes. */
 	if (hcp->hc_multi_inst) {
@@ -3066,9 +3188,14 @@ static int hc_add (HistoryCache_t *hcp,
 
 		/* If instance has already the maximum # of entries, remove the
 		   oldest sample. */
-		if (lp->l_nchanges >= hcp->hc_max_depth) {
-			/*not_read = hc_not_yet_read (lp->l_head->change);*/
-			error = hc_remove_i (hcp, ip, lp->l_head->change, rel);
+		if ((hcp->hc_ref_type && lp->l_nchanges >= hcp->hc_max_depth) ||
+		    (cp->c_kind == ALIVE && ip->i_ndata >= hcp->hc_max_depth)) {
+			do {
+				/*not_read = hc_not_yet_read (lp->l_head->change);*/
+				error = hc_remove_i (hcp, ip, 
+						       lp->l_head->change, rel);
+			}
+			while (!error && ip->i_ndata >= hcp->hc_max_depth);
 			if (error /*&& not_read*/ && !hcp->hc_writer)
 				dcps_sample_rejected ((Reader_t *) hcp->hc_endpoint,
 				     DDS_REJECTED_BY_SAMPLES_PER_INSTANCE_LIMIT, 0);
@@ -3082,8 +3209,13 @@ static int hc_add (HistoryCache_t *hcp,
 			if (hcp->hc_dlc_idle)
 				deadline_continue (hcp->hc_endpoint);
 		}
-		if (hcp->hc_nchanges >= hcp->hc_max_depth) {
-			error = hc_remove_i (hcp, ip, hcp->hc_head->change, rel);
+		if ((hcp->hc_ref_type && hcp->hc_nchanges >= hcp->hc_max_depth) ||
+		    (cp->c_kind == ALIVE && hcp->hc_ndata >= hcp->hc_max_depth)) {
+			do {
+				error = hc_remove_i (hcp, ip,
+						     hcp->hc_head->change, rel);
+			}
+			while (!error && hcp->hc_ndata >= hcp->hc_max_depth);
 			if (error /*&& not_read*/ && !hcp->hc_writer)
 				dcps_sample_rejected ((Reader_t *) hcp->hc_endpoint,
 				     DDS_REJECTED_BY_SAMPLES_PER_INSTANCE_LIMIT, 0);
@@ -3094,9 +3226,13 @@ static int hc_add (HistoryCache_t *hcp,
 
 	/* If the number of samples exceeds the cache capacity, remove the
 	   oldest sample. */
-	if (hcp->hc_nchanges >= hcp->hc_max_samples) {
-		/*not_read = hc_not_yet_read (hcp->hc_head->change);*/
-		error = hc_remove_i (hcp, ip, hcp->hc_head->change, rel);
+	if ((hcp->hc_ref_type && hcp->hc_nchanges >= hcp->hc_max_samples) ||
+	    (cp->c_kind == ALIVE && hcp->hc_ndata >= hcp->hc_max_samples)) {
+		do {
+			/*not_read = hc_not_yet_read (hcp->hc_head->change);*/
+			error = hc_remove_i (hcp, ip, hcp->hc_head->change, rel);
+		}
+		while (!error && hcp->hc_nchanges >= hcp->hc_max_samples);
 		if (error /*&& not_read*/ && !hcp->hc_writer)
 			dcps_sample_rejected ((Reader_t *) hcp->hc_endpoint,
 						  DDS_REJECTED_BY_SAMPLES_LIMIT,
@@ -3368,7 +3504,8 @@ int hc_get_key (Cache_t        cache,
 	if (!ip)
 		return (DDS_RETCODE_ALREADY_DELETED);
 
-	if (hcp->hc_endpoint->ep.entity_id.id [ENTITY_KIND_INDEX] ==
+	if (!hcp->hc_secure_h &&
+			hcp->hc_endpoint->ep.entity_id.id [ENTITY_KIND_INDEX] ==
 			(ENTITY_KIND_BUILTIN | ENTITY_KIND_READER_KEY)) {
 		memcpy (data, ip->i_hash.hash, hcp->hc_key_size);
 		prof_stop (cache_get_key, 1);
@@ -3378,7 +3515,7 @@ int hc_get_key (Cache_t        cache,
 		kp = ip->i_hash.hash;
 	else
 		kp = (const unsigned char *) str_ptr (ip->i_key);
-	ret = DDS_KeyToNativeData (data, dynamic, kp, 
+	ret = DDS_KeyToNativeData (data, dynamic, hcp->hc_secure_h, kp, 
 				hcp->hc_endpoint->ep.topic->type->type_support);
 
 	prof_stop (cache_get_key, 1);
@@ -3575,12 +3712,11 @@ int hc_seqnr_info (Cache_t          cache,
 	HistoryCache_t	*hcp = (HistoryCache_t *) cache;
 
 	*max_snr = hcp->hc_last_seqnr;
-	if (hcp->hc_nchanges) 
+	if (hcp->hc_nchanges)
 		*min_snr = hcp->hc_head->change->c_seqnr;
 	else {
 		*min_snr = hcp->hc_last_seqnr;
-		if (SEQNR_ZERO (*min_snr))
-			min_snr->low = 1;
+		SEQNR_INC (*min_snr);
 	}
 	return (DDS_RETCODE_OK);
 }
@@ -5039,22 +5175,23 @@ static void hc_dump_change (Change_t *cp, int newline, int reader_bits)
 	else
 		dbg_printf (" ");
 	dbg_print_time (&cp->c_time);
-	dbg_printf (" - [%p*%u:%s:%u:h=%u,%u.%u", (void *) cp,
+	dbg_printf (" - [%p*%u:%s:%u:h=%u,", (void *) cp,
 			cp->c_nrefs, kind_str [cp->c_kind],
 			cp->c_wack,
-			cp->c_handle,
-			cp->c_seqnr.high,
-			cp->c_seqnr.low);
-	if (cp->c_dests [0]) {
-		dbg_printf ("=>");
-		dbg_printf ("%u", cp->c_dests [0]);
-		if (cp->c_dests [1])
-			dbg_printf (",%u", cp->c_dests [1]);
-	}
+			cp->c_handle);
 	if (reader_bits)
-		dbg_printf (";%s,%s",
+		dbg_printf ("%s,%s",
 			(cp->c_sstate) ? "NR" : "R",
 			(cp->c_vstate) ? "NN" : "N");
+	else {
+		dbg_printf ("%u.%u", cp->c_seqnr.high, cp->c_seqnr.low);
+		if (cp->c_dests [0]) {
+			dbg_printf ("=>");
+			dbg_printf ("%u", cp->c_dests [0]);
+			if (cp->c_dests [1])
+				dbg_printf ("+%u", cp->c_dests [1]);
+		}
+	}
 	dbg_printf ("]");
 	if (cp->c_length)
 		dbg_printf ("->%p*%u,%lu bytes", cp->c_data,
@@ -5064,22 +5201,23 @@ static void hc_dump_change (Change_t *cp, int newline, int reader_bits)
 		dbg_printf ("\r\n");
 }
 
-static void hc_dump_ref (CCREF *rp)
+static void hc_dump_ref (CCREF *rp, int reader_bits)
 {
-	dbg_printf ("{");
 	if (rp->change)
-		hc_dump_change (rp->change, 1, 0);
-	dbg_printf ("}");
+		hc_dump_change (rp->change, 1, reader_bits);
 }
 
-static void hc_dump_cclist (const char *s, CCLIST *lp)
+static void hc_dump_cclist (const char *s, CCLIST *lp, int reader_bits)
 {
 	CCREF	*rp;
 
 	dbg_printf ("%s: (%u)", s, lp->l_nchanges);
-	if (lp->l_nchanges)
+	if (lp->l_nchanges) {
+		dbg_printf (" {\r\n");
 		LIST_FOREACH (lp->l_list, rp)
-			hc_dump_ref (rp);
+			hc_dump_ref (rp, reader_bits);
+		dbg_printf ("      }");
+	}
 	dbg_printf ("\r\n");
 }
 
@@ -5110,7 +5248,10 @@ static void hc_inst_stats_dump (INST_STATS *sp, int writer, INSTANCE *ip)
 
 #endif
 
-static void hc_dump_instance (INSTANCE *ip, const TypeSupport_t *ts)
+static void hc_dump_instance (INSTANCE            *ip,
+			      const TypeSupport_t *ts,
+			      int                 secure,
+			      int                 reader_bits)
 {
 	unsigned	i;
 	handle_t	*hp;
@@ -5128,9 +5269,9 @@ static void hc_dump_instance (INSTANCE *ip, const TypeSupport_t *ts)
 	if (ip->i_inform)
 		dbg_printf ("I, ");
 	if (ip->i_deadlined)
-		dbg_printf ("DL");
+		dbg_printf ("DL, ");
 	if (ip->i_nwriters) {
-		dbg_printf (", W: ");
+		dbg_printf ("W:");
 		if (ip->i_nwriters <= DNWRITERS)
 			hp = ip->i_writers.w;
 		else
@@ -5144,8 +5285,9 @@ static void hc_dump_instance (INSTANCE *ip, const TypeSupport_t *ts)
 			if (hp [i] == ip->i_owner)
 				dbg_printf ("]");
 		}
+		dbg_printf (" ");
 	}
-	dbg_printf ("\r\n");
+	dbg_printf ("{%u}\r\n", ip->i_ndata);
 #ifdef EXTRA_STATS
 	dbg_printf ("      Statistics:\r\n");
 	hc_inst_stats_dump (&ip->i_stats, is_writer, ip);
@@ -5154,7 +5296,8 @@ static void hc_dump_instance (INSTANCE *ip, const TypeSupport_t *ts)
 		dbg_printf ("      Key:\r\n");
 #ifdef PARSE_KEY
 		dbg_printf ("\t");
-		DDS_TypeSupport_dump_key (1, ts, str_ptr (ip->i_key), 0, 0, 1);
+		DDS_TypeSupport_dump_key (1, ts, str_ptr (ip->i_key), 0, 0,
+								secure, 1);
 		dbg_printf ("\r\n");
 #else
 		ARG_NOT_USED (ts)
@@ -5167,13 +5310,15 @@ static void hc_dump_instance (INSTANCE *ip, const TypeSupport_t *ts)
 		dbg_print_time (&ip->i_time);
 		dbg_printf ("\r\n");
 	}
-	dbg_printf ("\t");
-	hc_dump_cclist ("-", &ip->i_list);
+	dbg_printf ("      ");
+	hc_dump_cclist ("->", &ip->i_list, reader_bits);
 }
 
 typedef struct hc_dump_inst_st {
 	const TypeSupport_t	*ts;
 	int			hashes;
+	int			secure;
+	int			reader;
 } DUMP_INST;
 
 /* hc_dump_sl_inst -- Display a skiplist node containing an instance. */
@@ -5186,11 +5331,11 @@ static int hc_dump_sl_inst (Skiplist_t *list, void *node, void *arg)
 	ARG_NOT_USED (list)
 
 	ip = *ipp;
-	hc_dump_instance (ip, di->ts);
+	hc_dump_instance (ip, di->ts, di->secure, di->reader);
 	if (di->hashes)
 		while (ip->i_next) {
 			ip = ip->i_next;
-			hc_dump_instance (ip, di->ts);
+			hc_dump_instance (ip, di->ts, di->secure, di->reader);
 		}
 	return (1);
 }
@@ -5230,8 +5375,9 @@ void hc_cache_dump (Cache_t cache)
 	GUID_t		guid;
 	DUMP_INST	dinst;
 
-	dbg_printf ("Topic/Type: %s/%s\r\n", str_ptr (hcp->hc_endpoint->ep.topic->name),
-					     str_ptr (hcp->hc_endpoint->ep.topic->type->type_name));
+	dbg_printf ("Topic/Type: %s/%s%c\r\n", str_ptr (hcp->hc_endpoint->ep.topic->name),
+					     str_ptr (hcp->hc_endpoint->ep.topic->type->type_name),
+					     (hcp->hc_ref_type) ? '*' : ' ');
 	dbg_printf ("GUID: ");
 	guid.prefix = hcp->hc_endpoint->ep.u.subscriber->domain->participant.p_guid_prefix;
 	guid.entity_id = hcp->hc_endpoint->ep.entity_id;
@@ -5247,8 +5393,12 @@ void hc_cache_dump (Cache_t cache)
 	if (hcp->hc_src_time)
 		dbg_printf ("SrcTime/");
 	dbg_printf ("%s", hcp->hc_inst_order ? "Inst-ordered/" : "Arrival-ordered/");
-	dbg_printf ("%s\r\n", hcp->hc_must_ack ? "Keep-all" : "Keep-last");
-	dbg_printf ("Limits: ");
+	dbg_printf ("%s", hcp->hc_must_ack ? "Keep-all" : "Keep-last");
+#ifdef DDS_NATIVE_SECURITY
+	if (hcp->hc_secure_h)
+		dbg_printf ("/secure");
+#endif
+	dbg_printf ("\r\nLimits: ");
 	dbg_print_limit (hcp->hc_max_samples, MAX_LIST_CHANGES, "samples, ");
 	dbg_print_limit (hcp->hc_max_inst, MAX_INST_HANDLE, "instances, ");
 	dbg_print_limit (hcp->hc_max_depth, MAX_LIST_CHANGES, "samples/instance\r\n");
@@ -5273,15 +5423,15 @@ void hc_cache_dump (Cache_t cache)
 #endif
 	dbg_printf ("Changes:");
 	if (hcp->hc_nchanges)  {
-		dbg_printf ("\r\n");
+		dbg_printf (" {%u}\r\n", hcp->hc_ndata);
 		LIST_FOREACH (hcp->hc_list, rp)
 			hc_dump_change (rp->change, 1, !hcp->hc_writer);
 	}
 	else
-		dbg_printf ("None.\r\n");
+		dbg_printf ("None {%u}.\r\n", hcp->hc_ndata);
 
 	if (!hcp->hc_multi_inst)
-		hc_dump_cclist ("\r\nNo key changes", &hcp->hc_changes);
+		hc_dump_cclist ("\r\nNo key changes", &hcp->hc_changes, !hcp->hc_writer);
 	else {
 		dbg_printf ("Last handle = %u, Maximum key size = ",
 				hcp->hc_last_handle);
@@ -5294,9 +5444,11 @@ void hc_cache_dump (Cache_t cache)
 #endif
 		dinst.ts = hcp->hc_endpoint->ep.topic->type->type_support;
 		dinst.hashes = 1;
+		dinst.secure = hcp->hc_secure_h;
+		dinst.reader = !hcp->hc_writer;
 		if (!hcp->hc_skiplists)
 			for (ip = hcp->hc_inst_head; ip; ip = ip->i_next)
-				hc_dump_instance (ip, dinst.ts);
+				hc_dump_instance (ip, dinst.ts, dinst.secure, dinst.reader);
 		else {
 			dbg_printf ("Hashes:\r\n");
 			sl_walk (hcp->hc_hashes, hc_dump_sl_inst, &dinst);

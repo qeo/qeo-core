@@ -35,6 +35,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
+#include <dds/dds_security.h>
 #include <qeo/mgmt_client.h>
 #include <qeo/platform.h>
 #include <assert.h>
@@ -56,6 +57,8 @@
 
 typedef struct {
     uint64_t  seqnr;
+    char      *content;
+    size_t    size;
     BIO       *bio;
 } policy_t;
 
@@ -66,23 +69,16 @@ struct qeo_security_policy {
     policy_t                    published_policy;   /* policy that we published */
     policy_t                    new_policy;         /* remote policy from server or from QEO peers; becomes published if verification and enforcement is successful. */
     qeo_policy_cache_hndl_t     cache;
-    qeocore_writer_t            *writer;
-    qeocore_reader_t            *reader;
 };
 
 struct policy_parser_userdata {
-    qeo_security_policy_hndl qeoSecPol;
+    qeo_security_policy_hndl qeo_policy_handle;
 };
 
 struct policy_cache_userdata {
     uintptr_t cb;
     uintptr_t cookie;
 };
-
-typedef struct {
-    uint64_t  seqnr;
-    char      *content;
-} org_qeo_core_Policy_t;
 
 /*########################################################################
 #                                                                       #
@@ -101,8 +97,7 @@ static pthread_mutex_t _mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 static bool _initialized = false;
-
-static const policy_t _policy_null = { DUMMY_SEQNR, NULL };
+static const policy_t _policy_null = { DUMMY_SEQNR, NULL , 0, NULL};
 
 /*########################################################################
 #                                                                       #
@@ -110,32 +105,37 @@ static const policy_t _policy_null = { DUMMY_SEQNR, NULL };
 #                                                                       #
 ########################################################################*/
 static bool isInitialized(void);
-static void notifyPolicyUpdate(qeo_security_policy_hndl qeoSecPol);
-static bool remove_local_policy(qeo_security_policy_hndl qeoSecPol);
-static bool exists_local_policy(qeo_security_policy_hndl qeoSecPol);
-static bool get_local_policy(qeo_security_policy_hndl qeoSecPol);
-static bool get_remote_policy(qeo_security_policy_hndl qeoSecPol);
-static bool set_remote_policy(qeo_security_policy_hndl    qeoSecPol,
-                              const org_qeo_core_Policy_t *policy_instance);
+static void free_policy(policy_t *policy);
+static void notify_policy_update(qeo_security_policy_hndl qeo_policy_handle);
+static bool exists_local_policy_file(qeo_security_policy_hndl qeo_policy_handle);
+static bool open_local_policy_file(qeo_security_policy_hndl qeo_policy_handle);
+static void close_local_policy_file(qeo_security_policy_hndl qeo_policy_handle);
+static bool new_remote_policy(qeo_security_policy_hndl qeo_policy_handle,
+                                 const char *content,
+                                 size_t length);
+static void close_remote_policy(qeo_security_policy_hndl qeo_policy_handle,
+                                bool remove);
+static bool update_policy(qeo_security_policy_hndl qeo_policy_handle);
 static bool verify_policy(const policy_t  *policy,
                           STACK_OF(X509)  *certs,
                           char            **body);
-static bool set_policy(qeo_security_policy_hndl qeoSecPol);
-static bool enforce_policy(qeo_security_policy_hndl qeoSecPol,
+static bool enforce_policy(qeo_security_policy_hndl qeo_policy_handle,
                            const char               *body);
-static bool publish_policy(qeo_security_policy_hndl qeoSecPol);
-static bool cfg_qeosecpol(qeo_security_policy_hndl          qeoSecPol,
+static bool publish_policy(qeo_security_policy_hndl qeo_policy_handle);
+static bool cfg_qeo_policy_handle(qeo_security_policy_hndl          qeo_policy_handle,
                           const qeo_security_policy_config  *cfg);
-static void free_qeosecpol(qeo_security_policy_hndl qeoSecPol);
+static void free_qeo_policy_handle(qeo_security_policy_hndl qeo_policy_handle);
 static qeo_mgmt_client_retcode_t ssl_ctx_cb(SSL_CTX *ctx,
                                             void    *cookie);
 static qeo_mgmt_client_retcode_t data_cb(char   *data,
                                          size_t size,
                                          void   *cookie);
 
-static void on_policy_update(const qeocore_reader_t *reader,
-                             const qeocore_data_t   *data,
-                             uintptr_t              userdata);
+static DDS_ReturnCode_t on_policy_content(uintptr_t  userdata,
+                                          uint64_t   *seqnr,
+                                          char       *content,
+                                          size_t     *length,
+                                          int        set);
 static int bio_to_mem(char  **out,
                       int   maxlen,
                       BIO   *in);
@@ -162,20 +162,24 @@ static int replace(char       *toreplace,
                    int        toreplace_len,
                    const char *replacement,
                    int        rep_len);
+static void policy_cache_participant_only_cb(qeo_policy_cache_hndl_t cache,
+                                             const char              *participant);
 static void policy_cache_participant_cb(qeo_policy_cache_hndl_t cache,
                                         const char              *participant);
-static void policy_cache_update_partition_string_cb(qeo_policy_cache_hndl_t           cache,
-                                                    uintptr_t                         cookie,
-                                                    const char                        *participant_tag,
-                                                    const char                        *topic_name,
-                                                    unsigned int                      selector,
-                                                    struct partition_string_list_node *partition_list);
-static void get_partition_strings_cb(qeo_policy_cache_hndl_t            cache,
-                                     uintptr_t                          cookie,
-                                     const char                         *participant_tag,
-                                     const char                         *topic_name,
-                                     unsigned int                       selector,
-                                     struct partition_string_list_node  *partition_list);
+static void policy_cache_update_topic_cb(qeo_policy_cache_hndl_t           cache,
+                                         uintptr_t                         cookie,
+                                         const char                        *participant_tag,
+                                         const char                        *topic_name,
+                                         unsigned int                      selector,
+                                         struct topic_participant_list_node *read_participant_list,
+                                         struct topic_participant_list_node *write_participant_list);
+static void get_fine_grained_rules_cb(qeo_policy_cache_hndl_t            cache,
+                                      uintptr_t                          cookie,
+                                      const char                         *participant_tag,
+                                      const char                         *topic_name,
+                                      unsigned int                       selector,
+                                      struct topic_participant_list_node *read_participant_list,
+                                      struct topic_participant_list_node *write_participant_list);
 int32_t bio_write(BIO *const    pBio,
                   const char    *data,
                   const int32_t len);
@@ -210,85 +214,122 @@ static void api_unlock(void)
     unlock(&_mutex);
 }
 
-static void notifyPolicyUpdate(qeo_security_policy_hndl qeoSecPol)
+static void free_policy(policy_t *policy)
 {
-    if (qeoSecPol->cfg.update_cb != NULL) {
-        qeoSecPol->cfg.update_cb(qeoSecPol);
+    if (policy != NULL) {
+        if (policy->bio != NULL) {
+            BIO_free_all(policy->bio);
+        }
+        if (policy->content != NULL) {
+            free(policy->content);
+        }
+        memcpy(policy, &_policy_null, sizeof(policy_t));
     }
 }
 
-static bool remove_local_policy(qeo_security_policy_hndl qeoSecPol)
+static void notify_policy_update(qeo_security_policy_hndl qeo_policy_handle)
 {
-    bool  ret     = false;
-    int   status  = 0;
-
-    do {
-        if (qeoSecPol->new_policy.bio != NULL) {
-            BIO_free_all(qeoSecPol->new_policy.bio);
-            qeoSecPol->new_policy = _policy_null;
-        }
-
-        status = remove(qeoSecPol->policy_path);
-        if (status != 0) {
-            qeo_log_e("unable to delete %s \n", qeoSecPol->policy_path);
-            break;
-        }
-        qeo_log_d("%s file deleted successfully\n", qeoSecPol->policy_path);
-
-        ret = true;
-    } while (0);
-
-    return ret;
+    DDS_Security_permissions_changed();
+    DDS_Security_qeo_write_policy_version();
+    DDS_Security_topics_reevaluate(qeo_policy_handle->cfg.factory->dp, 0, "*");
+    
+    if (qeo_policy_handle->cfg.update_cb != NULL) {
+        qeo_policy_handle->cfg.update_cb(qeo_policy_handle);
+    }
 }
 
-static bool exists_local_policy(qeo_security_policy_hndl qeoSecPol)
+static bool exists_local_policy_file(qeo_security_policy_hndl qeo_policy_handle)
 {
     bool ret = false;
 
-
-    if (access(qeoSecPol->policy_path, R_OK | W_OK) == 0) {
+    if (access(qeo_policy_handle->policy_path, R_OK | W_OK) == 0) {
         ret = true;
     }
 
     return ret;
 }
 
-static bool get_local_policy(qeo_security_policy_hndl qeoSecPol)
+static bool open_local_policy_file(qeo_security_policy_hndl qeo_policy_handle)
 {
-    bool ret = true;
+    bool ret = false;
     char *tmp_file = NULL;
 
     do {
-        qeoSecPol->rand = rand();
-        if (asprintf(&tmp_file, "%s.%u.%d_r.tmp", qeoSecPol->policy_path, getpid(), qeoSecPol->rand) == -1) {
-            qeo_log_e("Could not allocate");
+        qeo_policy_handle->rand = rand();
+        if (asprintf(&tmp_file, "%s.%u.%d_r.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand) == -1) {
+            qeo_log_e("Could not allocate tmp_file string");
             break;
         }
 
-        qeo_log_d("link %s", tmp_file);
-        if (link(qeoSecPol->policy_path, tmp_file) != 0){
-            qeo_log_e("Could not hardlink %s to %s %d(%s)", tmp_file, qeoSecPol->policy_path, errno, strerror(errno));
+        qeo_log_d("Link %s", tmp_file);
+        if (link(qeo_policy_handle->policy_path, tmp_file) != 0){
+            qeo_log_e("Could not hardlink %s to %s %d(%s)", tmp_file, qeo_policy_handle->policy_path, errno, strerror(errno));
             break;
         }
 
-        qeoSecPol->new_policy.bio = BIO_new_file(qeoSecPol->policy_path, "r");
-        if (qeoSecPol->new_policy.bio == NULL) {
-            qeo_log_e("Can't load policy file");
-            ret = false;
+        qeo_policy_handle->new_policy.bio = BIO_new_file(qeo_policy_handle->policy_path, "r");
+        if (qeo_policy_handle->new_policy.bio == NULL) {
+            qeo_log_e("Can't open local policy file for reading");
+            break;
+        }
+
+        while (1) {
+            int len = 0;
+
+            qeo_policy_handle->new_policy.content = realloc(qeo_policy_handle->new_policy.content,
+                                                            qeo_policy_handle->new_policy.size + 1024);
+            len = BIO_read(qeo_policy_handle->new_policy.bio,
+                           qeo_policy_handle->new_policy.content + qeo_policy_handle->new_policy.size, 1024);
+            if (len <= 0) {
+                qeo_policy_handle->new_policy.content = realloc(qeo_policy_handle->new_policy.content,
+                                                                qeo_policy_handle->new_policy.size);
+                break;
+            }
+            qeo_policy_handle->new_policy.size += len;
+        }
+        qeo_log_d("Policy size: %d", qeo_policy_handle->new_policy.size);
+        //qeo_log_d("Policy content: %s", qeo_policy_handle->new_policy.content);
+        (void) BIO_reset(qeo_policy_handle->new_policy.bio);
+
+        ret = true;
+    } while (0);
+
+    if (tmp_file != NULL) {
+        free(tmp_file);
+    }
+
+    return ret;
+}
+
+static void close_local_policy_file(qeo_security_policy_hndl qeo_policy_handle)
+{
+    char *tmp_file = NULL;
+
+    do {
+        if (asprintf(&tmp_file, "%s.%u.%d_r.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand) == -1) {
+            qeo_log_e("Could not allocate tmp_file string");
+            break;
+        }
+
+        qeo_log_d("Unlink %s", tmp_file);
+        if (unlink(tmp_file) != 0){
+            qeo_log_e("Could not unlink %s: error %d(%s)", tmp_file, errno, strerror(errno));
             break;
         }
     } while (0);
 
-    free(tmp_file);
+    free_policy(&qeo_policy_handle->new_policy);
 
-    return ret;
+    if (tmp_file != NULL) {
+        free(tmp_file);
+    }
 }
 
 static qeo_mgmt_client_retcode_t ssl_ctx_cb(SSL_CTX *ctx, void *cookie)
 {
     qeo_mgmt_client_retcode_t client_ret  = QMGMTCLIENT_EFAIL;
     qeo_retcode_t             qeo_ret     = QEO_OK;
-    qeo_security_policy_hndl  qeoSecPol   = (qeo_security_policy_hndl)cookie;
+    qeo_security_policy_hndl  qeo_policy_handle   = (qeo_security_policy_hndl)cookie;
     EVP_PKEY                  *key        = NULL;
 
     STACK_OF(X509) * certs = NULL;
@@ -297,25 +338,25 @@ static qeo_mgmt_client_retcode_t ssl_ctx_cb(SSL_CTX *ctx, void *cookie)
     int   i           = 0;
 
     do {
-        if (qeoSecPol == NULL) {
-            qeo_log_e("qeoSecPol == NULL");
+        if (qeo_policy_handle == NULL) {
+            qeo_log_e("qeo_policy_handle == NULL");
             break;
         }
 
-        qeo_ret = qeo_security_get_credentials(qeoSecPol->cfg.sec, &key, &certs);
+        qeo_ret = qeo_security_get_credentials(qeo_policy_handle->cfg.sec, &key, &certs);
         if (qeo_ret != QEO_OK) {
-            qeo_log_e("failed to get credentials");
+            qeo_log_e("Failed to get credentials");
             break;
         }
 
         if (sk_X509_num(certs) <= 1) {
-            qeo_log_e("not enough certificates in chain");
+            qeo_log_e("Not enough certificates in chain");
             break;
         }
 
         user_cert = sk_X509_value(certs, 0);
         if (user_cert == NULL) {
-            qeo_log_e("user_cert == NULL");
+            qeo_log_e("User_cert == NULL");
             break;
         }
 
@@ -335,10 +376,10 @@ static qeo_mgmt_client_retcode_t ssl_ctx_cb(SSL_CTX *ctx, void *cookie)
 
         security_util_configure_ssl_ctx(ctx);
         for (i = 1; i < sk_X509_num(certs); i++) {
-            qeo_log_i("add cert: %d", i);
+            qeo_log_i("Add cert: %d", i);
             cert = sk_X509_value(certs, i);
             if (cert == NULL) {
-                qeo_log_e("cert == NULL");
+                qeo_log_e("Cert == NULL");
                 break;
             }
 
@@ -357,17 +398,21 @@ static qeo_mgmt_client_retcode_t ssl_ctx_cb(SSL_CTX *ctx, void *cookie)
 static qeo_mgmt_client_retcode_t data_cb(char *data, size_t size, void *cookie)
 {
     qeo_mgmt_client_retcode_t client_ret  = QMGMTCLIENT_EFAIL;
-    qeo_security_policy_hndl  qeoSecPol   = (qeo_security_policy_hndl)cookie;
+    qeo_security_policy_hndl  qeo_policy_handle   = (qeo_security_policy_hndl)cookie;
     int                       ret_size    = 0;
 
     do {
-        if (qeoSecPol == NULL) {
-            qeo_log_e("qeoSecPol == NULL");
+        if (qeo_policy_handle == NULL) {
+            qeo_log_e("qeo_policy_handle == NULL");
             break;
         }
 
-        qeo_log_i("data[%zu]:\r\n%s", size, data);
-        if ((ret_size = bio_write(qeoSecPol->new_policy.bio, data, size)) != size) {
+        qeo_log_i("Data [%zu]:\r\n%s", size, data);
+        qeo_policy_handle->new_policy.content = realloc(qeo_policy_handle->new_policy.content,
+                                                        qeo_policy_handle->new_policy.size + size);
+        memcpy(qeo_policy_handle->new_policy.content + qeo_policy_handle->new_policy.size, data, size);
+        qeo_policy_handle->new_policy.size += size;
+        if ((ret_size = bio_write(qeo_policy_handle->new_policy.bio, data, size)) != size) {
             qeo_log_e("write_bio failed, requested size: %d, returned size: %d", size, ret_size);
             break;
         }
@@ -378,7 +423,7 @@ static qeo_mgmt_client_retcode_t data_cb(char *data, size_t size, void *cookie)
     return client_ret;
 }
 
-static bool get_remote_policy(qeo_security_policy_hndl qeoSecPol)
+static bool new_remote_policy(qeo_security_policy_hndl qeo_policy_handle, const char *content, size_t length)
 {
     bool                      ret         = false;
     int                       opensslret  = 0;
@@ -390,66 +435,80 @@ static bool get_remote_policy(qeo_security_policy_hndl qeoSecPol)
     char *tmp_file = NULL;
 
     do {
-        if (asprintf(&tmp_file, "%s.%u.%d_w.tmp", qeoSecPol->policy_path, getpid(), rand()) == -1) {
-            qeo_log_e("Could not allocate");
+        qeo_policy_handle->rand = rand();
+        if (asprintf(&tmp_file, "%s.%u.%d_w.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand) == -1) {
+            qeo_log_e("Could not allocate tmp_file string");
             break;
         }
 
-        if (qeoSecPol->new_policy.bio != NULL) {
+        if (qeo_policy_handle->new_policy.bio != NULL) {
             qeo_log_e("new_policy.bio != NULL");
             break;
         }
 
-        qeoSecPol->new_policy.bio = BIO_new_file(tmp_file, "w");
-        if (qeoSecPol->new_policy.bio == NULL) {
-            qeo_log_e("Can't create policy file");
+        if (qeo_policy_handle->new_policy.content != NULL) {
+            qeo_log_e("new_policy.content != NULL");
             break;
         }
 
-        qeoret = qeo_security_get_mgmt_client_ctx(qeoSecPol->cfg.sec, &ctx);
-        if (qeoret != QEO_OK) {
-            qeo_log_e("Can't get qeo mgmt client context");
+        qeo_policy_handle->new_policy.bio = BIO_new_file(tmp_file, "w");
+        if (qeo_policy_handle->new_policy.bio == NULL) {
+            qeo_log_e("Can't open temporary policy file for writing");
             break;
         }
 
-        if ((qeoret = qeo_security_get_identity(qeoSecPol->cfg.sec, &id)) != QEO_OK) {
-            qeo_log_e("qeo_security_get_identity failed with error: %d", qeoret);
-            break;
+        if (content == NULL) {
+            qeoret = qeo_security_get_mgmt_client_ctx(qeo_policy_handle->cfg.sec, &ctx);
+            if (qeoret != QEO_OK) {
+                qeo_log_e("Can't get QEO management client context");
+                break;
+            }
+
+            if ((qeoret = qeo_security_get_identity(qeo_policy_handle->cfg.sec, &id)) != QEO_OK) {
+                qeo_log_e("qeo_security_get_identity failed with error: %d", qeoret);
+                break;
+            }
+
+            clientret = qeo_mgmt_client_get_policy(ctx, id->url, ssl_ctx_cb, data_cb, qeo_policy_handle);
+            if (clientret != QMGMTCLIENT_OK) {
+                qeo_log_e("qeo_mgmt_client_get_policy failed with error: %d", clientret);
+                break;
+            }
+
+            qeo_policy_handle->new_policy.content = realloc(qeo_policy_handle->new_policy.content,
+                                                            qeo_policy_handle->new_policy.size + 1);
+            memcpy(qeo_policy_handle->new_policy.content + qeo_policy_handle->new_policy.size, "\0", 1);
+            qeo_policy_handle->new_policy.size += 1;
+            opensslret = BIO_printf(qeo_policy_handle->new_policy.bio, "%c", '\0');
+            if (opensslret <= 0) {
+                qeo_log_e("Failed to add 0 at the end of the policy file (BIO_printf)");
+                break;
+            }
+        }
+        else {
+            qeo_policy_handle->new_policy.content = calloc(length, sizeof(char));
+            memcpy(qeo_policy_handle->new_policy.content, content, length);
+            qeo_policy_handle->new_policy.size = length;
+            if (bio_write(qeo_policy_handle->new_policy.bio, content, length) <= 0) {
+                qeo_log_e("Failed to write the temporary policy file (bio_write)\r\n");
+                break;
+            }
         }
 
-        clientret = qeo_mgmt_client_get_policy(ctx, id->url, ssl_ctx_cb, data_cb, qeoSecPol);
-        if (clientret != QMGMTCLIENT_OK) {
-            qeo_log_e("qeo_mgmt_client_get_policy failed with error: %d", clientret);
-            break;
-        }
+        (void) BIO_flush(qeo_policy_handle->new_policy.bio);
+        BIO_free_all(qeo_policy_handle->new_policy.bio);
 
-        opensslret = BIO_printf(qeoSecPol->new_policy.bio, "%c", '\0');
-        if (opensslret <= 0) {
-            qeo_log_e("Failed to get remote policy (BIO_printf)");
-            break;
-        }
-
-        (void) BIO_flush(qeoSecPol->new_policy.bio);
-
-        BIO_free_all(qeoSecPol->new_policy.bio);
-        qeoSecPol->new_policy = _policy_null;
-
-        qeo_log_d("Renaming %s to %s", tmp_file, qeoSecPol->policy_path);
-        if (rename(tmp_file, qeoSecPol->policy_path) != 0){
-            qeo_log_e("rename() from %s to %s failed (%s)", tmp_file, qeoSecPol->policy_path, strerror(errno));
+        qeo_policy_handle->new_policy.bio = BIO_new_file(tmp_file, "r");
+        if (qeo_policy_handle->new_policy.bio == NULL) {
+            qeo_log_e("Can't open temporary policy file for reading");
             break;
         }
 
         ret = true;
     } while (0);
 
-
-    if (qeoSecPol->new_policy.bio != NULL) {
-        BIO_free_all(qeoSecPol->new_policy.bio);
-        qeoSecPol->new_policy = _policy_null;
-    }
-
-    if (ret == false){
+    if (ret == false) {
+        free_policy(&qeo_policy_handle->new_policy);
         if (remove(tmp_file) != 0) {
             qeo_log_e("unable to delete %s (%s)\n", tmp_file, strerror(errno));
         }
@@ -459,97 +518,65 @@ static bool get_remote_policy(qeo_security_policy_hndl qeoSecPol)
         qeo_security_free_identity(&id);
     }
 
-    free(tmp_file);
+    if (tmp_file != NULL) {
+        free(tmp_file);
+    }
 
     return ret;
 }
 
-/* TODO: LOTS OF COPYPASTE FROM get_remote_policy() : maybe look for commonalities ? */ 
-static bool set_remote_policy(qeo_security_policy_hndl qeoSecPol, const org_qeo_core_Policy_t *policy_instance)
+static void close_remote_policy(qeo_security_policy_hndl qeo_policy_handle, bool success)
 {
-    bool  ret     = false;
-    int   bio_ret = 0;
-    char *tmp_file;
+    char *tmp_file = NULL;
 
     do {
-        if (asprintf(&tmp_file, "%s.%u.%d_w.tmp", qeoSecPol->policy_path, getpid(), rand()) == -1) {
-            qeo_log_e("Could not allocate");
+        if (asprintf(&tmp_file, "%s.%u.%d_w.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand) == -1) {
+            qeo_log_e("Could not allocate tmp_file string");
             break;
         }
 
-        if (qeoSecPol->new_policy.bio != NULL) {
-            qeo_log_e("new_policy.bio != NULL");
-            break;
+        if (success) {
+            qeo_log_d("Renaming %s to %s", tmp_file, qeo_policy_handle->policy_path);
+            if (rename(tmp_file, qeo_policy_handle->policy_path) != 0){
+                qeo_log_e("Rename() from %s to %s failed (%s)", tmp_file, qeo_policy_handle->policy_path, strerror(errno));
+                break;
+            }
         }
-
-        qeoSecPol->new_policy.bio = BIO_new_file(tmp_file, "w");
-        if (qeoSecPol->new_policy.bio == NULL) {
-            qeo_log_e("Can't create policy file");
-            break;
+        else {
+            qeo_log_d("Removing %s", tmp_file);
+            if (remove(tmp_file) != 0) {
+                qeo_log_e("Unable to delete %s \n", tmp_file);
+                break;
+            }
         }
-
-        if ((bio_ret = bio_write(qeoSecPol->new_policy.bio, policy_instance->content, strlen(policy_instance->content))) <= 0) {
-            qeo_log_e("Failed to set remote policy (bio_write)\r\n");
-            break;
-        }
-
-
-        (void) BIO_flush(qeoSecPol->new_policy.bio);
-
-        qeo_log_d("Renaming %s to %s", tmp_file, qeoSecPol->policy_path);
-        if (rename(tmp_file, qeoSecPol->policy_path) != 0){
-            qeo_log_e("rename() from %s to %s failed (%s)", tmp_file, qeoSecPol->policy_path, strerror(errno));
-            break;
-        }
-        
-        ret = true;
     } while (0);
 
-    if (qeoSecPol->new_policy.bio != NULL) {
-        BIO_free_all(qeoSecPol->new_policy.bio);
-        qeoSecPol->new_policy = _policy_null;
+    free_policy(&qeo_policy_handle->new_policy);
+    if (tmp_file != NULL) {
+        free(tmp_file);
     }
-
-    if (ret == false) {
-        if (remove(tmp_file) != 0) {
-            qeo_log_e("unable to delete %s \n", tmp_file);
-        }
-    }
-    free(tmp_file);
-
-    return ret;
 }
 
-static bool set_policy(qeo_security_policy_hndl qeoSecPol)
+static bool update_policy(qeo_security_policy_hndl qeo_policy_handle)
 {
-    bool          ret     = true;
+    bool          ret     = false;
     qeo_retcode_t qeo_ret = QEO_OK;
     char          *body   = NULL;
     EVP_PKEY      *key    = NULL;
 
     STACK_OF(X509) * certs = NULL;
 
-    qeo_log_i("Setting policy");
+    qeo_log_i("Verify and update the new policy");
     do {
-        ret = get_local_policy(qeoSecPol);
-        if (ret == false) {
-            qeo_log_e("get_local_policy failed");
-            break;
-        }
-
-        qeo_ret = qeo_security_get_credentials(qeoSecPol->cfg.sec, &key, &certs);
+        qeo_ret = qeo_security_get_credentials(qeo_policy_handle->cfg.sec, &key, &certs);
         if (qeo_ret != QEO_OK) {
             qeo_log_e("failed to get credentials");
-            ret = false;
             break;
         }
 
-        ret = verify_policy(&qeoSecPol->new_policy, certs, &body);
+        ret = verify_policy(&qeo_policy_handle->new_policy, certs, &body);
         if (ret == false) {
             qeo_log_e("verify_policy failed");
-            if (remove_local_policy(qeoSecPol) == false) {
-                qeo_log_e("remove_local_policy failed");
-            }
             break;
         }
 
@@ -558,19 +585,16 @@ static bool set_policy(qeo_security_policy_hndl qeoSecPol)
             break;
         }
 
-
-        ret = enforce_policy(qeoSecPol, body);
+        ret = enforce_policy(qeo_policy_handle, body);
         if (ret == false) {
             break;
         }
 
-
-        if (qeoSecPol->writer != NULL) {
-            ret = publish_policy(qeoSecPol);
-            if (ret == false) {
-                break;
-            }
+        ret = publish_policy(qeo_policy_handle);
+        if (ret == false) {
+            break;
         }
+        ret = true;
     } while (0);
 
     if (body != NULL) {
@@ -672,55 +696,59 @@ static bool verify_policy(const policy_t *policy, STACK_OF(X509)   *certs, char 
     return ret;
 }
 
-static bool enforce_policy(qeo_security_policy_hndl qeoSecPol, const char *body)
+static bool enforce_policy(qeo_security_policy_hndl qeo_policy_handle, const char *body)
 {
     bool                  retval          = false;
     policy_parser_hndl_t  parser          = NULL;
     qeo_retcode_t         ret             = QEO_OK;
     qeocore_domain_id_t   domain_id       = 0;
     bool                  dds_sp_failure  = false;
-
-    struct policy_parser_userdata ud = { qeoSecPol };
-
+    struct policy_parser_userdata ud = { qeo_policy_handle };
     policy_parser_cfg_t cfg =
     {
         .buf        = body,
         .user_data  = (uintptr_t) &ud
     };
 
+    qeo_log_d("Configure DDS security database");
     do {
-        domain_id = qeoSecPol->cfg.factory->domain_id;
+        domain_id = qeo_policy_handle->cfg.factory->domain_id;
 
         if ((ret = policy_parser_construct(&cfg, &parser)) != QEO_OK) {
-            qeo_log_e("Policy parser construct failed\r\n");
+            qeo_log_e("Policy parser construct failed");
             break;
         }
 
         if ((ret = policy_parser_run(parser)) != QEO_OK) {
-            qeo_log_e("Policy parsing failed\r\n");
+            qeo_log_e("Policy parsing failed");
             break;
         }
 
-        if ((ret = qeo_policy_cache_finalize(qeoSecPol->cache)) != QEO_OK) {
-            qeo_log_e("qeo_policy_cache_finalize failed\r\n");
+        if ((ret = qeo_policy_cache_finalize(qeo_policy_handle->cache)) != QEO_OK) {
+            qeo_log_e("Policy parser finalization failed");
             break;
         }
 
-
-        //Configure DDS security plugin database
+        // Configure DDS security plugin database
         policy_dds_sp_update_start();
         if ((ret = policy_dds_sp_add_domain(domain_id) != QEO_OK)) {
             qeo_log_e("policy_dds_sp_add_domain() failed");
             dds_sp_failure = true;
             break;
         }
-        if (qeo_policy_cache_get_participants(qeoSecPol->cache, policy_cache_participant_cb) != QEO_OK) {
-            qeo_log_e("qeo_policy_cache_get_participants failed\r\n");
+        // First configure all participant rules in DDS (needed for fine-grained topic rules)
+        if (qeo_policy_cache_get_participants(qeo_policy_handle->cache, policy_cache_participant_only_cb) != QEO_OK) {
+            qeo_log_e("qeo_policy_cache_get_participants failed");
+            dds_sp_failure = true;
+            break;
+        }
+        // Second configure all topic rules (coarse and fine-grained)
+        if (qeo_policy_cache_get_participants(qeo_policy_handle->cache, policy_cache_participant_cb) != QEO_OK) {
+            qeo_log_e("qeo_policy_cache_get_participants failed");
             dds_sp_failure = true;
             break;
         }
         policy_dds_sp_update_done();
-
 
         retval = true;
     } while (0);
@@ -735,132 +763,105 @@ static bool enforce_policy(qeo_security_policy_hndl qeoSecPol, const char *body)
     return retval;
 }
 
-static bool publish_policy(qeo_security_policy_hndl qeoSecPol)
+static bool publish_policy(qeo_security_policy_hndl qeo_policy_handle)
 {
-    bool                  ret             = false;
-    qeo_retcode_t         qeoret          = QEO_OK;
-    org_qeo_core_Policy_t policy_instance = { 0 };
-    char                  *buf            = NULL;
-    int                   bret            = 0;
-    char                  *tmp_file       = NULL;
+    bool ret = false;
 
-    qeo_log_i("Publishing policy");
-
+    qeo_log_i("Saving sequence number of new policy");
     do {
-        if (qeoSecPol->new_policy.bio == NULL) {
+        if (qeo_policy_handle->new_policy.bio == NULL) {
             qeo_log_e("new_policy.bio == NULL");
-            ret = false;
             break;
         }
 
-        // remove previous instance
-        if (qeoSecPol->published_policy.seqnr != DUMMY_SEQNR) {
-            qeo_log_i("Removing policy instance instance with seq nr:  %" PRIu64 "", qeoSecPol->published_policy.seqnr);
-            policy_instance.seqnr = qeoSecPol->published_policy.seqnr;
-
-            qeoret = qeocore_writer_remove(qeoSecPol->writer, &policy_instance);
-
-            if (qeoret != QEO_OK) {
-                qeo_log_e("Removing of previous policy instance failed");
-            }
+        qeo_policy_handle->published_policy.seqnr = qeo_policy_handle->new_policy.seqnr;
+        /* Free the content buffer in the published_policy, move the content buffer from
+         * the new_policy to the published_policy and NULL it in the new_policy
+         * to make sure it is not accidently freed */
+        if (qeo_policy_handle->published_policy.content != NULL) {
+            free(qeo_policy_handle->published_policy.content);
         }
-
-        // write new instance
-        bret = bio_to_mem(&buf, MAX_BUF_SIZE, qeoSecPol->new_policy.bio);
-        if (bret <= 0) {
-            qeo_log_e("Getting BIO's content failed");
-            break;
-        }
-        qeo_log_i("data available: %d", bret);
-        policy_instance.seqnr             = qeoSecPol->new_policy.seqnr;
-        policy_instance.content           = buf;
-        qeoSecPol->published_policy.seqnr = qeoSecPol->new_policy.seqnr;
-        BIO_free_all(qeoSecPol->new_policy.bio);
-        qeoSecPol->new_policy = _policy_null;
-
-        if (getenv("POLICY_DUMP") != NULL){
-            qeo_log_d("Writing policy instance with seq nr %" PRIu64 ":\r\n%s", policy_instance.seqnr, policy_instance.content);
-        }
-        qeoret = qeocore_writer_write(qeoSecPol->writer, &policy_instance);
-        if (qeoret != QEO_OK) {
-            qeo_log_e("Writing of policy instance failed\r\n");
-            break;
-        }
+        qeo_policy_handle->published_policy.content = qeo_policy_handle->new_policy.content;
+        qeo_policy_handle->new_policy.content = NULL;
+        qeo_policy_handle->published_policy.size = qeo_policy_handle->new_policy.size;
+        free_policy(&qeo_policy_handle->new_policy);
 
         ret = true;
     } while (0);
 
-    if (buf) {
-        OPENSSL_free(buf);
-    }
+    return ret;
+}
 
+static DDS_ReturnCode_t on_policy_content(uintptr_t  userdata,
+                                          uint64_t   *seqnr,
+                                          char       *content,
+                                          size_t     *length,
+                                          int        set)
+{
+    qeo_security_policy_hndl  qeo_policy_handle = (qeo_security_policy_hndl)userdata;
+    DDS_ReturnCode_t ret = DDS_RETCODE_ERROR;
+
+    api_lock();
     do {
-        if (asprintf(&tmp_file, "%s.%u.%d_r.tmp", qeoSecPol->policy_path, getpid(), qeoSecPol->rand) == -1) {
-            qeo_log_e("Could not allocate");
-            break;
+        if (set) {
+            uint64_t sequence_number = 0;
+            char *tmp = NULL;
+
+            if (content == NULL) {
+                qeo_log_e("Content pointer NULL");
+                return DDS_RETCODE_BAD_PARAMETER;
+            }
+
+            tmp = calloc(*length, sizeof(char));
+            memcpy(tmp, content, *length);
+            sequence_number = policy_parser_get_sequence_number(tmp);
+            free(tmp);
+
+            qeo_log_d("Policy update seq nr = %" PRIu64 " ( local enforced seq nr = %" PRIu64 ")\r\n",
+                      sequence_number, qeo_policy_handle->published_policy.seqnr);
+            //qeo_log_d("Content: %s", content);
+            if (sequence_number > qeo_policy_handle->published_policy.seqnr) {
+                qeo_log_d("Policy instance has newer sequence number (%" PRIu64 ") as local enforced policy (%" PRIu64 ")\r\n",
+                          sequence_number, qeo_policy_handle->published_policy.seqnr);
+                if (new_remote_policy(qeo_policy_handle, content, *length) == false) {
+                    qeo_log_e("new_remote_policy failed");
+                    break;
+                }
+
+                if (update_policy(qeo_policy_handle) == false) {
+                    qeo_log_e("update_policy failed");
+                    close_remote_policy(qeo_policy_handle, false);
+                    break;
+                }
+                close_remote_policy(qeo_policy_handle, true);
+                api_unlock();
+                notify_policy_update(qeo_policy_handle);
+                api_lock();
+            }
+         } else {
+            if (seqnr != NULL) {
+                qeo_log_d("Get policy sequence nr = %" PRIu64, qeo_policy_handle->published_policy.seqnr);
+                *seqnr = qeo_policy_handle->published_policy.seqnr;
+            }
+            if (length != NULL) {
+                qeo_log_d("Get policy length = %d", qeo_policy_handle->published_policy.size);
+                *length = qeo_policy_handle->published_policy.size;
+            }
+            if (content != NULL) {
+                //qeo_log_d("Get policy content: %s", qeo_policy_handle->published_policy.content);
+                qeo_log_d("Get policy content");
+                memcpy(content, qeo_policy_handle->published_policy.content, qeo_policy_handle->published_policy.size);
+            }
         }
 
-        qeo_log_d("unlink %s", tmp_file);
-        if (unlink(tmp_file) != 0){
-            qeo_log_e("Could not unlink (%s)", strerror(errno));
-        }
+        ret = DDS_RETCODE_OK;
     } while (0);
-
-    free(tmp_file);
+    api_unlock();
 
     return ret;
 }
 
-static void on_policy_update(const qeocore_reader_t *reader,
-                             const qeocore_data_t   *data,
-                             uintptr_t              userdata)
-{
-    org_qeo_core_Policy_t     *policy_instance = NULL;
-    qeo_security_policy_hndl  qeoSecPol = (qeo_security_policy_hndl)userdata;
-
-    switch (qeocore_data_get_status(data)) {
-        case QEOCORE_NOTIFY:
-        case QEOCORE_NO_MORE_DATA:
-        case QEOCORE_ERROR:
-        case QEOCORE_REMOVE:
-            break;
-
-        case QEOCORE_DATA:
-            qeo_log_i("Policy update from QEO");
-            policy_instance = (org_qeo_core_Policy_t *)(qeocore_data_get_data(data));
-            break;
-    }
-
-    if (policy_instance == NULL) {
-        return;
-    }
-
-    api_lock();
-    do {
-        qeo_log_d("Policy update seq nr = %" PRIu64 " ( local enforced seq nr = %" PRIu64 ")\r\n",
-                  policy_instance->seqnr, qeoSecPol->published_policy.seqnr);
-        if (policy_instance->seqnr <= qeoSecPol->published_policy.seqnr) {
-            qeo_log_d("Policy instance has same or older sequence number (%" PRIu64 ") as local enforced policy (%" PRIu64 "), nothing to do\r\n",
-                      policy_instance->seqnr, qeoSecPol->published_policy.seqnr);
-            break;
-        }
-
-        if (set_remote_policy(qeoSecPol, policy_instance) == false) {
-            break;
-        }
-
-        if (set_policy(qeoSecPol) == false) {
-            break;
-        }
-        api_unlock();
-        notifyPolicyUpdate(qeoSecPol);
-        api_lock();
-
-    } while (0);
-    api_unlock();
-}
-
-static bool cfg_qeosecpol(qeo_security_policy_hndl qeoSecPol, const qeo_security_policy_config *cfg)
+static bool cfg_qeo_policy_handle(qeo_security_policy_hndl qeo_policy_handle, const qeo_security_policy_config *cfg)
 {
     bool                  ret       = true;
     char                  *file     = NULL;
@@ -869,7 +870,7 @@ static bool cfg_qeosecpol(qeo_security_policy_hndl qeoSecPol, const qeo_security
     qeo_retcode_t         rc        = QEO_EFAIL;
 
     do {
-        memcpy(&qeoSecPol->cfg, cfg, sizeof(qeoSecPol->cfg));
+        memcpy(&qeo_policy_handle->cfg, cfg, sizeof(qeo_policy_handle->cfg));
 
         if ((rc = qeo_security_get_identity(cfg->sec, &id)) != QEO_OK) {
             qeo_log_e("qeo_security_get_identity failed with error: %d", rc);
@@ -883,17 +884,17 @@ static bool cfg_qeosecpol(qeo_security_policy_hndl qeoSecPol, const qeo_security
             break;
         }
 
-        util_ret = qeo_platform_get_device_storage_path(file, &qeoSecPol->policy_path);
+        util_ret = qeo_platform_get_device_storage_path(file, &qeo_policy_handle->policy_path);
         if (util_ret != QEO_UTIL_OK) {
             qeo_log_e("Could not set absolute policy file path");
             ret = false;
             break;
         }
 
-        qeoSecPol->published_policy = _policy_null;
-        qeoSecPol->new_policy       = _policy_null;
+        qeo_policy_handle->published_policy = _policy_null;
+        qeo_policy_handle->new_policy       = _policy_null;
 
-        qeo_log_d("qeoSecPol[%p]", qeoSecPol);
+        qeo_log_d("qeo_policy_handle[%p]", qeo_policy_handle);
         qeo_log_d("realm_id: %" PRIx64 "", id->realm_id);
         qeo_log_d("url: %s", id->url);
     } while (0);
@@ -909,40 +910,21 @@ static bool cfg_qeosecpol(qeo_security_policy_hndl qeoSecPol, const qeo_security
     return ret;
 }
 
-static void free_qeosecpol(qeo_security_policy_hndl qeoSecPol)
+static void free_qeo_policy_handle(qeo_security_policy_hndl qeo_policy_handle)
 {
-    if (qeoSecPol->published_policy.bio != NULL) {
-        BIO_free_all(qeoSecPol->published_policy.bio);
-        qeoSecPol->published_policy.bio = NULL;
-    }
-
-    if (qeoSecPol->new_policy.bio != NULL) {
-        BIO_free_all(qeoSecPol->new_policy.bio);
-        qeoSecPol->new_policy.bio = NULL;
-    }
-
-    if (qeoSecPol->cache != NULL) {
-        if (qeo_policy_cache_destruct(&qeoSecPol->cache) != QEO_OK) {
+    free_policy(&qeo_policy_handle->new_policy);
+    free_policy(&qeo_policy_handle->published_policy);
+    if (qeo_policy_handle->cache != NULL) {
+        if (qeo_policy_cache_destruct(&qeo_policy_handle->cache) != QEO_OK) {
             qeo_log_e("qeo_policy_cache_destruct failed");
         }
     }
-
-    if (qeoSecPol->policy_path != NULL) {
-        free(qeoSecPol->policy_path);
-        qeoSecPol->policy_path = NULL;
+    if (qeo_policy_handle->policy_path != NULL) {
+        free(qeo_policy_handle->policy_path);
+        qeo_policy_handle->policy_path = NULL;
     }
 
-    if (qeoSecPol->writer != NULL) {
-        core_delete_writer(qeoSecPol->writer, false);
-        qeoSecPol->writer = NULL;
-    }
-
-    if (qeoSecPol->reader != NULL) {
-        core_delete_reader(qeoSecPol->reader, false);
-        qeoSecPol->reader = NULL;
-    }
-
-    free(qeoSecPol);
+    free(qeo_policy_handle);
 }
 
 /* Read whole contents of a BIO into an allocated memory buffer and
@@ -962,7 +944,7 @@ static int bio_to_mem(char **out, int maxlen, BIO *in)
             return -1;
         }
 
-        for ( ; ; ) {
+        while (1) {
             if ((maxlen != -1) && (maxlen < 1024)) {
                 len = maxlen;
             }
@@ -983,7 +965,6 @@ static int bio_to_mem(char **out, int maxlen, BIO *in)
                 break;
             }
         }
-        BIO_printf(mem, "%c", '\0');
         ret = BIO_get_mem_data(mem, (char **)out);
         if (ret <= 0) {
             dump_openssl_error_stack("BIO_get_mem_data failed");
@@ -1097,7 +1078,6 @@ static int smime_cb(int ok, X509_STORE_CTX *ctx)
             break;
         }
 
-
         //check based on key usage check in openssl/crypto/x509v3/v3_purp.c
         /*
          * Check the optional key usage field:
@@ -1113,8 +1093,6 @@ static int smime_cb(int ok, X509_STORE_CTX *ctx)
             ok = 0;
             break;
         }
-
-
 
         err = X509_STORE_CTX_get_error(ctx);
         if (!ok) {
@@ -1207,7 +1185,7 @@ static void on_policy_parser_participant_found_cb(policy_parser_hndl_t parser, u
         }
 
         *parser_cookie = (uintptr_t) participant_id;
-        if (qeo_policy_cache_add_participant_tag(ud->qeoSecPol->cache, participant_id) != QEO_OK) {
+        if (qeo_policy_cache_add_participant_tag(ud->qeo_policy_handle->cache, participant_id) != QEO_OK) {
             qeo_log_e("qeo_policy_cache_add_participant_tag failed");
         }
     } while (0);
@@ -1225,7 +1203,7 @@ static void on_policy_parser_coarse_grained_rule_found_cb(policy_parser_hndl_t p
         }
         //Replace all "::" with ".", because there's a mismatch in topic definitions found in the TSM structs, with "." and the QDM topic definitions with "::"
         find_and_replace((char *) topic_name, "::", ".");
-        if (qeo_policy_cache_add_coarse_grained_rule(ud->qeoSecPol->cache, participant_id, topic_name, perm) != QEO_OK) {
+        if (qeo_policy_cache_add_coarse_grained_rule(ud->qeo_policy_handle->cache, participant_id, topic_name, perm) != QEO_OK) {
             qeo_log_e("qeo_policy_cache_add_coarse_grained_rule failed");
         }
     } while (0);
@@ -1242,8 +1220,8 @@ static void on_policy_parser_fine_grained_rule_section_found_cb(policy_parser_hn
             break;
         }
         //Replace all "::" with ".", because there's a mismatch in topic definitions found in the TSM structs, with "." and the QDM topic definitions with "::"
-        find_and_replace((char *) topic_name, "::", "."); /* let's hope some idiot does not put :: in fine-grained section.. */
-        if (qeo_policy_cache_add_fine_grained_rule_section(ud->qeoSecPol->cache, participant_tag, topic_name, perm, participant_id) != QEO_OK) {
+        find_and_replace((char *) topic_name, "::", ".");
+        if (qeo_policy_cache_add_fine_grained_rule_section(ud->qeo_policy_handle->cache, participant_tag, topic_name, perm, participant_id) != QEO_OK) {
             qeo_log_e("qeo_policy_cache_add_fine_grained_rule_section failed");
         }
     } while (0);
@@ -1259,15 +1237,29 @@ static void on_policy_parser_sequence_number_found_cb(policy_parser_hndl_t parse
             break;
         }
 
-        ud->qeoSecPol->new_policy.seqnr = sequence_number;
+        ud->qeo_policy_handle->new_policy.seqnr = sequence_number;
 
-        if (qeo_policy_cache_reset(ud->qeoSecPol->cache) != QEO_OK) {
+        if (qeo_policy_cache_reset(ud->qeo_policy_handle->cache) != QEO_OK) {
             qeo_log_e("qeo_policy_cache_reset failed");
             break;
         }
 
-        if (qeo_policy_cache_set_seq_number(ud->qeoSecPol->cache, sequence_number) != QEO_OK) {
+        if (qeo_policy_cache_set_seq_number(ud->qeo_policy_handle->cache, sequence_number) != QEO_OK) {
             qeo_log_e("qeo_policy_cache_reset failed");
+            break;
+        }
+    } while (0);
+}
+
+static void policy_cache_participant_only_cb(qeo_policy_cache_hndl_t cache, const char *participant)
+{
+    char      participant_wildcard[64];
+    uintptr_t cookie = 0;
+
+    do {
+        snprintf(participant_wildcard, sizeof(participant_wildcard), "*<%s>*", participant);
+        if ((policy_dds_sp_add_participant(&cookie, participant_wildcard) != 0)) {
+            qeo_log_e("policy_dds_sp_add_participant failed\r\n");
             break;
         }
     } while (0);
@@ -1285,57 +1277,65 @@ static void policy_cache_participant_cb(qeo_policy_cache_hndl_t cache, const cha
             break;
         }
 
-        if ((qeo_policy_cache_get_partition_strings(cache, cookie, participant,
-                                                    NULL,
-                                                    PARTITION_STRING_SELECTOR_NOT_READ | PARTITION_STRING_SELECTOR_NOT_WRITE,
-                                                    policy_cache_update_partition_string_cb)) != QEO_OK) {
+        if ((qeo_policy_cache_get_topic_rules(cache, cookie, participant, NULL,
+                                              TOPIC_PARTICIPANT_SELECTOR_READ | TOPIC_PARTICIPANT_SELECTOR_WRITE,
+                                              policy_cache_update_topic_cb)) != QEO_OK) {
             qeo_log_e("qeo_policy_cache_get_partition_string failed\r\n");
             break;
         }
     } while (0);
 }
 
-static void policy_cache_update_partition_string_cb(qeo_policy_cache_hndl_t cache, uintptr_t cookie, const char *participant_tag, const char *topic_name, unsigned int selector, struct partition_string_list_node *partition_list)
+static void policy_cache_update_topic_cb(qeo_policy_cache_hndl_t cache,
+                                         uintptr_t cookie,
+                                         const char *participant_tag,
+                                         const char *topic_name,
+                                         unsigned int selector,
+                                         struct topic_participant_list_node *read_participant_list,
+                                         struct topic_participant_list_node *write_participant_list)
 {
-    policy_dds_sp_perms_t             perms       = { false };
-    struct partition_string_list_node *partition  = NULL;
+    policy_dds_sp_perms_t              perms       = { false };
 
     do {
-        if ((selector & PARTITION_STRING_SELECTOR_NOT_READ) || (selector & PARTITION_STRING_SELECTOR_NOT_WRITE)) {
-            perms.blacklist = true;
-        }
-
-        if ((selector & PARTITION_STRING_SELECTOR_NOT_READ) || (selector & PARTITION_STRING_SELECTOR_READ)) {
+        if (selector & TOPIC_PARTICIPANT_SELECTOR_READ) {
             perms.read = true;
         }
 
-        if ((selector & PARTITION_STRING_SELECTOR_NOT_WRITE) || (selector & PARTITION_STRING_SELECTOR_WRITE)) {
+        if (selector & TOPIC_PARTICIPANT_SELECTOR_WRITE) {
             perms.write = true;
         }
 
-        LL_FOREACH(partition_list, partition)
-        {
-            if (policy_dds_sp_add_partition(cookie, partition->partition_string, &perms) != 0) {
-                qeo_log_e("policy_dds_sp_add_partition failed\r\n");
-                break;
-            }
+        if (policy_dds_sp_add_topic(cookie, topic_name, &perms) != 0) {
+            qeo_log_e("policy_dds_sp_add_topic failed\r\n");
+            break;
+        }
+
+        if (policy_dds_sp_add_topic_fine_grained(cookie, topic_name, &perms, read_participant_list, write_participant_list)) {
+            qeo_log_e("policy_dds_sp_add_topic_fine_grained failed\r\n");
+            break;
         }
     } while (0);
 }
 
-static void get_partition_strings_cb(qeo_policy_cache_hndl_t cache, uintptr_t cookie, const char *participant_tag, const char *topic_name, unsigned int selector, struct partition_string_list_node *partition_list)
+static void get_fine_grained_rules_cb(qeo_policy_cache_hndl_t cache,
+                                      uintptr_t cookie,
+                                      const char *participant_tag,
+                                      const char *topic_name,
+                                      unsigned int selector,
+                                      struct topic_participant_list_node *read_participant_list,
+                                      struct topic_participant_list_node *write_participant_list)
 {
-    struct policy_cache_userdata                    *ud         = (struct policy_cache_userdata *) cookie;
-    qeo_security_policy_hndl                        qeoSecPol   = NULL;
-    uintptr_t                                       tmp_cookie  = 0;
-    qeo_security_policy_update_partition_string_cb  update_cb   = NULL;
+    struct policy_cache_userdata                     *ud         = (struct policy_cache_userdata *) cookie;
+    qeo_security_policy_hndl                         qeo_policy_handle   = NULL;
+    uintptr_t                                        tmp_cookie  = 0;
+    qeo_security_policy_update_fine_grained_rules_cb update_cb   = NULL;
 
     do {
         if (ud == NULL) {
             qeo_log_e("ud == NULL");
             break;
         }
-        update_cb = (qeo_security_policy_update_partition_string_cb) ud->cb;
+        update_cb = (qeo_security_policy_update_fine_grained_rules_cb) ud->cb;
 
         if (update_cb == NULL) {
             qeo_log_e("update_cb == NULL");
@@ -1346,9 +1346,8 @@ static void get_partition_strings_cb(qeo_policy_cache_hndl_t cache, uintptr_t co
             qeo_log_e("qeo_policy_cache_get_cookie failed\r\n");
         }
 
-
-        qeoSecPol = (qeo_security_policy_hndl) tmp_cookie;
-        update_cb(qeoSecPol, ud->cookie, topic_name, selector, partition_list);
+        qeo_policy_handle = (qeo_security_policy_hndl) tmp_cookie;
+        update_cb(qeo_policy_handle, ud->cookie, topic_name, selector, read_participant_list, write_participant_list);
     } while (0);
 }
 
@@ -1394,11 +1393,11 @@ qeo_retcode_t qeo_security_policy_init(void)
     return ret;
 }
 
-qeo_retcode_t qeo_security_policy_construct(const qeo_security_policy_config *cfg, qeo_security_policy_hndl *qeoSecPol)
+qeo_retcode_t qeo_security_policy_construct(const qeo_security_policy_config *cfg, qeo_security_policy_hndl *qeo_policy_handle)
 {
     qeo_retcode_t ret = QEO_EFAIL;
 
-    if ((cfg == NULL) || (qeoSecPol == NULL)) {
+    if ((cfg == NULL) || (qeo_policy_handle == NULL)) {
         return QEO_EINVAL;
     }
 
@@ -1409,55 +1408,75 @@ qeo_retcode_t qeo_security_policy_construct(const qeo_security_policy_config *cf
 
     api_lock();
     do {
-        *qeoSecPol = calloc(1, sizeof(**qeoSecPol));
-        if (*qeoSecPol == NULL) {
-            qeo_log_e("*qeoSecPol == NULL");
+        *qeo_policy_handle = calloc(1, sizeof(**qeo_policy_handle));
+        if (*qeo_policy_handle == NULL) {
+            qeo_log_e("*qeo_policy_handle == NULL");
             ret = QEO_ENOMEM;
             break;
         }
 
-        if (cfg_qeosecpol(*qeoSecPol, cfg) == false) {
-            qeo_log_e("cfg_qeosecpol failed");
+        if (cfg_qeo_policy_handle(*qeo_policy_handle, cfg) == false) {
+            qeo_log_e("cfg_qeo_policy_handle failed");
             break;
         }
 
-        ret = qeo_policy_cache_construct((uintptr_t) *qeoSecPol, &(*qeoSecPol)->cache);
+        ret = qeo_policy_cache_construct((uintptr_t) *qeo_policy_handle, &(*qeo_policy_handle)->cache);
         if (ret != QEO_OK) {
             qeo_log_e("qeo_policy_cache_construct failed");
             break;
         }
         ret = QEO_EFAIL; //reset ret
 
-        if (exists_local_policy(*qeoSecPol) == false) {
-            if (get_remote_policy(*qeoSecPol) == false) {
-                qeo_log_e("get_remote_policy failed");
+        policy_dds_sp_set_policy_cb(on_policy_content, (uintptr_t) *qeo_policy_handle);
+
+        if (exists_local_policy_file(*qeo_policy_handle)) {
+            if (open_local_policy_file(*qeo_policy_handle) == false) {
+                qeo_log_e("open_local_policy_file failed");
                 break;
             }
         }
-        if (set_policy(*qeoSecPol) == false) {
-            qeo_log_d("set_policy failed");
+        else {
+            if (new_remote_policy(*qeo_policy_handle, NULL, 0) == false) {
+                qeo_log_e("new_remote_policy failed");
+                break;
+            }
+        }
+        if (update_policy(*qeo_policy_handle) == false) {
+            qeo_log_d("update_policy failed");
+            if (exists_local_policy_file(*qeo_policy_handle)) {
+                close_local_policy_file(*qeo_policy_handle);
+            }
+            else {
+                close_remote_policy(*qeo_policy_handle, false);
+            }
             break;
+        }
+        if (exists_local_policy_file(*qeo_policy_handle)) {
+            close_local_policy_file(*qeo_policy_handle);
+        }
+        else {
+            close_remote_policy(*qeo_policy_handle, true);
         }
 
         ret = QEO_OK;
         api_unlock();
         //not sure whether we need it here, but it will not harm
-        notifyPolicyUpdate(*qeoSecPol);
+        notify_policy_update(*qeo_policy_handle);
         api_lock();
     } while (0);
     api_unlock();
 
     if (ret != QEO_OK) {
-        if (*qeoSecPol != NULL) {
-            free_qeosecpol(*qeoSecPol);
-            *qeoSecPol = NULL;
+        if (*qeo_policy_handle != NULL) {
+            free_qeo_policy_handle(*qeo_policy_handle);
+            *qeo_policy_handle = NULL;
         }
     }
 
     return ret;
 }
 
-qeo_retcode_t qeo_security_policy_get_config(qeo_security_policy_hndl qeoSecPol, qeo_security_policy_config *cfg)
+qeo_retcode_t qeo_security_policy_get_config(qeo_security_policy_hndl qeo_policy_handle, qeo_security_policy_config *cfg)
 {
     qeo_retcode_t ret = QEO_EFAIL;
 
@@ -1465,7 +1484,7 @@ qeo_retcode_t qeo_security_policy_get_config(qeo_security_policy_hndl qeoSecPol,
         return QEO_EBADSTATE;
     }
 
-    if (qeoSecPol == NULL) {
+    if (qeo_policy_handle == NULL) {
         return QEO_EINVAL;
     }
 
@@ -1475,7 +1494,7 @@ qeo_retcode_t qeo_security_policy_get_config(qeo_security_policy_hndl qeoSecPol,
 
     api_lock();
     do {
-        *cfg = qeoSecPol->cfg;
+        *cfg = qeo_policy_handle->cfg;
 
         ret = QEO_OK;
     } while (0);
@@ -1484,7 +1503,7 @@ qeo_retcode_t qeo_security_policy_get_config(qeo_security_policy_hndl qeoSecPol,
     return ret;
 }
 
-qeo_retcode_t qeo_security_policy_get_sequence_number(qeo_security_policy_hndl qeoSecPol, uint64_t *sequence_number)
+qeo_retcode_t qeo_security_policy_get_sequence_number(qeo_security_policy_hndl qeo_policy_handle, uint64_t *sequence_number)
 {
     qeo_retcode_t ret = QEO_EFAIL;
 
@@ -1492,7 +1511,7 @@ qeo_retcode_t qeo_security_policy_get_sequence_number(qeo_security_policy_hndl q
         return QEO_EBADSTATE;
     }
 
-    if (qeoSecPol == NULL) {
+    if (qeo_policy_handle == NULL) {
         return QEO_EINVAL;
     }
 
@@ -1502,7 +1521,7 @@ qeo_retcode_t qeo_security_policy_get_sequence_number(qeo_security_policy_hndl q
 
     api_lock();
     do {
-        *sequence_number = qeoSecPol->published_policy.seqnr;
+        *sequence_number = qeo_policy_handle->published_policy.seqnr;
 
         ret = QEO_OK;
     } while (0);
@@ -1511,67 +1530,7 @@ qeo_retcode_t qeo_security_policy_get_sequence_number(qeo_security_policy_hndl q
     return ret;
 }
 
-qeo_retcode_t qeo_security_policy_start_redistribution(qeo_security_policy_hndl qeoSecPol)
-{
-    qeo_retcode_t ret = QEO_EFAIL;
-    qeocore_reader_listener_t listener = { .on_data = on_policy_update, .userdata = (uintptr_t)qeoSecPol };
-    qeocore_type_t *t = NULL;
-    qeocore_writer_t *writer = NULL;
-    qeocore_reader_t *reader = NULL;
-
-    if (isInitialized() == false) {
-        return QEO_EBADSTATE;
-    }
-
-    if (qeoSecPol == NULL) {
-        return QEO_EINVAL;
-    }
-
-    api_lock();
-    do {
-        t = qeocore_type_register_tsm(qeoSecPol->cfg.factory, org_qeo_system_Policy_type, org_qeo_system_Policy_type->name);
-        if (t == NULL) {
-            qeo_log_e("qeocore_type_register_tsm failed");
-            break;
-        }
-        writer = (qeocore_writer_t *)core_create_writer(qeoSecPol->cfg.factory, t, NULL,
-                                                        QEOCORE_EFLAG_STATE_DATA,
-                                                        NULL, NULL);
-        qeoSecPol->writer = writer;
-        if (qeoSecPol->writer == NULL) {
-            qeo_log_e("qeoSecPol->writer  == NULL");
-            break;
-        }
-        reader = (qeocore_reader_t *)core_create_reader(qeoSecPol->cfg.factory, t, NULL,
-                                                        QEOCORE_EFLAG_STATE_DATA,
-                                                        &listener, NULL);
-        qeoSecPol->reader = reader;
-        if (qeoSecPol->reader == NULL) {
-            qeo_log_e("qeoSecPol->reader  == NULL");
-            break;
-        }
-
-        ret = QEO_OK;
-    } while (0);
-    api_unlock();
-
-    if (ret == QEO_OK) {
-        // Done outside of API lock because enabling r/w will trigger get_partition_strings
-        core_enable_writer(writer);
-        core_enable_reader(reader);
-
-        api_lock();
-        publish_policy(qeoSecPol);
-        api_unlock();
-    }
-
-    if (NULL != t) {
-        qeocore_type_free(t);
-    }
-    return ret;
-}
-
-qeo_retcode_t qeo_security_policy_refresh(qeo_security_policy_hndl qeoSecPol)
+qeo_retcode_t qeo_security_policy_refresh(qeo_security_policy_hndl qeo_policy_handle)
 {
     qeo_retcode_t             ret         = QEO_EFAIL;
     qeo_mgmt_client_ctx_t     *ctx        = NULL;
@@ -1582,7 +1541,7 @@ qeo_retcode_t qeo_security_policy_refresh(qeo_security_policy_hndl qeoSecPol)
         return QEO_EBADSTATE;
     }
 
-    if (qeoSecPol == NULL) {
+    if (qeo_policy_handle == NULL) {
         return QEO_EINVAL;
     }
 
@@ -1592,23 +1551,23 @@ qeo_retcode_t qeo_security_policy_refresh(qeo_security_policy_hndl qeoSecPol)
 
         // HACK : to be removed once policy poller is not needed anymore
         bool result = false;
-        if (qeoSecPol->published_policy.seqnr != DUMMY_SEQNR) {
-            qeo_log_i("currently enforced policy sequence nr:  %" PRIi64 "", qeoSecPol->published_policy.seqnr);
+        if (qeo_policy_handle->published_policy.seqnr != DUMMY_SEQNR) {
+            qeo_log_i("currently enforced policy sequence nr:  %" PRIi64 "", qeo_policy_handle->published_policy.seqnr);
 
-            ret = qeo_security_get_mgmt_client_ctx(qeoSecPol->cfg.sec, &ctx);
+            ret = qeo_security_get_mgmt_client_ctx(qeo_policy_handle->cfg.sec, &ctx);
             if (ret != QEO_OK) {
                 qeo_log_e("Can't get qeo mgmt client context");
                 break;
             }
 
-            ret = qeo_security_get_identity(qeoSecPol->cfg.sec, &id);
+            ret = qeo_security_get_identity(qeo_policy_handle->cfg.sec, &id);
             if (ret != QEO_OK) {
                 qeo_log_e("qeo_security_get_identity failed with error: %d", ret);
                 break;
             }
 
             qeo_log_i("Checking whether policy is still valid");
-            client_ret = qeo_mgmt_client_check_policy(ctx, ssl_ctx_cb, qeoSecPol, id->url, qeoSecPol->published_policy.seqnr, id->realm_id, &result);
+            client_ret = qeo_mgmt_client_check_policy(ctx, ssl_ctx_cb, qeo_policy_handle, id->url, qeo_policy_handle->published_policy.seqnr, id->realm_id, &result);
             if (client_ret != QMGMTCLIENT_OK) {
                 ret = QEO_EFAIL;
                 qeo_log_e("qeo_mgmt_client_check_policy failed");
@@ -1623,19 +1582,21 @@ qeo_retcode_t qeo_security_policy_refresh(qeo_security_policy_hndl qeoSecPol)
         }
         // END OF HACK
 
-        if (get_remote_policy(qeoSecPol) == false) {
+        if (new_remote_policy(qeo_policy_handle, NULL, 0) == false) {
             ret = QEO_EFAIL;
-            qeo_log_e("get_remote_policy failed");
+            qeo_log_e("new_remote_policy failed");
             break;
         }
 
-        if (set_policy(qeoSecPol) == false) {
+        if (update_policy(qeo_policy_handle) == false) {
             ret = QEO_EFAIL;
-            qeo_log_e("set_policy failed");
+            qeo_log_e("update_policy failed");
+            close_remote_policy(qeo_policy_handle, false);
             break;
         }
+        close_remote_policy(qeo_policy_handle, true);
         api_unlock();
-        notifyPolicyUpdate(qeoSecPol);
+        notify_policy_update(qeo_policy_handle);
         api_lock();
 
         ret = QEO_OK;
@@ -1650,7 +1611,7 @@ qeo_retcode_t qeo_security_policy_refresh(qeo_security_policy_hndl qeoSecPol)
     return ret;
 }
 
-qeo_retcode_t qeo_security_policy_get_partition_strings(qeo_security_policy_hndl qeoSecPol, uintptr_t cookie, const char *topic_name, unsigned int selector_mask, qeo_security_policy_update_partition_string_cb update_cb)
+qeo_retcode_t qeo_security_policy_get_fine_grained_rules(qeo_security_policy_hndl qeo_policy_handle, uintptr_t cookie, const char *topic_name, unsigned int selector_mask, qeo_security_policy_update_fine_grained_rules_cb update_cb)
 {
     qeo_retcode_t                 ret           = QEO_EFAIL;
     char                          *participant  = NULL;
@@ -1660,8 +1621,8 @@ qeo_retcode_t qeo_security_policy_get_partition_strings(qeo_security_policy_hndl
         return QEO_EBADSTATE;
     }
 
-    if (qeoSecPol == NULL) {
-        qeo_log_e("qeoSecPol == NULL");
+    if (qeo_policy_handle == NULL) {
+        qeo_log_e("qeo_policy_handle == NULL");
         return QEO_EINVAL;
     }
 
@@ -1672,7 +1633,7 @@ qeo_retcode_t qeo_security_policy_get_partition_strings(qeo_security_policy_hndl
 
     api_lock();
     do {
-        if (asprintf(&participant, "uid:%" PRIx64 "", (qeoSecPol->cfg.factory)->qeo_id.user_id) == -1) {
+        if (asprintf(&participant, "uid:%" PRIx64 "", (qeo_policy_handle->cfg.factory)->qeo_id.user_id) == -1) {
             qeo_log_e("Could not allocate");
             ret = QEO_ENOMEM;
             break;
@@ -1680,7 +1641,7 @@ qeo_retcode_t qeo_security_policy_get_partition_strings(qeo_security_policy_hndl
 
         ud.cb     = (uintptr_t)update_cb;
         ud.cookie = cookie;
-        if ((qeo_policy_cache_get_partition_strings(qeoSecPol->cache, (uintptr_t)&ud, participant, topic_name, selector_mask, get_partition_strings_cb)) != QEO_OK) {
+        if ((qeo_policy_cache_get_topic_rules(qeo_policy_handle->cache, (uintptr_t)&ud, participant, topic_name, selector_mask, get_fine_grained_rules_cb)) != QEO_OK) {
             qeo_log_e("qeo_policy_cache_get_partition_string failed\r\n");
             break;
         }
@@ -1694,24 +1655,25 @@ qeo_retcode_t qeo_security_policy_get_partition_strings(qeo_security_policy_hndl
     return ret;
 }
 
-qeo_retcode_t qeo_security_policy_destruct(qeo_security_policy_hndl *qeoSecPol)
+qeo_retcode_t qeo_security_policy_destruct(qeo_security_policy_hndl *qeo_policy_handle)
 {
     qeo_retcode_t ret = QEO_OK;
 
-    do {
-        if (isInitialized() == false) {
-            ret = QEO_EBADSTATE;
-            break;
-        }
+    if (isInitialized() == false) {
+        return QEO_EBADSTATE;
+    }
 
-        if ((qeoSecPol == NULL) || (*qeoSecPol == NULL)) {
+    api_lock();
+    do {
+        if ((qeo_policy_handle == NULL) || (*qeo_policy_handle == NULL)) {
             ret = QEO_OK; /* same behaviour like standard free() */
             break;
         }
 
-        free_qeosecpol(*qeoSecPol);
-        *qeoSecPol = NULL;
+        free_qeo_policy_handle(*qeo_policy_handle);
+        *qeo_policy_handle = NULL;
     } while (0);
+    api_unlock();
 
     return ret;
 }

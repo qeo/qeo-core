@@ -23,7 +23,7 @@
 
 #include "core.h"
 #include "entity_store.h"
-#include "partitions.h"
+#include "user_data.h"
 #include "samplesupport.h"
 
 /* ---[ data API ]---------------------------------------------------------- */
@@ -260,7 +260,7 @@ qeo_retcode_t qeocore_reader_policy_update(const qeocore_reader_t *reader)
 {
     VALIDATE_NON_NULL(reader);
     VALIDATE_NON_NULL(reader->listener.on_policy_update);
-    return partition_update_reader(reader);
+    return reader_user_data_update(reader);
 }
 
 /* ---[ writer API ]-------------------------------------------------------- */
@@ -399,5 +399,5 @@ qeo_retcode_t qeocore_writer_policy_update(const qeocore_writer_t *writer)
 {
     VALIDATE_NON_NULL(writer);
     VALIDATE_NON_NULL(writer->listener.on_policy_update);
-    return partition_update_writer(writer);
+    return writer_user_data_update(writer);
 }

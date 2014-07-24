@@ -48,6 +48,26 @@ typedef enum {
 	EPB_TOPIC_W,			/* Topic Writer. */
 	EPB_TOPIC_R,			/* Topic Reader. */
 
+#ifdef DDS_NATIVE_SECURITY
+
+	/* Interparticipant Endpoints. */
+	EPB_PARTICIPANT_SL_W,		/* Participant Stateless message Writer. */
+	EPB_PARTICIPANT_SL_R,		/* Participant Stateless message Reader. */
+	EPB_PUBLICATION_SEC_W,		/* Publication Secure Announcer. */
+	EPB_PUBLICATION_SEC_R,		/* Publication Secure Detector. */
+	EPB_SUBSCRIPTION_SEC_W,		/* Subscription Secure Announcer. */
+	EPB_SUBSCRIPTION_SEC_R,		/* Subscription Secure Detector. */
+	EPB_PARTICIPANT_MSG_SEC_W,	/* Participant Message Data Secure Writer. */
+	EPB_PARTICIPANT_MSG_SEC_R,	/* Participant Message Data Secure Reader. */
+	EPB_PARTICIPANT_VOL_SEC_W,	/* Participant Volatile Secure Writer. */
+	EPB_PARTICIPANT_VOL_SEC_R,	/* Participant Volatile Secure Reader. */
+#endif
+#ifdef DDS_QEO_TYPES
+
+	/* Builtin Qeo Endpoints for policy distribution. */
+	EPB_POLICY_UPDATER_SEC_W,       /* Policy Updater Secure Writer. */
+	EPB_POLICY_UPDATER_SEC_R,       /* Policy Updater Secure Reader. */
+#endif
 
 	EPB_MAX
 } BUILTIN_INDEX;
@@ -79,7 +99,7 @@ typedef unsigned char VendorId_t [2];
 #define	vendor_id_set(v1,v2)	memcpy (v1, v2, sizeof (VendorId_t))
 #define	vendor_id_init(v)	v [0] = VENDORID_H_TECHNICOLOR; v [1] = VENDORID_L_TECHNICOLOR
 
-typedef unsigned Count_t;
+typedef uint32_t Count_t;
 
 typedef struct DDS_DomainParticipant_st Domain_t;
 typedef struct endpoint_st Endpoint_t;
@@ -90,7 +110,6 @@ typedef struct DDS_DataWriter_st Writer_t;
 typedef struct DDS_DataReader_st Reader_t;
 typedef struct discovered_writer_st DiscoveredWriter_t;
 typedef struct discovered_reader_st DiscoveredReader_t;
-
 
 
 /* Entity type. */
@@ -239,6 +258,36 @@ struct guard_st {
 	Timer_t		*timer;			/* Guard timer. */
 };
 
+/* Property list node: */
+typedef struct property_st Property_t;
+struct property_st {
+	String_t	*name;
+	String_t	*value;
+	Property_t	*next;
+};
+
+#ifdef DDS_SECURITY
+
+typedef unsigned Identity_t;
+typedef unsigned Permissions_t;
+
+#ifdef DDS_NATIVE_SECURITY
+typedef struct DDS_TokenRef_st Token_t;
+
+typedef enum {
+	AS_OK,
+	AS_FAILED,
+	AS_PENDING_RETRY,
+	AS_PENDING_HANDSHAKE_REQ,
+	AS_PENDING_HANDSHAKE_MSG,
+	AS_OK_FINAL_MSG,
+	AS_PENDING_CHALLENGE_MSG
+} AuthState_t;
+
+#else
+typedef String_t	Token_t;
+#endif
+#endif
 
 /* Participant type. */
 /* ----------------- */
@@ -259,24 +308,25 @@ struct guard_st {
 #define	FWD_ROUTER	8		/* Contains a DDS-router function. */
 
 typedef struct participant_proxy_st {
-	GuidPrefix_t	  guid_prefix;		/* Common GUID prefix. */
-	ProtocolVersion_t proto_version;	/* Protocol version. */
-	VendorId_t	  vendor_id;		/* Vendor Id. */
-	int		  exp_il_qos;		/* Expect Inline QoS. */
-	int		  no_mcast;		/* Don't use Multicast. */
-	uint32_t	  sw_version;		/* Software version number. */
-	uint32_t	  builtins;		/* Supported builtins. */
+	GuidPrefix_t	    guid_prefix;	/* Common GUID prefix. */
+	ProtocolVersion_t   proto_version;	/* Protocol version. */
+	VendorId_t	    vendor_id;		/* Vendor Id. */
+	int		    exp_il_qos;		/* Expect Inline QoS. */
+	int		    no_mcast;		/* Don't use Multicast. */
+	uint32_t	    sw_version;		/* Software version number. */
+	uint32_t	    builtins;		/* Supported builtins. */
 #ifdef DDS_SECURITY
-	unsigned  	  permissions;		/* Permissions in domain. */
-	uint32_t	  sec_caps;		/* Security capabilities. */
-	LocatorList_t	  sec_locs;		/* Security locators. */
+	Identity_t	    id;			/* Identity handle. */
+	Permissions_t	    permissions;	/* Permissions handle. */
+	uint32_t	    sec_caps;		/* Security capabilities. */
+	LocatorList_t	    sec_locs;		/* Security locators. */
 #endif
-	LocatorList_t	  def_ucast;		/* Default unicasts. */
-	LocatorList_t	  def_mcast;		/* Default multicasts. */
-	LocatorList_t	  meta_ucast;		/* Meta unicasts. */
-	LocatorList_t	  meta_mcast;		/* Meta multicasts. */
-	Count_t		  manual_liveliness;	/* Forces send when ++.*/
-	unsigned	  forward;		/* Forward capabilities. */
+	LocatorList_t	    def_ucast;		/* Default unicasts. */
+	LocatorList_t	    def_mcast;		/* Default multicasts. */
+	LocatorList_t	    meta_ucast;		/* Meta unicasts. */
+	LocatorList_t	    meta_mcast;		/* Meta multicasts. */
+	Count_t		    manual_liveliness;	/* Forces send when ++.*/
+	unsigned	    forward;		/* Forward capabilities. */
 } ParticipantProxy;
 
 /* Participant entity: */
@@ -290,6 +340,12 @@ typedef struct participant_st {
 	Domain_t	 *p_domain;		/* Parent Domain. */
 
 	/* Participant-specific data. */
+#ifdef DDS_NATIVE_SECURITY
+	Token_t	  	 *p_id_tokens;		/* Identity token list. */
+	Token_t	  	 *p_p_tokens;		/* Permissions token list. */
+	AuthState_t	 p_auth_state;		/* Authentication state. */
+	unsigned	 p_crypto;		/* Participant crypto handle. */
+#endif
 	ParticipantProxy p_proxy;		/* Proxy info. */
 #define	p_guid_prefix	 p_proxy.guid_prefix	/* Common GUID prefix.*/
 #define	p_proto_version	 p_proxy.proto_version	/* RTPS protocol version. */
@@ -298,7 +354,8 @@ typedef struct participant_st {
 #define	p_no_mcast	 p_proxy.no_mcast	/* Don't use Multicast. */
 #define	p_sw_version	 p_proxy.sw_version	/* TDDS version. */
 #define	p_builtins	 p_proxy.builtins	/* Builtin endpoints. */
-#define	p_permissions	 p_proxy.permissions	/* Domain permissions. */
+#define	p_id		 p_proxy.id		/* Identity. */
+#define	p_permissions	 p_proxy.permissions	/* Permissions. */
 #define	p_sec_caps	 p_proxy.sec_caps	/* Security capabilities. */
 #define	p_sec_locs	 p_proxy.sec_locs	/* Security locators. */
 #define	p_forward	 p_proxy.forward	/* Forwarding capabilities. */
@@ -315,6 +372,7 @@ typedef struct participant_st {
 	Timer_t		 p_timer;		/* Timeout/announce timer. */
 	Guard_t	 	 *p_liveliness;		/* Liveliness endpoints list. */
 	LocatorList_t	 p_src_locators;	/* Source locators. */
+	Property_t	 *p_properties;		/* Properties. */
 	Endpoint_t	 *p_builtin_ep [MAX_BUILTINS]; /* Builtin endpoints. */
 	int		 p_alive;		/* Last alive time. */
 	Ticks_t		 p_local;		/* Local source timestamp. */
@@ -501,10 +559,25 @@ struct local_endpoint_st {
 	unsigned short	mask;			/* DDS status mask. */
 	void		*conditions;		/* Status/Read conditions. */
 	Guard_t		*guard;			/* Endpoint guards list. */
+#ifdef DDS_NATIVE_SECURITY
+	unsigned	access_prot:1;		/* Use access control. */
+	unsigned	disc_prot:1;		/* Use secure discovery. */
+	unsigned	submsg_prot:1;		/* Encrypt submessages. */
+	unsigned	payload_prot:1;		/* Encrypt payload. */
+	unsigned	crypto_type:4;		/* Encryption method. */
+	unsigned	crypto;			/* Local crypto handle. */
+#endif
 #ifdef RW_LOCKS
 	lock_t		lock;			/* Reader/writer lock. */
 #endif
 };
+
+/* Use the ENC_DATA() macro to check for encrypted payload data. */
+#ifdef DDS_NATIVE_SECURITY
+#define	ENC_DATA(lep)	((lep)->payload_prot && (lep)->crypto_type >= DDS_CRYPT_AES128_HMAC_SHA1)
+#else
+#define	ENC_DATA(lep)	0
+#endif
 
 typedef struct inc_qos_st {
 	int		   total_count;
@@ -544,6 +617,12 @@ struct DDS_DataReader_st {
 #define	r_mask		r_lep.mask		/* DDS Mask bits. */
 #define r_conditions	r_lep.conditions	/* Status conditions. */
 #define	r_guard		r_lep.guard		/* Reader guards. */
+#define	r_access_prot	r_lep.access_prot	/* Use access control. */
+#define	r_disc_prot	r_lep.disc_prot		/* Use secure discovery. */
+#define	r_submsg_prot	r_lep.submsg_prot	/* Encrypt submessages. */
+#define	r_payload_prot	r_lep.payload_prot	/* Encrypt payload. */
+#define	r_crypto_type	r_lep.crypto_type	/* Encryption type. */
+#define	r_crypto	r_lep.crypto		/* Reader crypto handle. */
 #ifdef RW_LOCKS
 #define r_lock		r_lep.lock		/* Use endpoint lock. */
 #elif defined (RW_TOPIC_LOCK)
@@ -591,6 +670,12 @@ struct DDS_DataWriter_st {
 #define	w_mask		w_lep.mask		/* DDS Mask bits. */
 #define	w_condition	w_lep.conditions	/* Status condition. */
 #define	w_guard		w_lep.guard		/* Writer guards. */
+#define	w_access_prot	w_lep.access_prot	/* Use access control. */
+#define	w_disc_prot	w_lep.disc_prot		/* Use secure discovery. */
+#define	w_submsg_prot	w_lep.submsg_prot	/* Encrypt submessages. */
+#define	w_payload_prot	w_lep.payload_prot	/* Encrypt payload. */
+#define	w_crypto_type	w_lep.crypto_type	/* Encryption type. */
+#define	w_crypto	w_lep.crypto		/* Writer crypto handle. */
 #ifdef RW_LOCKS
 #define w_lock		w_lep.lock		/* Use endpoint lock. */
 #elif defined (RW_TOPIC_LOCK)
@@ -634,7 +719,7 @@ struct rem_prefix_st {
 	RemPrefix_t	*next;
 	RemPrefix_t	*prev;
 	GuidPrefix_t	prefix;
-	Locator_t	locator;
+	LocatorList_t	locators;
 };
 
 typedef struct prefix_list_st {
@@ -662,11 +747,16 @@ struct DDS_DomainParticipant_st {
 	void		  *rtps;		/* RTPS Participant info. */
 	/* DCPS-specificic data: */
 #ifdef DDS_SECURITY
-	String_t	  *identity;		/* Announced identity. */
-	String_t	  *ptoken;		/* Permissions token. */
-	unsigned	  security;		/* Security level. */
+#ifdef DDS_NATIVE_SECURITY
+	unsigned char	  participant_key [16];	/* Participant key. */
 #endif
-	short		  autoenable;		/* Auto-enable entities. */
+	unsigned	  security:16;		/* Security level. */
+#ifdef DDS_NATIVE_SECURITY
+	unsigned	  access_protected:1;	/* Use validate_rem_perms(). */
+	unsigned	  rtps_protected:4;	/* Encrypt all RTPS messages. */
+#endif
+#endif
+	unsigned	  autoenable:1;		/* Auto-enable entities. */
 	unsigned short	  mask;			/* Status Mask. */
 	void		  *condition;		/* Status condition. */
 	DDS_DomainParticipantListener listener;	/* Listener data. */

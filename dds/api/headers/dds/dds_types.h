@@ -23,11 +23,11 @@
 extern "C" {
 #endif
 
-#define	DDS_DOMAINID		unsigned
-#define	DDS_HANDLE		unsigned
-#define DDS_HANDLE_NIL		0U
-#define	DDS_HANDLE_DEFAULT	1U
-#define	DDS_BUILTIN_TOPIC_TYPE	unsigned
+#define	DDS_DOMAINID			unsigned
+#define	DDS_HANDLE			unsigned
+#define DDS_HANDLE_NIL			0U
+#define	DDS_HANDLE_DEFAULT		1U
+#define	DDS_BUILTIN_TOPIC_TYPE_NATIVE	unsigned
 
 typedef unsigned DDS_MemberId;
 

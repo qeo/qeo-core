@@ -369,7 +369,7 @@ DDS_ReturnCode_t DDS_DomainParticipant_delete_typesupport (DDS_DomainParticipant
 	struct type_sup_rem_state_st	state;
 	DDS_ReturnCode_t		ret;
 
-	ctrc_begind (DCPS_ID, DCPS_DP_D_TS, &p, sizeof (p));
+	ctrc_begind (DCPS_ID, DCPS_DP_D_TS, &dp, sizeof (dp));
 	ctrc_contd (&ts, sizeof (ts));
 	ctrc_endd ();
 
@@ -869,7 +869,7 @@ DDS_DomainId_t DDS_DomainParticipant_get_domain_id (DDS_DomainParticipant dp)
 	DDS_DomainId_t		id;
 	DDS_ReturnCode_t	ret;
 
-	ctrc_printd (DCPS_ID, DCPS_DP_G_ID, &p, sizeof (p));
+	ctrc_printd (DCPS_ID, DCPS_DP_G_ID, &dp, sizeof (dp));
 	if (!domain_ptr (dp, 1, &ret))
 		return (0);
 

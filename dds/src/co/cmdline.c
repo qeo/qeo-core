@@ -46,6 +46,12 @@
 #define	MAX_HIST_LINES		32	/* Max. # of history lines. */
 #define	MAX_CMD_LENGTH		256	/* Max. length of a command. */
 
+#ifdef UNIX_TERM
+#define	BACKSPACE	DEL
+#else
+#define	BACKSPACE	BS
+#endif
+
 typedef struct cmd_st Cmd_t;
 struct cmd_st {
 	Cmd_t		*next;		/* Next history line. */
@@ -833,14 +839,16 @@ CmdLineStatus_t cl_add_char (CmdLine_t *p,
 	else if (ch == LF)
 		return (CLS_INCOMPLETE);
 
-	else if (ch == BS) {
+	else if (ch == BACKSPACE) {
 		if (p->length)
 			cl_backspace (p);
 		else
 			dbg_printf ("%c", BEL);
 	}
+#ifndef UNIX_TERM
 	else if (ch == DEL)
 		cl_erase (p);
+#endif
 	else if (ch <= CTRLR)
 		cl_control (p, ch);
 	else if (p->length < MAX_CMD_LENGTH)

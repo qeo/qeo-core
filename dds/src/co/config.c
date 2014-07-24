@@ -77,7 +77,8 @@ static ParVal_t common_pars [] = {
 	/* TODO: Remove this and all related code once dtls/tls are fully working */
 	{ G_Common, DC_NoSecurity,  "NOSECURITY",  V_Number, 0, NULL, {0}},
 #endif
-	{ G_Common, DC_Forward,     "FORWARD",     V_Number, 0, NULL, {0}}
+	{ G_Common, DC_Forward,     "FORWARD",     V_Number, 0, NULL, {0}},
+	{ G_Common, DC_LogDir,      "LOG_DIR",     V_String, 0, NULL, {0}}
 };
 
 #define N_COMMON_PARS	(sizeof (common_pars) / sizeof (ParVal_t))
@@ -154,7 +155,7 @@ static ParVal_t ip_pars [] = {
 	{ G_IP, DC_IP_Intf,      "INTF",            V_String, 0, NULL, {0}},
 	{ G_IP, DC_IP_Address,   "ADDRESS",         V_String, 0, NULL, {0}},
 	{ G_IP, DC_IP_Network,   "NETWORK",         V_String, 0, NULL, {0}},
-	{ G_IP, DC_IP_NoMCast,   "NO_MCAST",        V_Number, 0, NULL, {0}},
+	{ G_IP, DC_IP_NoMCast,   "NO_MCAST",        V_String, 0, NULL, {0}},
 	{ G_IP, DC_IP_MCastTTL,  "MCAST_TTL",       V_Number, 0, NULL, {0}},
 	{ G_IP, DC_IP_MCastDest, "MCAST_DEST",      V_String, 0, NULL, {0}},
 	{ G_IP, DC_IP_MCastSrc,  "MCAST_SRC",       V_String, 0, NULL, {0}},
@@ -405,17 +406,18 @@ static ParVal_t *config_lookup (const char *name)
 	else {
 		memcpy (group, name, cp - name);
 		group [cp - name] = '\0';
-		if (!astrcmp (group, "purge")) {
+		if (!astrcmp (group, "purge") ||
+		    !astrcmp (group, "max") ||
+		    !astrcmp (group, "log")) {
 			gp = &groups [0];
 			cp = name;
 		}
 		else {
-			for (i = 1; i < sizeof (groups) / sizeof (ParGroup_t); i++) {
+			for (i = 1; i < sizeof (groups) / sizeof (ParGroup_t); i++)
 				if (groups [i].name != NULL && !astrcmp (group, groups [i].name)) {
 					gp = &groups [i];
 					break;
 				}
-            }
 			cp++;
 		}
 	}
@@ -556,18 +558,16 @@ int config_load (void)
 	char		name [64];
 	const char	*value;
 	CFG_NOTIFY_FCT	cb;
-	int		update;
+	int		update, rc;
 
-
-	int rc = lock_take (cfg_lock);
-    if (rc != 0) {
-        fatal_printf("Error initializing cfg lock\r\n");
-    }
+	rc = lock_take (cfg_lock);
+	if (rc)
+		fatal_printf ("Error taking cfg lock\r\n");
 
 	if (cfg_ready) {
-	    lock_release (cfg_lock);
+		lock_release (cfg_lock);
 		return (DDS_RETCODE_OK);
-    }
+	}
 
 	cfg_ready = 1;
 	config_init ();
@@ -644,10 +644,6 @@ int config_notify (Config_t c, CFG_NOTIFY_FCT fct)
 
 	lock_take (cfg_lock);
 	pp = parameters [c];
-	if (pp->notify == fct) {
-		lock_release (cfg_lock);
-		return (DDS_RETCODE_OK);
-	}
 	pp->notify = fct;
 	lock_release (cfg_lock);
 	if (fct)

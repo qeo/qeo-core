@@ -21,14 +21,6 @@
 #include "domain.h"
 #include "pid.h"
 
-/* Participant Message data format: */
-typedef struct participant_msg_data_st {
-	GuidPrefix_t	participantGuidPrefix;
-	unsigned char	kind [4];
-	DDS_OctetSeq	data;
-} ParticipantMessageData;
-
-
 int disc_init (void);
 
 /* Initialize the Discovery subsystem. */
@@ -77,7 +69,10 @@ int disc_writer_add (Domain_t *domain, Writer_t *wp);
 
 /* Specifies that a new writer endpoint was added. */
 
-int disc_writer_update (Domain_t *domain, Writer_t *wp);
+int disc_writer_update (Domain_t             *domain,
+			Writer_t             *wp,
+			int                  changed,
+			DDS_InstanceHandle_t peer);
 
 /* Specifies that a writer endpoint was updated. */
 
@@ -89,7 +84,10 @@ int disc_reader_add (Domain_t *domain, Reader_t *rp);
 
 /* Specifies that a new reader endpoint was added. */
 
-int disc_reader_update (Domain_t *domain, Reader_t *rp);
+int disc_reader_update (Domain_t             *domain,
+			Reader_t             *rp,
+			int                  changed,
+			DDS_InstanceHandle_t peer);
 
 /* Specifies that a reader endpoint was updated. */
 
@@ -145,12 +143,17 @@ int disc_send_participant_liveliness (Domain_t *dp);
 /* Manual Discovery support functions: */
 /* ----------------------------------- */
 
-Participant_t *disc_remote_participant_add (Domain_t *domain,
+Participant_t *disc_remote_participant_add (Domain_t                      *domain,
 					    SPDPdiscoveredParticipantData *data,
-					    int ignored);
+					    LocatorList_t                 srcs,
+					    int                           authorize);
 
 /* Add a new discovered Participant as if it was discovered via one of the
    Discovery protocols. */
+
+void disc_remote_participant_enable (Domain_t *dp, Participant_t *pp, unsigned secret);
+
+/* Enable a discovered participant, when it was previously ignored. */
 
 Topic_t *disc_remote_topic_add (Participant_t *pp,
 				DiscoveredTopicData *data);
@@ -173,6 +176,12 @@ DiscoveredWriter_t *disc_remote_writer_add (Participant_t *pp,
 int disc_populate_builtin (Domain_t *dp, Builtin_Type_t type);
 
 /* Add already discovered data to a builtin reader. */
+
+
+/* Security functionality: */
+/* ----------------------- */
+
+int disc_participant_rehandshake (Domain_t *domain, int notify_only);
 
 
 /* Suspend & Resume functionality: */

@@ -22,7 +22,7 @@
 #include <qeo/error.h>
 #include  "policy_parser.h" /* for permission stuff */
 #include "utlist.h"
-#include "partition_string_list_node.h"
+#include "topic_participant_list_node.h"
 
 /*#######################################################################
 #                       TYPE SECTION                                    #
@@ -30,7 +30,7 @@
 typedef struct qeo_policy_cache *qeo_policy_cache_hndl_t;
 
 /* this callback is guaranteed to be called PER selector. */
-typedef void (*qeo_policy_cache_update_partition_string_cb)(qeo_policy_cache_hndl_t cache, uintptr_t cookie,  const char *participant_tag, const char *topic_name, unsigned int selector, struct partition_string_list_node *  partition_list);
+typedef void (*qeo_policy_cache_update_topic_cb)(qeo_policy_cache_hndl_t cache, uintptr_t cookie,  const char *participant_tag, const char *topic_name, unsigned int selector, struct topic_participant_list_node * read_participant_list, struct topic_participant_list_node * write_participant_list);
 
 /* this callback is guaranteed to be called PER participant. */
 typedef void (*qeo_policy_cache_participant_cb) (qeo_policy_cache_hndl_t cache,  const char *participant);
@@ -70,17 +70,17 @@ qeo_retcode_t qeo_policy_cache_add_coarse_grained_rule(qeo_policy_cache_hndl_t c
 /* Add fine-grained rule for particular participant (between[]), topic, participant_specifier (between < >) */
 qeo_retcode_t qeo_policy_cache_add_fine_grained_rule_section(qeo_policy_cache_hndl_t cache, const char *participant_tag, const char *topic_name, const policy_parser_permission_t *perms, const char *participant_specifier);
 
-/* Call this function when parsing has ended --> Calling this function will generate the partition strings */
+/* Call this function when parsing has ended */
 qeo_retcode_t qeo_policy_cache_finalize(qeo_policy_cache_hndl_t cache);
 
 /* Iterate over participants */
 qeo_retcode_t qeo_policy_cache_get_participants(qeo_policy_cache_hndl_t cache, qeo_policy_cache_participant_cb participant_cb);
 
-/* Iterate over partition-strings (can only be done after qeo_policy_cache_finalize() */
+/* Iterate over topic-participant (can only be done after qeo_policy_cache_finalize() */
 /* participant_id == NULL --> iterate over all participant_id */
 /* topic_name == NULL --> iterate over all topics */
 /* topic_name must be NULL OR fully-qualified, org::blabla::* is NOT ALLLOWED */
-qeo_retcode_t qeo_policy_cache_get_partition_strings(qeo_policy_cache_hndl_t cache, uintptr_t cookie, const char *participant_id, const char *topic_name, unsigned int selector_mask, qeo_policy_cache_update_partition_string_cb update_cb);
+qeo_retcode_t qeo_policy_cache_get_topic_rules(qeo_policy_cache_hndl_t cache, uintptr_t cookie, const char *participant_id, const char *topic_name, unsigned int selector_mask, qeo_policy_cache_update_topic_cb update_cb);
 
 
 #endif /* POLICY_CACHE_H_ */

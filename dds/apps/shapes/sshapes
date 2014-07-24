@@ -1,2 +1,2 @@
-./shapes -k myCerts/clientkey.pem -c myCerts/client.pem $*
+./shapes -k qeoCerts/first-key.pem -c qeoCerts/first.pem $*
 

@@ -48,7 +48,6 @@ typedef struct {
     policy_parser_sequence_number_found_cb on_sequence_number_found_cb;
     policy_parser_fine_grained_rule_section_found_cb on_fine_grained_rule_section_found_cb;
 
-
 } policy_parser_init_cfg_t;
  
 typedef struct {
@@ -71,6 +70,10 @@ qeo_retcode_t policy_parser_construct(const policy_parser_cfg_t *cfg, policy_par
 
 /* Destruct policy parser object */
 qeo_retcode_t policy_parser_destruct(policy_parser_hndl_t *parser);
+
+
+uint64_t policy_parser_get_sequence_number(char *content);
+
 
 /* Parse the policy file in the buffer provided at construction time. This buffer can be modified during parsing ! */
 qeo_retcode_t policy_parser_run(policy_parser_hndl_t parser);

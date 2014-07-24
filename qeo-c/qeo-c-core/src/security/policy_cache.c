@@ -30,12 +30,10 @@
  # TYPES SECTION                                                         #
  ########################################################################*/
 typedef enum {
-    PARTITION_STRING_LIST_READ = 0,
-    PARTITION_STRING_LIST_NOT_READ,
-    PARTITION_STRING_LIST_WRITE,
-    PARTITION_STRING_LIST_NOT_WRITE,
-    PARTITION_STRING_LIST_NUM
-} partition_string_list_t;
+    TOPIC_PARTICIPANT_LIST_READ = 0,
+    TOPIC_PARTICIPANT_LIST_WRITE,
+    TOPIC_PARTICIPANT_LIST_NUM
+} topic_participant_list_t;
 
 typedef enum {
     PARTICIPANT_LIST_READ = 0,
@@ -43,23 +41,14 @@ typedef enum {
     PARTICIPANT_LIST_NUM,
 } participant_list_t;
 
-#define POLICY_TOPIC    "org.qeo.system.Policy"
 struct topic_desc {
     char            *name;          /* key */
     bool            coarse_grained; /* This can change , but only from true --> false (from coarse to fine) */
     UT_hash_handle  hh;             /* hashable */
 };
 
-/* TODO: PROBABLY BETTER TO USE A HASHMAP AS IT WILL MAKE LOOKUPS LIKE IN
- * generate_partition_string() FASTER... */
-struct participant_list_node {
-    const char                    *participant;
-    struct participant_list_node  *next;
-};
-
 struct rule_entry {
     const struct topic_desc           *tdesc;                                             /* key */
-    struct partition_string_list_node *partition_string_list[PARTITION_STRING_LIST_NUM];  /* read, !read, write, !write */
 
     union {
         struct {
@@ -73,7 +62,7 @@ struct rule_entry {
              * Therefore we keep them as strings. These two lists can safely be deleted (and there objects
              * with their strings at 'finalization'.*/
             /* For each rule-section there will be exactly one list node */
-            struct participant_list_node *participant_list[PARTICIPANT_LIST_NUM]; /* read, write */
+            struct topic_participant_list_node *participant_list[PARTICIPANT_LIST_NUM]; /* read, write */
         } fine;
     }                                 u;
     /* NO, you cannot check tdesc->coarse_grained, as a tdesc->coarse_grained might change! */
@@ -118,24 +107,12 @@ static void dump_topics(qeo_policy_cache_hndl_t cache)
 
 static void dump_rule(const struct rule_entry *rentry)
 {
-    struct partition_string_list_node *part_string_el;
-    struct participant_list_node      *participant_specifier_el;
-    int                               i;
-    const char                        *array[]  = { "r", "!r", "w", "!w" };
-    const char                        rwarray[] = { 'r', 'w' };
+    struct topic_participant_list_node *participant_specifier_el;
+    int                                i;
+    const char                         rwarray[] = { 'r', 'w' };
 
     printf("\t\t%s(%c)\r\n", rentry->tdesc->name, rentry->tdesc->coarse_grained == true ? 'C' : 'F');
 
-    for (i = 0; i < sizeof(array) / sizeof(array[0]); ++i) {
-        unsigned int list_size;
-        LL_COUNT(rentry->partition_string_list[i], part_string_el, list_size);
-        printf("\t\t\t%s(%u): ", array[i], list_size);
-        LL_FOREACH(rentry->partition_string_list[i], part_string_el)
-        {
-            printf("%s, ", part_string_el->partition_string);
-        }
-        printf("\r\n");
-    }
     if (rentry->coarse_grained == true) {
         printf("\t\t\t[%c%c]\r\n", rentry->u.coarse.perms.read == true ? rwarray[0] : ' ', rentry->u.coarse.perms.write == true ? rwarray[1] : ' ');
     }
@@ -144,7 +121,7 @@ static void dump_rule(const struct rule_entry *rentry)
             printf("\t\t\t[%c(%u): ", rwarray[i], 0);
             LL_FOREACH(rentry->u.fine.participant_list[i], participant_specifier_el)
             {
-                printf("%s, ", participant_specifier_el->participant);
+                printf("%s, ", participant_specifier_el->participant_name);
             }
             printf("]\r\n");
         }
@@ -169,90 +146,6 @@ static void dump_participants(qeo_policy_cache_hndl_t cache)
     }
 }
 #endif //DEBUG
-
-static char *build_partition_string(uint64_t    sequence_number,
-                                    const char  *topic_name,
-                                    const char  *reader_participant,
-                                    const char  *writer_participant)
-{
-    char *partition_string = NULL;
-
-    assert(topic_name != NULL);
-    assert(reader_participant != NULL);
-    assert(writer_participant != NULL);
-
-    const char *format = "%" PRIu64 "_%s_%s%s_%s%s";
-
-    const char  *r_prefix = "r";
-    const char  *w_prefix = "w";
-
-    if (strcmp(reader_participant, "") == 0) {
-        r_prefix = "";
-    }
-
-    if (strcmp(writer_participant, "") == 0) {
-        w_prefix = "";
-    }
-
-    char *wildcard = strchr(topic_name, '*');
-    if (wildcard != NULL) { /* wildcard detected */
-        format = "%" PRIu64 "_%.*sdef_%s%s_%s%s";
-        if (asprintf(&partition_string, format, sequence_number, wildcard - topic_name, topic_name, r_prefix, reader_participant, w_prefix, writer_participant) == -1) {
-            return NULL;
-        }
-    }
-    else {    /* no wildcard */
-        /* hack for policy */
-        if (strcmp(topic_name, POLICY_TOPIC) == 0) {
-            sequence_number = 0;
-        }
-
-        if (asprintf(&partition_string, format, sequence_number, topic_name, r_prefix, reader_participant, w_prefix, writer_participant) == -1) {
-            return NULL;
-        }
-    }
-
-    return partition_string;
-}
-
-/* this function does not take care of allocating the string */
-static qeo_retcode_t add_partition_string_list_node(struct partition_string_list_node **head,
-                                                    const char                        *partition_string,
-                                                    const char                        *tag)
-{
-    qeo_retcode_t                     ret = QEO_EFAIL;
-    struct partition_string_list_node *new_partition_string_el;
-
-    do {
-        assert(partition_string != NULL);
-        assert(head != NULL);
-
-        new_partition_string_el = calloc(1, sizeof(*new_partition_string_el));
-        if (new_partition_string_el == NULL) {
-            ret = QEO_ENOMEM;
-            qeo_log_e("Out of memory");
-            break;
-        }
-
-        if (NULL != tag) {
-            const char *uid = NULL;
-
-            /* assumption : tag = "uid:<hex>" */
-            uid = strstr(tag, "uid:"); /* hard assumption here on uid: because we don't want rid: to be exposed */
-            if (NULL != uid) {
-                uid += 4;
-                new_partition_string_el->fine_grained = 1;
-                new_partition_string_el->id.user_id = strtoull(uid, NULL, 16);
-            }
-        }
-        new_partition_string_el->partition_string = partition_string;
-        LL_PREPEND(*head, new_partition_string_el);
-
-        ret = QEO_OK;
-    } while (0);
-
-    return ret;
-}
 
 static qeo_retcode_t add_coarse_grained_to_participant(struct participant_desc          *part,
                                                        const struct topic_desc          *topic,
@@ -296,118 +189,6 @@ static qeo_retcode_t add_coarse_grained_to_participant(struct participant_desc  
     return ret;
 }
 
-static int cmp_participant_list_node(const struct participant_list_node *p1,
-                                     const struct participant_list_node *p2)
-{
-    return strcmp(p1->participant, p2->participant);
-}
-
-static int cmp_partition_list_node(const struct partition_string_list_node  *p1,
-                                   const struct partition_string_list_node  *p2)
-{
-    return strcmp(p1->partition_string, p2->partition_string);
-}
-
-/* If things fail in this function, it is because there is no more memory:
- * We don't bother to do clean up then, just focus on proper program termination */
-static bool generate_partition_string(qeo_policy_cache_hndl_t       cache,
-                                      const struct participant_desc *own_participant,
-                                      struct rule_entry             *rule)
-{
-    qeo_retcode_t ret = QEO_EFAIL;
-    char          *partition_string     = NULL;
-    char          *partition_string_dup = NULL; /* probably we could avoid duplicating the string with a nifty refcount system, but this is just easier... */
-    uint64_t      seqnr = cache->sequence_number;
-    partition_string_list_t       partition_string_list_index;
-
-    if (rule->coarse_grained == true) {
-        partition_string = build_partition_string(seqnr, rule->tdesc->name, "", "");
-        if (partition_string == NULL) {
-            qeo_log_e("Out of memory");
-            return false;
-        }
-
-        partition_string_list_index = rule->u.coarse.perms.read == true ? PARTITION_STRING_LIST_READ : PARTITION_STRING_LIST_NOT_READ;
-        if ((ret = add_partition_string_list_node(&rule->partition_string_list[partition_string_list_index], partition_string, NULL)) != QEO_OK) {
-            free(partition_string);
-            qeo_log_e("Could not add new list node");
-            return false;
-        }
-
-        if ((partition_string_dup = strdup(partition_string)) == NULL) {
-            qeo_log_e("Out of memory");
-            return false;
-        }
-
-        partition_string_list_index = rule->u.coarse.perms.write == true ? PARTITION_STRING_LIST_WRITE : PARTITION_STRING_LIST_NOT_WRITE;
-        if ((ret = add_partition_string_list_node(&rule->partition_string_list[partition_string_list_index], partition_string_dup, NULL)) != QEO_OK) {
-            free(partition_string_dup);
-            qeo_log_e("Could not add new list node");
-            return false;
-        }
-    }
-    else {
-        struct participant_desc *part;
-        struct participant_desc *ptmp;
-        HASH_ITER(hh, cache->participants_hashmap, part, ptmp)
-        {
-            for (participant_list_t i = 0; i < PARTICIPANT_LIST_NUM; ++i) {
-                struct participant_list_node  *part_el      = NULL;
-                struct participant_list_node  part_el_like  = { .participant = part->tag };
-
-                LL_SEARCH(rule->u.fine.participant_list[i], part_el, &part_el_like, cmp_participant_list_node);
-                if (part_el != NULL) { /* positive */
-                    partition_string_list_index = (i == PARTICIPANT_LIST_READ) ?  PARTITION_STRING_LIST_READ : PARTITION_STRING_LIST_WRITE;
-                }
-                else {   /* negative */
-                    partition_string_list_index = (i == PARTICIPANT_LIST_READ) ?  PARTITION_STRING_LIST_NOT_READ : PARTITION_STRING_LIST_NOT_WRITE;
-                }
-
-                if (i == PARTICIPANT_LIST_READ) { /* read */
-                    partition_string = build_partition_string(seqnr, rule->tdesc->name, own_participant->tag, part->tag);
-                }
-                else {       /* write */
-                    partition_string = build_partition_string(seqnr, rule->tdesc->name, part->tag, own_participant->tag);
-                }
-
-                if (partition_string == NULL) {
-                    qeo_log_e("Out of memory");
-                    return false;
-                }
-
-                if ((ret = add_partition_string_list_node(&rule->partition_string_list[partition_string_list_index], partition_string, part->tag)) != QEO_OK) {
-                    free(partition_string);
-                    qeo_log_e("Could not add new list node");
-                    return false;
-                }
-
-                if (own_participant != part) {        /* negative */
-                    if (i == PARTICIPANT_LIST_READ) { /* read */
-                        partition_string            = build_partition_string(seqnr, rule->tdesc->name, part->tag, "*");
-                        partition_string_list_index = PARTITION_STRING_LIST_NOT_READ;
-                    }
-                    else {       /* write */
-                        partition_string            = build_partition_string(seqnr, rule->tdesc->name, "*", part->tag);
-                        partition_string_list_index = PARTITION_STRING_LIST_NOT_WRITE;
-                    }
-                    if (partition_string == NULL) {
-                        qeo_log_e("Out of memory");
-                        return false;
-                    }
-
-                    if ((ret = add_partition_string_list_node(&rule->partition_string_list[partition_string_list_index], partition_string, part->tag)) != QEO_OK) {
-                        free(partition_string);
-                        qeo_log_e("Could not add new list node");
-                        return false;
-                    }
-                }
-            }
-        }
-    }
-
-    return true;
-}
-
 static qeo_retcode_t add_coarse_grained(qeo_policy_cache_hndl_t           cache,
                                         const char                        *participant_tag,
                                         const struct topic_desc           *topic,
@@ -436,11 +217,12 @@ static qeo_retcode_t add_coarse_grained(qeo_policy_cache_hndl_t           cache,
     return ret;
 }
 
-static qeo_retcode_t add_participant_list_node(struct participant_list_node **head,
-                                               const char                   *participant)
+static qeo_retcode_t add_participant_list_node(struct topic_participant_list_node **head,
+                                               const char                         *participant)
 {
-    qeo_retcode_t                 ret = QEO_EFAIL;
-    struct participant_list_node  *new_participant_el;
+    qeo_retcode_t                      ret = QEO_EFAIL;
+    struct topic_participant_list_node *new_participant_el;
+    const char                         *uid = NULL;
 
     do {
         assert(participant != NULL);
@@ -453,8 +235,15 @@ static qeo_retcode_t add_participant_list_node(struct participant_list_node **he
             break;
         }
 
-        new_participant_el->participant = participant;
-        LL_PREPEND(*head, new_participant_el);
+        new_participant_el->participant_name = participant;
+        /* assumption : tag = "uid:<hex>" */
+        uid = strstr(participant, "uid:"); /* hard assumption here on uid: because we don't want rid: to be exposed */
+        if (NULL != uid) {
+            uid += 4;
+            new_participant_el->id.user_id = strtoull(uid, NULL, 16);
+            new_participant_el->participant_name = strdup(participant);
+            LL_PREPEND(*head, new_participant_el);
+        }
 
         ret = QEO_OK;
     } while (0);
@@ -469,7 +258,6 @@ static qeo_retcode_t add_fine_grained_rule_section_to_participant(struct partici
 {
     struct rule_entry *rentry = NULL;
     qeo_retcode_t     ret     = QEO_EFAIL;
-    char              *participant_specifier_dup;
     bool              new_rule = false;
 
     do {
@@ -488,14 +276,8 @@ static qeo_retcode_t add_fine_grained_rule_section_to_participant(struct partici
             new_rule      = true;
         }
 
-        if ((participant_specifier_dup = strdup(participant_specifier)) == NULL) {
-            ret = QEO_ENOMEM;
-            qeo_log_e("Out of memory");
-            break;
-        }
-
-        if ((ret = add_participant_list_node(&rentry->u.fine.participant_list[perms->write == true ? PARTICIPANT_LIST_WRITE : PARTICIPANT_LIST_READ], participant_specifier_dup)) != QEO_OK) {
-            free(participant_specifier_dup);
+        if ((ret = add_participant_list_node(&rentry->u.fine.participant_list[perms->write == true ? PARTICIPANT_LIST_WRITE : PARTICIPANT_LIST_READ],
+                                             participant_specifier)) != QEO_OK) {
             qeo_log_e("Could not add new list node");
             break;
         }
@@ -588,41 +370,8 @@ static qeo_retcode_t add_topic(qeo_policy_cache_hndl_t  cache,
     return ret;
 }
 
-static qeo_retcode_t add_default_wildcard(qeo_policy_cache_hndl_t cache)
-{
-    qeo_retcode_t                     ret = QEO_EFAIL;
-    struct topic_desc                 *topic;
-    struct participant_desc           *part;
-    struct participant_desc           *ptmp;
-    const policy_parser_permission_t  perms = { .read = false, .write = false };
-
-    do {
-        if ((ret = add_topic(cache, "*", true, &topic)) != QEO_OK) {
-            qeo_log_e("Could not add wildcard");
-            break;
-        }
-
-        /* add to all participants */
-        HASH_ITER(hh, cache->participants_hashmap, part, ptmp)
-        {
-            if ((ret = add_coarse_grained(cache, part->tag, topic, &perms, false)) != QEO_OK) {
-                qeo_log_e("Could not add wildcard rule");
-                break;
-            }
-        }
-
-        if (ret != QEO_OK) {
-            break;
-        }
-
-        ret = QEO_OK;
-    } while (0);
-
-    return ret;
-}
-
 static bool add_all_participants(struct participant_desc      *participants_hashmap,
-                                 struct participant_list_node **head)
+                                 struct topic_participant_list_node **head)
 {
     struct participant_desc *part;
     struct participant_desc *ptmp;
@@ -630,16 +379,7 @@ static bool add_all_participants(struct participant_desc      *participants_hash
 
     HASH_ITER(hh, participants_hashmap, part, ptmp)
     {
-        char *participant_dup;
-
-        participant_dup = strdup(part->tag);
-        if (participant_dup == NULL) {
-            qeo_log_e("Out of memory");
-            return false;
-        }
-
-        if ((ret = add_participant_list_node(head, participant_dup)) != QEO_OK) {
-            free(participant_dup);
+        if ((ret = add_participant_list_node(head, part->tag)) != QEO_OK) {
             qeo_log_e("out of memory");
             return false;
         }
@@ -690,7 +430,6 @@ static struct rule_entry *find_match(const struct rule_entry  *rule_entries_hash
         if (rentry->tdesc == topic) {
             return rentry;
         }
-
 
         wildcard = strchr(rentry->tdesc->name, '*');
         if (wildcard != NULL) {
@@ -748,42 +487,43 @@ static qeo_retcode_t complete_rules(qeo_policy_cache_hndl_t cache, struct partic
     HASH_ITER(hh, cache->topics_hashmap, topic, topic_tmp)
     {
         rule = match = find_match(part->rule_entries_hashmap, topic, &wc_expansion);
-        assert(match != NULL);      /* because we added a match-all '*' BEFORE, match can never be NULL */
-        if (wc_expansion == true) { /* topic not present yet ! */
-            if (match->coarse_grained == true) {
-                /* coarse grained */
-                if ((ret = add_coarse_grained_to_participant(part, topic, &match->u.coarse.perms, true, &new_rule)) != QEO_OK) {
-                    qeo_log_e("Could not add course grained (%s, %s)", part->tag, topic->name);
-                    return ret;
+        if (match) {
+            if (wc_expansion == true) { /* topic not present yet ! */
+                if (match->coarse_grained == true) {
+                    /* coarse grained */
+                    if ((ret = add_coarse_grained_to_participant(part, topic, &match->u.coarse.perms, true, &new_rule)) != QEO_OK) {
+                        qeo_log_e("Could not add course grained (%s, %s)", part->tag, topic->name);
+                        return ret;
+                    }
+                    rule = new_rule;
                 }
-                rule = new_rule;
-            }
-            else {
-                /* fine grained */
-                struct participant_list_node      *participant_specifier_el;
-                const policy_parser_permission_t  perms[PARTICIPANT_LIST_NUM] =
-                {
-                    { .read = true,  .write = false },
-                    { .read = false, .write = true  },
-                };
-                for (participant_list_t i = 0; i < PARTICIPANT_LIST_NUM; ++i) {
-                    LL_FOREACH(match->u.fine.participant_list[i], participant_specifier_el)
+                else {
+                    /* fine grained */
+                    struct topic_participant_list_node      *participant_specifier_el;
+                    const policy_parser_permission_t  perms[PARTICIPANT_LIST_NUM] =
                     {
-                        if ((ret = add_fine_grained_rule_section_to_participant(part, topic, &perms[i], participant_specifier_el->participant)) != QEO_OK) {
-                            qeo_log_e("Could not add fine grained");
-                            return ret;
+                        { .read = true,  .write = false },
+                        { .read = false, .write = true  },
+                    };
+                    for (participant_list_t i = 0; i < PARTICIPANT_LIST_NUM; ++i) {
+                        LL_FOREACH(match->u.fine.participant_list[i], participant_specifier_el)
+                        {
+                            if ((ret = add_fine_grained_rule_section_to_participant(part, topic, &perms[i], participant_specifier_el->participant_name)) != QEO_OK) {
+                                qeo_log_e("Could not add fine grained");
+                                return ret;
+                            }
                         }
                     }
                 }
             }
-        }
 
-        /* we are only interested to expand existing or just added (20 lines above) COARSE-grained rules to fine-grained */
-        if (rule->coarse_grained == true) {
-            if (match->coarse_grained != topic->coarse_grained) {
-                if (convert_coarse_to_fine(cache, rule) == false) {
-                    ret = QEO_ENOMEM;
-                    return ret;
+            /* we are only interested to expand existing or just added (20 lines above) COARSE-grained rules to fine-grained */
+            if (rule->coarse_grained == true) {
+                if (match->coarse_grained != topic->coarse_grained) {
+                    if (convert_coarse_to_fine(cache, rule) == false) {
+                        ret = QEO_ENOMEM;
+                        return ret;
+                    }
                 }
             }
         }
@@ -792,12 +532,10 @@ static qeo_retcode_t complete_rules(qeo_policy_cache_hndl_t cache, struct partic
     return ret;
 }
 
-static qeo_retcode_t complete_partition_strings(qeo_policy_cache_hndl_t cache)
+static qeo_retcode_t complete_topic_participants(qeo_policy_cache_hndl_t cache)
 {
     struct participant_desc *part;
     struct participant_desc *ptmp;
-    struct rule_entry       *rule;
-    struct rule_entry       *rule_tmp;
     qeo_retcode_t           ret = QEO_OK;
 
     HASH_ITER(hh, cache->participants_hashmap, part, ptmp)
@@ -809,25 +547,6 @@ static qeo_retcode_t complete_partition_strings(qeo_policy_cache_hndl_t cache)
         }
 
         HASH_SORT(part->rule_entries_hashmap, rules_topic_prefix_length_sort); /* not really needed but is nicer in print */ /* also simplifies testing */
-
-        /* At this moment the participant is guaranteed to have all the expanded rules,
-         * Now let's generate the partition strings ! */
-
-        /* 2. Generate partition strings for all rules */
-        HASH_ITER(hh, part->rule_entries_hashmap, rule, rule_tmp)
-        {
-            /* normal rules */
-            if ((generate_partition_string(cache, part, rule)) == false) {
-                qeo_log_e("Could not generate partition string");
-                ret = QEO_ENOMEM;
-                return ret;
-            }
-
-            /* sort for predictable output */
-            for (partition_string_list_t i = 0; i < PARTITION_STRING_LIST_NUM; ++i) {
-                LL_SORT(rule->partition_string_list[i], cmp_partition_list_node);
-            }
-        }
     }
 
     return ret;
@@ -842,18 +561,9 @@ static void free_topic_desc(struct topic_desc *topic)
     free(topic);
 }
 
-static void free_partition_string_list_node(struct partition_string_list_node *partition_string_el)
+static void free_participant_list_node(struct topic_participant_list_node *participant_el)
 {
-    free((char *)partition_string_el->partition_string);
-#ifndef NDEBUG
-    memset(partition_string_el, 0xBB, sizeof(*partition_string_el));
-#endif
-    free(partition_string_el);
-}
-
-static void free_participant_list_node(struct participant_list_node *participant_el)
-{
-    free((char *)participant_el->participant);
+    free((char *)participant_el->participant_name);
 #ifndef NDEBUG
     memset(participant_el, 0xCC, sizeof(*participant_el));
 #endif
@@ -862,19 +572,8 @@ static void free_participant_list_node(struct participant_list_node *participant
 
 static void free_rule_entry(struct rule_entry *rentry)
 {
-    struct partition_string_list_node *part_string_el;
-    struct partition_string_list_node *part_string_el_tmp;
-
-    struct participant_list_node  *participant_el;
-    struct participant_list_node  *participant_el_tmp;
-
-    for (partition_string_list_t i = 0; i < PARTITION_STRING_LIST_NUM; ++i) {
-        LL_FOREACH_SAFE(rentry->partition_string_list[i], part_string_el, part_string_el_tmp)
-        {
-            LL_DELETE(rentry->partition_string_list[i], part_string_el);
-            free_partition_string_list_node(part_string_el);
-        }
-    }
+    struct topic_participant_list_node  *participant_el;
+    struct topic_participant_list_node  *participant_el_tmp;
 
     if (rentry->coarse_grained == false) {
         for (participant_list_t i = 0; i < PARTICIPANT_LIST_NUM; ++i) {
@@ -910,27 +609,17 @@ static void free_participant_desc(struct participant_desc *part)
     free(part);
 }
 
-static void call_partition_string_cb(qeo_policy_cache_update_partition_string_cb  update_cb,
-                                     qeo_policy_cache_hndl_t                      cache,
-                                     uintptr_t                                    cookie,
-                                     const char                                   *participant_tag,
-                                     const char                                   *topic_name,
-                                     unsigned int                                 selector_mask,
-                                     const struct rule_entry                      *rule)
+static void call_topic_cb(qeo_policy_cache_update_topic_cb  update_cb,
+                          qeo_policy_cache_hndl_t           cache,
+                          uintptr_t                         cookie,
+                          const char                        *participant_tag,
+                          const char                        *topic_name,
+                          unsigned int                      selector_mask,
+                          const struct rule_entry           *rule)
 {
-    const unsigned int all_masks[] =
-    {
-        PARTITION_STRING_SELECTOR_READ,
-        PARTITION_STRING_SELECTOR_NOT_READ,
-        PARTITION_STRING_SELECTOR_WRITE,
-        PARTITION_STRING_SELECTOR_NOT_WRITE,
-    };
-
-    for (int i = 0; i < sizeof(all_masks) / sizeof(all_masks[0]); ++i) {
-        if (selector_mask & all_masks[i]) {
-            update_cb(cache, cookie, participant_tag, topic_name, all_masks[i], rule->partition_string_list[i]);
-        }
-    }
+    update_cb(cache, cookie, participant_tag, topic_name, selector_mask,
+              (rule->coarse_grained ? NULL : rule->u.fine.participant_list[PARTICIPANT_LIST_READ]),
+              (rule->coarse_grained ? NULL : rule->u.fine.participant_list[PARTICIPANT_LIST_WRITE]));
 }
 
 static bool complete_topics(qeo_policy_cache_hndl_t cache)
@@ -952,8 +641,7 @@ static bool complete_topics(qeo_policy_cache_hndl_t cache)
             struct topic_desc *topic_tmp_test;
             HASH_ITER(hh, topic, topic_test, topic_tmp_test)
             {
-                /* Note the exception for POLICY_TOPIC --> it will and must never become fine-grained !! */
-                if ((topic_test->coarse_grained == true) && (strcmp(topic_test->name, POLICY_TOPIC) != 0) && (strncmp(topic_test->name, topic->name, wildcard - topic->name) == 0)) {
+                if ((topic_test->coarse_grained == true) && (strncmp(topic_test->name, topic->name, wildcard - topic->name) == 0)) {
                     qeo_log_d("We convert topic '%s' to fine-grained based on topic '%s'\n", topic_test->name, topic->name);
                     topic_test->coarse_grained = false;
                 }
@@ -1134,17 +822,18 @@ qeo_retcode_t qeo_policy_cache_add_fine_grained_rule_section(qeo_policy_cache_hn
     return ret;
 }
 
-qeo_retcode_t qeo_policy_cache_get_partition_strings(qeo_policy_cache_hndl_t                      cache,
-                                                     uintptr_t                                    cookie,
-                                                     const char                                   *participant_id,
-                                                     const char                                   *topic_name,
-                                                     unsigned int                                 selector_mask,
-                                                     qeo_policy_cache_update_partition_string_cb  update_cb)
+qeo_retcode_t qeo_policy_cache_get_topic_rules(qeo_policy_cache_hndl_t           cache,
+                                               uintptr_t                         cookie,
+                                               const char                        *participant_id,
+                                               const char                        *topic_name,
+                                               unsigned int                      selector_mask,
+                                               qeo_policy_cache_update_topic_cb  update_cb)
 {
     qeo_retcode_t           ret = QEO_EFAIL;
     struct participant_desc *part;
     struct participant_desc *ptmp;
     struct rule_entry       *rtmp = NULL;
+    unsigned int            mask = 0;
 
     do {
         if (cache == NULL) {
@@ -1174,14 +863,42 @@ qeo_retcode_t qeo_policy_cache_get_partition_strings(qeo_policy_cache_hndl_t    
 
                     bool wc_expansion;
                     rentry = find_match(part->rule_entries_hashmap, topic, &wc_expansion);
-                    assert(rentry != NULL);
-                    call_partition_string_cb(update_cb, cache, cookie, part->tag, topic_name, selector_mask, rentry);
+                    if (rentry != NULL) {
+                        if (rentry->coarse_grained) {
+                            if (rentry->u.coarse.perms.read && (selector_mask & TOPIC_PARTICIPANT_SELECTOR_READ)) {
+                                mask |= TOPIC_PARTICIPANT_SELECTOR_READ;
+                            }
+                            if (rentry->u.coarse.perms.write && (selector_mask & TOPIC_PARTICIPANT_SELECTOR_WRITE)) {
+                                mask |= TOPIC_PARTICIPANT_SELECTOR_WRITE;
+                            }
+                        }
+                        else {
+                            mask = selector_mask;
+                        }
+                        if (mask != 0) {
+                            call_topic_cb(update_cb, cache, cookie, part->tag, topic_name, mask, rentry);
+                        }
+                    }
                 }
                 else {
                     struct rule_entry *rentry = NULL;
                     HASH_ITER(hh, part->rule_entries_hashmap, rentry, rtmp)
                     {
-                        call_partition_string_cb(update_cb, cache, cookie, part->tag, rentry->tdesc->name, selector_mask, rentry);
+                        if (rentry->coarse_grained) {
+                            if (rentry->u.coarse.perms.read && (selector_mask & TOPIC_PARTICIPANT_SELECTOR_READ)) {
+                                mask |= TOPIC_PARTICIPANT_SELECTOR_READ;
+                            }
+                            if (rentry->u.coarse.perms.write && (selector_mask & TOPIC_PARTICIPANT_SELECTOR_WRITE)) {
+                                mask |= TOPIC_PARTICIPANT_SELECTOR_WRITE;
+                            }
+                        }
+                        else {
+                            mask = selector_mask;
+                        }
+                        if (mask != 0) {
+                            call_topic_cb(update_cb, cache, cookie, part->tag, rentry->tdesc->name, mask, rentry);
+                        }
+                        mask = 0;
                     }
                 }
             }
@@ -1202,11 +919,6 @@ qeo_retcode_t qeo_policy_cache_finalize(qeo_policy_cache_hndl_t cache)
             ret = QEO_EINVAL;
             break;
         }
-        /* first add * if it was not there yet to topics */
-        if ((ret = add_default_wildcard(cache)) != QEO_OK) {
-            qeo_log_e("Could not add default rule");
-            break;
-        }
 
         if (complete_topics(cache) == false) {
             qeo_log_e("Could not complete topics");
@@ -1217,7 +929,7 @@ qeo_retcode_t qeo_policy_cache_finalize(qeo_policy_cache_hndl_t cache)
         HASH_SORT(cache->topics_hashmap, topic_prefix_length_sort);
 
         /* Make sure all topics are present for all participants */
-        if ((ret = complete_partition_strings(cache)) != QEO_OK) {
+        if ((ret = complete_topic_participants(cache)) != QEO_OK) {
             qeo_log_e("complete_rules failed");
             break;
         }

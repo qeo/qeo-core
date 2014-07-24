@@ -41,6 +41,7 @@ typedef enum {
 	DC_NoSecurity,		/* Security mode (N). */
 #endif
 	DC_Forward,		/* Forwarding mode (N). */
+	DC_LogDir,		/* Location of logging file (S). */
 
 	/* Memory pools. */
 	DC_Pool_Domains,	/* Max. # of domains (N). */

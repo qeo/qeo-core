@@ -119,7 +119,7 @@ void xd_pool_final (void)
 
 #ifdef DDS_DEBUG
 
-/* locator_pool_dump -- Dump the memory usage of the locator pool. */
+/* xd_pool_dump -- Dump the memory usage of the dynamic pool. */
 
 void xd_pool_dump (size_t sizes [])
 {
@@ -796,8 +796,12 @@ DDS_MemberId DDS_DynamicData_get_member_id_by_name (DDS_DynamicData self,
 			stp = (StructureType *) xt_type_ptr (
 						   mp->collection.type.scope,
 						   mp->collection.element_type);
-			ktp = (Type *) xt_type_ptr (mp->collection.type.scope,
+                        if (stp)
+			        ktp = (Type *) xt_type_ptr (mp->collection.type.scope,
 						    stp->member [0].id);
+			else
+				ktp = NULL;
+
 			if (!stp || !ktp)
 				return (DDS_MEMBER_ID_INVALID);
 

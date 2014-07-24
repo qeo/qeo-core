@@ -47,8 +47,8 @@ static void sfw_be_start (RemReader_t *rrp)
 #endif
 
 	/* Add existing cache entries to reader locator/proxy queue. */
-	
-	hc_replay (rrp->rr_writer->endpoint.endpoint->cache,
+	if (rrp->rr_endpoint->qos->qos.durability_kind)
+		hc_replay (rrp->rr_writer->endpoint.endpoint->cache,
 					proxy_add_change, (uintptr_t) rrp);
 
 	if ((rrp->rr_unsent_changes = LIST_HEAD (rrp->rr_changes)) != NULL &&

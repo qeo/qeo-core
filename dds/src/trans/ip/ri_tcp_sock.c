@@ -64,7 +64,7 @@ static void trace_log_errno (int res, int err)
 #endif
 
 #if defined (TRACE_READ_OPS) || defined (TRACE_WRITE_OPS)
-static void trace_rw(const char *rw, ssize_t res,int fd, size_t sz) 
+static void trace_rw (const char *rw, ssize_t res,int fd, size_t sz) 
 {
 	int saved = ERRNO;
 
@@ -114,7 +114,7 @@ static void trace_call (const char *op, int res, int fd)
 #define trace_write(res,fd,sz)
 #endif
 
-void tcp_cleanup_ctx (IP_CX *cxp)
+static void tcp_cleanup_ctx (IP_CX *cxp)
 {
 	sock_fd_remove_socket (cxp->fd);
 	cxp->cx_state = CXS_CLOSED;
@@ -134,6 +134,10 @@ static void tcp_write_message_fragment (IP_CX *cxp)
 	}
 	if (!dp->send_msg) {
 		warn_printf ("tcp_write_message_fragment: no send_msg context!");
+#ifdef TRACE_POLL_EVENTS
+			log_printf (RTPS_ID, 0, "TLS: POLLOUT = 0 [%d]\r\n", cxp->fd);
+#endif
+			sock_fd_event_socket (cxp->fd, POLLOUT, 0);
 		return;
 	}
 	sp = dp->send_msg->buffer + dp->send_msg->used;
@@ -150,7 +154,13 @@ static void tcp_write_message_fragment (IP_CX *cxp)
 		n = send (cxp->fd, sp, dp->send_msg->size - dp->send_msg->used, MSG_NOSIGNAL);
 #endif
 		trace_write (n, cxp->fd, dp->send_msg->size - dp->send_msg->used);
-
+#ifdef MSG_TRACE
+		if (cxp->trace)
+			rtps_ip_trace (cxp->handle, 'T',
+				       &cxp->locator->locator,
+				       cxp->dst_addr, cxp->dst_port,
+				       dp->send_msg->size - dp->send_msg->used);
+#endif
 		if (n < 0) {
 			if (ERRNO == EINTR)
 				continue; /* immediately try again */
@@ -164,7 +174,6 @@ static void tcp_write_message_fragment (IP_CX *cxp)
 			xfree (dp->send_msg->buffer);
 			xfree (dp->send_msg);
 			dp->send_msg = NULL;
-			sock_fd_event_socket (cxp->fd, POLLOUT, 0);
 			tcp_cleanup_ctx (cxp);
 			return;
 		}
@@ -175,6 +184,9 @@ static void tcp_write_message_fragment (IP_CX *cxp)
 	xfree (dp->send_msg->buffer);
 	xfree (dp->send_msg);
 	dp->send_msg = NULL;
+#ifdef TRACE_POLL_EVENTS
+	log_printf (RTPS_ID, 0, "TLS: POLLOUT = 0 [%d]\r\n", cxp->fd);
+#endif
 	sock_fd_event_socket (cxp->fd, POLLOUT, 0);
 
 	if (cxp->stream_cb->on_write_completed)
@@ -265,6 +277,7 @@ static void tcp_receive_message (IP_CX *cxp)
 		return;
 	}
 	if (!dp->recv_msg) {
+
 		/* Prepare for receiving messages */
 		dp->recv_msg = xmalloc (sizeof (TCP_MSG));
 		if (!dp->recv_msg) {
@@ -466,6 +479,9 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 					log_printf (RTPS_ID, 0, "tcp_do_connect: connect() failed - errno = %d.\r\n", err);
 					close (fd);
 					trace_server ("close", r, fd);
+					p->cxp->cx_state = CXS_WRETRY;
+					p->cxp->fd = 0;
+					p->cxp->fd_owner = 0;
 				}
 				else {
 					log_printf (RTPS_ID, 0, "TCP: connecting to server [%d] ...\r\n", fd);
@@ -566,7 +582,7 @@ static void tcp_close_pending_connection (TCP_FD *pp)
 	trace_server ("close", r, pp->fd);
 	if (r)
 		perror ("tcp_close_pending_connection: close()");
-	pp->fd = -1;
+	pp->fd = 0;
 	tcp_pending_free (pp);
 }
 
@@ -647,13 +663,17 @@ static void tcp_pending_first_message (SOCKET fd, short revents, void *arg)
 
 	/* Note: it is assumed that the returned cxp is usable for this layer, iow that required
 	   callbacks are filled in. Failure to do so will result in crashes. */
-	sock_fd_remove_socket (pp->fd);
+	sock_fd_udata_socket (cxp->fd, cxp);
+	sock_fd_fct_socket (cxp->fd,
+			    tcp_socket_activity);
+
+	/*	sock_fd_remove_socket (pp->fd);
 	sock_fd_add_socket (cxp->fd,
-			    POLLIN | POLLPRI | POLLHUP | POLLNVAL,
+			    POLLIN | POLLPRI | POLLHUP | POLLNVAL | POLLOUT,
 			    tcp_socket_activity,
 			    cxp,
 			    "DDS.TCP");
-
+	*/
 	tmr_stop (&pp->timer);
 	tcp_pending_free (pp);
 }
@@ -975,7 +995,7 @@ static void tcp_disconnect (IP_CX *cxp)
 			trace_server ("close", r, cxp->fd);
 		}
 		while (r == -1 && ERRNO == EINTR);
-		cxp->fd = -1;
+		cxp->fd = 0;
 		cxp->fd_owner = 0;
 		dp = cxp->sproto;
 		cxp->sproto = NULL;
@@ -1038,6 +1058,13 @@ static WR_RC tcp_write_msg (IP_CX *cxp, unsigned char *msg, size_t len)
 		n = send (cxp->fd, sp, left, MSG_NOSIGNAL);
 #endif
 		trace_write (n, cxp->fd, left);
+#ifdef MSG_TRACE
+		if (cxp->trace)
+			rtps_ip_trace (cxp->handle, 'T',
+				       &cxp->locator->locator,
+				       cxp->dst_addr, cxp->dst_port,
+				       left);
+#endif
 		if (n < 0) {
 			err = ERRNO;
 			if (err == EINTR)
@@ -1060,6 +1087,9 @@ static WR_RC tcp_write_msg (IP_CX *cxp, unsigned char *msg, size_t len)
 				memcpy ((*send_msg)->buffer, sp, left);
 				(*send_msg)->size = left;
 				(*send_msg)->used = 0;
+#ifdef TRACE_POLL_EVENTS
+				log_printf (RTPS_ID, 0, "TLS: POLLOUT = 1 [%d]\r\n", cxp->fd);
+#endif
 				sock_fd_event_socket (cxp->fd, POLLOUT, 1);
 				return (WRITE_PENDING);
 			}

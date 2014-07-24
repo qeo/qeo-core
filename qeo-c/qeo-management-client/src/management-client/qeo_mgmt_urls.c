@@ -109,7 +109,7 @@ qeo_mgmt_client_retcode_t parse_root_resource(qeo_mgmt_url_ctx_t ctx, char* mess
 
 }
 
-static qeo_mgmt_client_retcode_t retrieve_url_list(qeo_mgmt_url_ctx_t ctx,
+static qeo_mgmt_client_retcode_t retrieve_url_list(qeo_mgmt_client_ctx_t* ctx,
                                                    qeo_mgmt_client_ssl_ctx_cb ssl_cb,
                                                    void *ssl_cookie,
                                                    const char* base_url){
@@ -118,16 +118,13 @@ static qeo_mgmt_client_retcode_t retrieve_url_list(qeo_mgmt_url_ctx_t ctx,
     size_t length = 0;
 
     do {
-        rc = qeo_mgmt_curl_util_https_get(ctx->curl_ctx, base_url, QMGMTCLIENT_ACCEPT_HEADER_JSON, ssl_cb, ssl_cookie, &data, &length);
+        rc = qeo_mgmt_curl_util_https_get(ctx, base_url, QMGMTCLIENT_ACCEPT_HEADER_JSON, ssl_cb, ssl_cookie, &data, &length);
         if (rc != QMGMTCLIENT_OK){
-            //qeo_log_w("Failed to retrieve root resource.");
-            printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>retrieve_url_list failed https_get %d\n", rc);
             break;
         }
 
-        rc = parse_root_resource(ctx, data, length);
+        rc = parse_root_resource(ctx->url_ctx, data, length);
         if (rc != QMGMTCLIENT_OK){
-            printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>retrieve_url_list failed parse %d, '%s'\n", rc, data);
             qeo_log_w("Failed to parse root resource.");
             break;
         }
@@ -143,17 +140,18 @@ static qeo_mgmt_client_retcode_t retrieve_url_list(qeo_mgmt_url_ctx_t ctx,
 ########################################################################*/
 
 
-qeo_mgmt_client_retcode_t qeo_mgmt_url_get(qeo_mgmt_url_ctx_t ctx, qeo_mgmt_client_ssl_ctx_cb ssl_cb, void *ssl_cookie, const char* base_url, qeo_mgmt_url_type_t service, const char** url){
+qeo_mgmt_client_retcode_t qeo_mgmt_url_get(qeo_mgmt_client_ctx_t* mg_ctx, qeo_mgmt_client_ssl_ctx_cb ssl_cb, void *ssl_cookie, const char* base_url, qeo_mgmt_url_type_t service, const char** url){
     qeo_mgmt_client_retcode_t rc = QMGMTCLIENT_EINVAL;
 
     do {
-        if ((url == NULL) || (base_url == NULL) || (ctx == NULL) || (ctx->curl_ctx == NULL)){
+        qeo_mgmt_url_ctx_t ctx;
+        if ((url == NULL) || (base_url == NULL) || (mg_ctx == NULL) || (mg_ctx->url_ctx == NULL) || (mg_ctx->url_ctx->curl_ctx == NULL)){
             break;
         }
+        ctx = mg_ctx->url_ctx;
         if (!ctx->init){
-            rc = retrieve_url_list(ctx, ssl_cb, ssl_cookie, base_url);
+            rc = retrieve_url_list(mg_ctx, ssl_cb, ssl_cookie, base_url);
             if (rc != QMGMTCLIENT_OK){
-                printf("qeo_mgmt_url_get: retrieve_url_list failed %d\n",rc);
                 break;
             }
             ctx->init = true;

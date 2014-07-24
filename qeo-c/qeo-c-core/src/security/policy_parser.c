@@ -278,6 +278,61 @@ qeo_retcode_t policy_parser_destruct(policy_parser_hndl_t *parser)
     return QEO_OK;
 }
 
+uint64_t policy_parser_get_sequence_number(char *content)
+{
+    char  *saveptr; /* for strtok_r() */
+    char  *line         = NULL;
+    bool  parsing_meta  = false;
+    char  *ptr = NULL;
+    char  *line_with_wsp_tabs = NULL;
+    char  uidstr[32];
+    uint64_t seqnr = 0;
+
+    if (_initialized == false) {
+        return QEO_EBADSTATE;
+    }
+    ptr = content;
+
+    while ((line_with_wsp_tabs = strtok_r(ptr, LINE_END, &saveptr)) != NULL) {
+        /* get rid of all \t and spaces */
+        line  = line_with_wsp_tabs;
+        ptr   = NULL;
+        remove_ws(line_with_wsp_tabs);
+        if ((line[0] == '\0') || (line[0] == '#')) {
+            continue;
+        }
+
+        /* real work starts here */
+        if (line[0] == '[') { /* start tag */
+            if (strncmp(line, META_TAG, sizeof(META_TAG) - 1) == 0) {
+                parsing_meta = true;
+            }
+            else if (sscanf(line, PARTICIPANT_TAG, uidstr) == 1) {
+                parsing_meta = false;
+            }
+            else {
+                qeo_log_w("Did not process unrecognized tag: %s", line);
+            }
+        }
+        else {
+            if (parsing_meta == true) {
+                if (strncmp(line, SEQNR, sizeof(SEQNR) - 1) == 0) {
+                    char      *endptr;
+                    char      *value;
+                    assert(line[sizeof(SEQNR) - 1] == '=');
+                    value = line + sizeof(SEQNR);
+                    seqnr = strtoull(value, &endptr, 10);
+                    if (*endptr != '\0') {
+                        seqnr = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    return seqnr;
+}
+
 qeo_retcode_t policy_parser_run(policy_parser_hndl_t parser)
 {
     char  *saveptr; /* for strtok_r() */

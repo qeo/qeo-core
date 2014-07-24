@@ -47,6 +47,10 @@
 #include "xtypes.h"
 #include "xdata.h"
 #endif
+#ifdef DDS_NATIVE_SECURITY
+#include "sec_data.h"
+#include "sec_auth.h"
+#endif
 #include "rtps.h"
 #include "rtps_ip.h"
 #include "rtps_mux.h"
@@ -104,6 +108,10 @@ static const DDS_PoolConstraints def_pool_reqs = {
 	4, ~0,		/* Min/max Guards. */
 	8, ~0,		/* Min/max Dynamic Types. */
 	4, ~0,		/* Min/max Dynamic Data samples. */
+	4, ~0,		/* Min/max Data Holders. */
+	4, ~0,		/* Min/max Properties. */
+	4, ~0,		/* Min/max BinaryProperties. */
+	4, ~0,		/* Min/max HolderSequences. */
 	0		/* Grow factor. */
 };
 
@@ -133,12 +141,13 @@ static lock_t core_lock;
 
 static lock_t ev_lock;
 
-static Entity_t * ev_entity_in_listener;
+static Entity_t *ev_entity_in_listener;
 
 static cond_t ev_wait;
 static int listeners_waiting = 0;
 
 static lock_t global_lock;
+static lock_t pre_init_lock = LOCK_STATIC_INIT;
 
 typedef struct pending_notify_st PendingNotify_t;
 struct pending_notify_st {
@@ -232,14 +241,16 @@ enum {
 	DDS_NOTIFY,
 	DDS_DEFER_WS,
 	DDS_UNDO_WS,
-	DDS_WORK_WS
+	DDS_WORK_WS,
+	DDS_CFG_CHG,
+	DDS_CFG_NOTIF
 };
 
 static const char *dds_fct_str [] = {
 	"EXEC_ENV", "G_CONSTR", "S_CONSTR", "PROG_NAME",
 	"W_EV", "W_POLL", "W_CONT", "W_QUIT", "W_IO", "W_TMR", "W_PROXY",
 	"W_XFER", "W_NOTIF", "W_DONE", "WAKEUP", "SCHED", "WAIT", "CONTINUE",
-	"NOTIFY", "DEFER_WS", "UNDO_WS", "WORK_WS"
+	"NOTIFY", "DEFER_WS", "UNDO_WS", "WORK_WS", "CFG_CHG", "CFG_NOTIF"
 };
 
 #endif
@@ -259,7 +270,7 @@ DDS_ReturnCode_t DDS_execution_environment (DDS_ExecEnv_t eid)
 	return (DDS_RETCODE_OK);
 }
 
-#define	DDS_PRE_INIT()	if (!pre_init) dds_pre_init ()
+#define	DDS_PRE_INIT()	dds_pre_init ()
 
 DDS_ReturnCode_t DDS_alloc_fcts_set (void *(*pmalloc) (size_t size),
 				     void *(*prealloc) (void *ptr, size_t size),
@@ -327,6 +338,10 @@ DDS_ReturnCode_t DDS_get_default_pool_constraints (DDS_PoolConstraints *reqs,
 	MAX_SET (reqs, guards, max_factor);
 	MAX_SET (reqs, dyn_types, max_factor);
 	MAX_SET (reqs, dyn_samples, max_factor);
+	MAX_SET (reqs, data_holders, max_factor);
+	MAX_SET (reqs, properties, max_factor);
+	MAX_SET (reqs, binary_properties, max_factor);
+	MAX_SET (reqs, holder_sequences, max_factor);
 
 	reqs->grow_factor = grow_factor;
 
@@ -470,6 +485,9 @@ void dds_notify (unsigned class, Entity_t *ep, unsigned status)
 #ifdef THREADS_USED
 	int wakeup = 0;
 #endif
+
+	if ((ep->flags & EF_SHUTDOWN) != 0)
+		return;
 
 	if (class >= MAX_NOTIFIERS || !dds_notifiers [class]) {
 		warn_printf ("Invalid notification class.");
@@ -963,6 +981,7 @@ static int dds_init_threads (void)
 
 static void dds_finalize_threads (void)
 {
+	log_printf (DDS_ID, 0, "DDS: stopping core thread.\r\n");
 	dds_signal (DDS_EV_QUIT);
 	thread_wait (dds_core_thread, NULL);
 	memset (&dds_core_thread, 0, sizeof (thread_t));
@@ -997,9 +1016,18 @@ static void dumpcrtc (void)
 
 void dds_post_final (void)
 {
-	if (!pre_init)
+	lock_take (pre_init_lock);
+	if (!pre_init) {
+		lock_release (pre_init_lock);
 		return;
+	}
 
+#ifdef DDS_SECURITY
+#ifdef DDS_NATIVE_SECURITY
+	if (local_identity)
+		sec_release_identity (local_identity);
+#endif
+#endif
 	sock_fd_final ();
 	sys_final ();
 	dds_typesupport_final ();
@@ -1014,6 +1042,7 @@ void dds_post_final (void)
 	pool_post_final ();
 
 	pre_init = 0;
+	lock_release (pre_init_lock);
 }
 
 /* dds_pool_data_init -- Set dds_pool_data to correct defaults. */
@@ -1068,6 +1097,9 @@ static void dds_pool_data_init (void)
 	dds_pool_reqs = &dds_pool_data;
 }
 
+/* dds_pre_init -- Initialize the DDS permanent context data (survives restarts
+		   of domainparticipants). */
+
 void dds_pre_init (void)
 {
 	int		error;
@@ -1078,10 +1110,11 @@ void dds_pre_init (void)
 	POOL_LIMITS	dtypes, ddata;
 #endif
 
-	if (pre_init)
+	lock_take (pre_init_lock);
+	if (pre_init) {
+		lock_release (pre_init_lock);
 		return;
-
-	pre_init = 1;
+	}
 
 	pool_pre_init ();
 
@@ -1121,8 +1154,10 @@ void dds_pre_init (void)
 	pool_limits_set (sl_pools, reqs->min_lists, reqs->max_lists, reqs->grow_factor);
 	pool_limits_set (sl_nodes, reqs->min_list_nodes, reqs->max_list_nodes, reqs->grow_factor);
 	error = sl_pool_init (&sl_pools, &sl_nodes, sizeof (void *));
-	if (error)
+	if (error) {
+		lock_release (pre_init_lock);
 		fatal_printf ("sl_pool_init() failed: error = %d", error);
+	}
 
 	log_printf (DDS_ID, 0, "List pools created.\r\n");
 
@@ -1137,8 +1172,10 @@ void dds_pre_init (void)
 	pool_limits_set (refs, min_endpoints, max_endpoints, reqs->grow_factor);
 	error = str_pool_init (&str, &refs, reqs->min_string_data,
 			       (reqs->min_string_data < reqs->max_string_data) ? 1 : 0);
-	if (error)
+	if (error) {
+		lock_release (pre_init_lock);
 		fatal_printf ("str_pool_init() failed: error = %d", error);
+	}
 
 	log_printf (DDS_ID, 0, "String pool initialized.\r\n");
 
@@ -1150,8 +1187,10 @@ void dds_pre_init (void)
 				reqs->max_dyn_samples,
 				reqs->grow_factor);
 	error = xd_pool_init (&dtypes, &ddata);
-	if (error)
+	if (error) {
+		lock_release (pre_init_lock);
 		fatal_printf ("xd_pool_init() failed: error = %d", error);
+	}
 
 	log_printf (DDS_ID, 0, "Typecode pools created.\r\n");
 #endif
@@ -1160,8 +1199,10 @@ void dds_pre_init (void)
 	log_printf (DDS_ID, 0, "Typesupport initialized.\r\n");
 
 	error = sock_fd_init ();
-	if (error)
+	if (error) {
+		lock_release (pre_init_lock);
 		fatal_printf ("sock_fd_init() failed: error = %d", error);
+	}
 
 	log_printf (DDS_ID, 0, "Socket handler initialized.\r\n");
 
@@ -1169,6 +1210,9 @@ void dds_pre_init (void)
 	sql_parse_init ();
 
 	atexit (dds_post_final);
+	
+	pre_init = 1;
+	lock_release (pre_init_lock);
 }
 
 static Timer_t	shm_timer;
@@ -1198,6 +1242,9 @@ int dds_init (void)
 	RTPS_CONFIG 	rtps_cfg;
 #endif
 	CACHE_CONFIG	cache_cfg;
+#ifdef DDS_NATIVE_SECURITY
+	SEC_CONFIG	sec_cfg;
+#endif
 	DDS_PoolConstraints *reqs;
 	unsigned	i, min_endpoints, max_endpoints, size;
 	GuidPrefix_t	*gp;
@@ -1394,6 +1441,19 @@ int dds_init (void)
 	if (error)
 		fatal_printf ("dcps_init() failed: error = %d", error);
 
+#ifdef DDS_NATIVE_SECURITY
+	pool_limits_set (sec_cfg.data_holders, reqs->min_data_holders,
+				reqs->max_data_holders, reqs->grow_factor);
+	pool_limits_set (sec_cfg.properties, reqs->min_properties,
+				reqs->max_properties, reqs->grow_factor);
+	pool_limits_set (sec_cfg.bin_properties, reqs->min_binary_properties,
+				reqs->max_binary_properties, reqs->grow_factor);
+	pool_limits_set (sec_cfg.sequences, reqs->min_holder_sequences,
+				reqs->max_holder_sequences, reqs->grow_factor);
+	error = sec_init (&sec_cfg);
+	if (error)
+		fatal_printf ("seq_init() failed: error = %d", error);
+#endif
 	pool_limits_set (notif_data, reqs->min_notifications,
 				reqs->max_notifications, reqs->grow_factor);
 	MDS_POOL_TYPE (mem_blocks, MB_NOTIFICATION, notif_data, sizeof (PendingNotify_t));
@@ -1454,6 +1514,9 @@ void dds_final (void)
 	guid_final ();
 	db_pool_free ();
 	tmr_pool_free ();
+#ifdef DDS_NATIVE_SECURITY
+	sec_final ();
+#endif
 }
 
 #ifndef THREADS_USED
@@ -1890,6 +1953,7 @@ void DDS_Debug_dump_static (unsigned indent,
 			    DDS_TypeSupport ts,
 			    void *data,
 			    int key_only,
+			    int secure,
 			    int field_names)
 {
 #if defined (DDS_DEBUG) && defined (XTYPES_USED)
@@ -1897,7 +1961,7 @@ void DDS_Debug_dump_static (unsigned indent,
 		return;
 
 	if (key_only)
-		DDS_TypeSupport_dump_key (indent, ts, data, 1, 0, field_names);
+		DDS_TypeSupport_dump_key (indent, ts, data, 1, 0, secure, field_names);
 	else
 		DDS_TypeSupport_dump_data (indent, ts, data, 1, 0, field_names);
 #else
@@ -1905,6 +1969,7 @@ void DDS_Debug_dump_static (unsigned indent,
 	ARG_NOT_USED (ts)
 	ARG_NOT_USED (data)
 	ARG_NOT_USED (key_only)
+	ARG_NOT_USED (secure)
 	ARG_NOT_USED (field_names)
 #endif
 }
@@ -1913,6 +1978,7 @@ void DDS_Debug_dump_dynamic (unsigned indent,
 			     DDS_DynamicTypeSupport ts,
 			     DDS_DynamicData data,
 			     int key_only,
+			     int secure,
 			     int field_names)
 {
 #if defined (DDS_DEBUG) && defined (XTYPES_USED)
@@ -1922,7 +1988,7 @@ void DDS_Debug_dump_dynamic (unsigned indent,
 		return;
 
 	if (key_only)
-		DDS_TypeSupport_dump_key (indent, (TypeSupport_t *) ts, ddr->ddata, 1, 1, field_names);
+		DDS_TypeSupport_dump_key (indent, (TypeSupport_t *) ts, ddr->ddata, 1, 1, secure, field_names);
 	else
 		DDS_TypeSupport_dump_data (indent, (TypeSupport_t *) ts, ddr->ddata, 1, 1, field_names);
 #else
@@ -1930,6 +1996,7 @@ void DDS_Debug_dump_dynamic (unsigned indent,
 	ARG_NOT_USED (ts)
 	ARG_NOT_USED (data)
 	ARG_NOT_USED (key_only)
+	ARG_NOT_USED (secure)
 	ARG_NOT_USED (field_names)
 #endif
 }

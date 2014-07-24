@@ -86,11 +86,11 @@ void db_put_data (DB *dbp, size_t ofs, const void *sp, size_t length);
 /* Copy a linear buffer {sp, length} to an allocated buffer chain {dbp} at the
    given offset in the buffer chain. */
 
-void db_get_data (void   *dp,
-		  DB     *dbp,
-		  void   *data,
-		  size_t ofs,
-		  size_t length);
+void db_get_data (void       *dp,
+		  const DB   *dbp,
+		  const void *data,
+		  size_t     ofs,
+		  size_t     length);
 
 /* Copy data from a bufffer chain {dbp,data,ofs,length} to a linear data buffer
    {dp,length}. */
@@ -106,10 +106,10 @@ void db_xpool_stats (void);
 
 /* Utility structure used to walk over/parse data in a chain of data buffers. */
 typedef struct db_walk_st {
-	DB		*dbp;		/* Data buffer pointer. */
-	unsigned char	*data;		/* Data chunk (in buffer). */
-	size_t		left;		/* Data chunk size (in buffer). */
-	size_t		length;		/* Total data length. */
+	const DB		*dbp;		/* Data buffer pointer. */
+	const unsigned char	*data;		/* Data chunk (in buffer). */
+	size_t			left;		/* Data chunk size (in buffer). */
+	size_t			length;		/* Total data length. */
 } DBW;
 
 #ifdef CDR_ONLY
@@ -138,7 +138,7 @@ typedef struct db_walk_st {
 
 /* Return the number of bytes remaining after the pointer. */
 
-unsigned char *dbw_inc (DBW *p, size_t n);
+const unsigned char *dbw_inc (DBW *p, size_t n);
 
 /* Increment the walk pointer n bytes. */
 

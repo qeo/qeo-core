@@ -32,7 +32,9 @@
 
 #else
 
-#define PROF_PID(v)    static unsigned v = ~0U;
+#define PROF_PID(v)     static unsigned v = ~0U;
+#define PUB_PROF_PID(v) unsigned v = ~0U;
+#define	EXT_PROF_PID(v)	extern unsigned v;
 #define PROF_INIT(name,pid)  do {if (pid == ~0U) prof_alloc(name, &(pid)); } while(0)
 #define PROF_ITER(n)   unsigned n = 0;
 #define PROF_INC(n)    n++;

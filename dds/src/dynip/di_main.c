@@ -39,6 +39,8 @@
 #include "di_data.h"
 #include "dynip.h"
 
+/*#define TRACE_DYNIP_NOTIFY   ** Trace DYNIP notify calls. */
+
 #define	MAX_IFTABLE	8
 
 struct ip_addr_st {
@@ -87,6 +89,7 @@ static NL_Proto		ipv4;
 static NL_Proto		ipv6;
 #endif
 static Timer_t		sched_timer;
+static Timer_t		notify_timer;
 
 IP_Intf_t *di_intf_lookup (unsigned id)
 {
@@ -203,6 +206,7 @@ static void di_intf_change (Config_t c)
 int di_init (void)
 {
 	tmr_init (&sched_timer, "D-IP");
+	tmr_init (&notify_timer, "D-IP notify");
 	n_proto = 0;
 	config_notify (DC_IP_Intf, di_intf_change);
 #ifdef DDS_IPV6
@@ -221,6 +225,8 @@ void di_final (void)
 
 	if (tmr_active (&sched_timer))
 		tmr_stop (&sched_timer);
+	if (tmr_active (&notify_timer))
+		tmr_stop (&notify_timer);
 
 	if (ipv4.own)
 		di_detach (AF_INET);
@@ -593,15 +599,72 @@ void di_evh_begin (void)
 
 }
 
+static int notify_retry_ipv4 = 0;
+#ifdef DDS_IPV6
+static int notify_retry_ipv6 = 0;
+#endif
+void di_evh_end_run (unsigned int count);
+ 
+void di_evh_end_timer (uintptr_t user)
+{
+	unsigned int count = (unsigned int) user;
+#ifdef TRACE_DYNIP_NOTIFY
+	log_printf (IP_ID, 0, "DynIP: di_evh_end_timer: %d\r\n", count);
+#endif
+	di_evh_end_run (count);
+}
+
+void di_evh_end_run (unsigned int count)
+{
+	int ok = 1;
+
+	if (ipv4.n_changes || notify_retry_ipv4) {
+#ifdef TRACE_DYNIP_NOTIFY
+	    log_printf (IP_ID, 0, "DynIP: di_evh_end: ipv4.notify()\r\n");
+#endif
+		if ((*ipv4.notify) () == DDS_RETCODE_OK) {
+			/* ok */
+			notify_retry_ipv4 = 0;
+		}
+		else {
+			ok = 0;
+			notify_retry_ipv4 = 1;
+			warn_printf ("DynIP: IPv4 notification failure");
+		}
+	}
+#ifdef DDS_IPV6
+	if (ipv6.n_changes || notify_retry_ipv6) {
+#ifdef TRACE_DYNIP_NOTIFY
+	    log_printf (IP_ID, 0, "DynIP: di_evh_end: ipv6.notify()\r\n");
+#endif
+		if ((*ipv6.notify) () == DDS_RETCODE_OK) {
+			/* ok */
+			notify_retry_ipv6 = 0;
+		}
+		else {
+			notify_retry_ipv6 = 1;
+			ok = 0;
+			warn_printf ("DynIP: IPv6 notification failure");
+		}
+	}
+#endif
+
+	if (!ok) {
+		count++;
+		if (count <= 2) {
+			/* retry */ 
+		    log_printf (IP_ID, 0, "DynIP: di_evh_end: start retry timer: %d\r\n", count);
+			tmr_start (&notify_timer, 200, count, di_evh_end_timer);
+		}
+		else {
+			warn_printf ("DynIP: notification failure -- giving up");
+		}
+	}
+}
+
 void di_evh_end	(void)
 {
-	if (ipv4.n_changes)
-		(*ipv4.notify) ();
-
-#ifdef DDS_IPV6
-	if (ipv6.n_changes)
-		(*ipv6.notify) ();
-#endif
+	di_evh_end_run (0);
 }
 
 void di_update_intf_filters (uintptr_t user)

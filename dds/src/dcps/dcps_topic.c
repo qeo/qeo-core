@@ -91,7 +91,7 @@ DDS_Topic DDS_ContentFilteredTopic_get_related_topic (DDS_ContentFilteredTopic f
 {
 	Topic_t		*tp;
 
-	ctrc_printd (DCPS_ID, DCPS_FT_REL, &t, sizeof (t));
+	ctrc_printd (DCPS_ID, DCPS_FT_REL, &ftp, sizeof (ftp));
 	if (!topic_ptr (ftp, 1, NULL))
 		return (NULL);
 
@@ -339,7 +339,7 @@ DDS_ReturnCode_t DDS_Topic_set_qos (DDS_Topic tp, DDS_TopicQos *qos)
 #ifdef RW_LOCKS
 			lock_take (rp->r_lock);
 #endif
-			disc_reader_update (tp->domain, rp);
+			disc_reader_update (tp->domain, rp, 1, 0);
 #ifdef RW_LOCKS
 			lock_release (rp->r_lock);
 #endif
@@ -352,7 +352,7 @@ DDS_ReturnCode_t DDS_Topic_set_qos (DDS_Topic tp, DDS_TopicQos *qos)
 #ifdef RW_LOCKS
 			lock_take (wp->w_lock);
 #endif
-			disc_writer_update (tp->domain, wp);
+			disc_writer_update (tp->domain, wp, 1, 0);
 #ifdef RW_LOCKS
 			lock_release (wp->w_lock);
 #endif
@@ -547,6 +547,7 @@ DDS_TopicDescription DDS_Topic_get_topicdescription (DDS_Topic topic)
 unsigned char *dcps_key_data_get (Topic_t          *tp,
 			          const void       *data,
 				  int              dynamic,
+				  int              secure,
 				  unsigned char    buf [16],
 				  size_t           *size,
 				  DDS_ReturnCode_t *ret)
@@ -582,7 +583,7 @@ unsigned char *dcps_key_data_get (Topic_t          *tp,
 	}
 	else
 		keys = buf;
-	*ret = DDS_KeyFromNativeData (keys, data, dynamic, ts);
+	*ret = DDS_KeyFromNativeData (keys, data, dynamic, secure, ts);
 	if (*ret != DDS_RETCODE_OK) {
 		if (*size > 16)
 			xfree (keys);

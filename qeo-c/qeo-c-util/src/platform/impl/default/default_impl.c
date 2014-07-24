@@ -197,6 +197,9 @@ void __attribute__ ((constructor(1000))) default_impl_init(void){
 #endif
 
     qeo_util_retcode_t ret;
+    const char *ca_file = NULL;
+    const char *ca_path = NULL;
+
     if ((ret = qeo_platform_init(0, &_default_platform_cbs)) != QEO_UTIL_OK){
         qeo_log_e("Could not init qeo platform layer with default implementation");
         return;
@@ -212,7 +215,11 @@ void __attribute__ ((constructor(1000))) default_impl_init(void){
         qeo_log_e("Could not set device storage path");
         return;
     }
-
+    get_default_cacert_path(&ca_file, &ca_path);
+    if (qeo_platform_set_cacert_path(ca_file, ca_path) != QEO_UTIL_OK) {
+        qeo_log_e("Could not set CA certificates path");
+        return;
+    }
 }
 
 
@@ -222,7 +229,7 @@ void __attribute__ ((destructor)) default_impl_destroy(void){
 void __attribute__ ((destructor(1000))) default_impl_destroy(void){
 #endif
 
-    free_default_device_storage_path();
+    free_default_paths();
     free_default_device_info();
 
 }

@@ -16,9 +16,17 @@
 
 #ifdef RTPS_TRACE
 
+#ifdef _WIN32
+#include "win.h"
+#else
+#include <arpa/inet.h>
+#endif
 #include "log.h"
+#include "prof.h"
 #include "set.h"
 #include "error.h"
+#include "nmatch.h"
+#include "dds.h"
 #include "rtps_data.h"
 #include "rtps_cfg.h"
 #include "rtps_priv.h"
@@ -27,14 +35,93 @@
 
 int rtps_trace = 1;
 
-unsigned rtps_dtrace = DEF_RTPS_TRACE;
+#define	MAX_HANDLE_TRACES	8
+#define	MAX_NAME_TRACES		4
+
+static struct {
+	unsigned	handle;
+	unsigned	mode;
+} rtps_handle_traces [MAX_HANDLE_TRACES];
+
+static struct {
+	char		name [64];
+	unsigned	mode;
+} rtps_name_traces [MAX_NAME_TRACES];
+
+/*unsigned rtps_dtrace = DEF_RTPS_TRACE;*/
+
+void rtps_handle_trace_set (unsigned handle, unsigned mode)
+{
+	unsigned	i;
+
+	for (i = 0; i < MAX_HANDLE_TRACES; i++) {
+		if (rtps_handle_traces [i].handle == handle) {
+			if (mode)
+				rtps_handle_traces [i].mode = mode;
+			else {
+				for (++i; i < MAX_HANDLE_TRACES; i++)
+					rtps_handle_traces [i - 1] = rtps_handle_traces [i];
+				rtps_handle_traces [MAX_HANDLE_TRACES - 1].handle = 0;
+			}
+			return;
+		}
+		else if (!rtps_handle_traces [i].handle) {
+			if (mode) {
+				rtps_handle_traces [i].handle = handle;
+				rtps_handle_traces [i].mode = mode;
+			}
+			return;
+		}
+	}
+	warn_printf ("RTPS: Handle tracing table full!");
+}
+
+void rtps_name_trace_set (const char *name, unsigned mode)
+{
+	unsigned	i;
+
+	for (i = 0; i < MAX_NAME_TRACES; i++)
+		if (!rtps_name_traces [i].name [0]) {
+			if (mode) {
+				strncpy (rtps_name_traces [i].name, name, 64);
+				rtps_name_traces [i].mode = mode;
+			}
+			return;
+		}
+		else if (!strcmp (rtps_name_traces [i].name, name)) {
+			if (mode)
+				rtps_name_traces [i].mode = mode;
+			else {
+				for (++i; i < MAX_NAME_TRACES; i++)
+					rtps_name_traces [i - 1] = rtps_name_traces [i];
+				rtps_name_traces [MAX_NAME_TRACES - 1].name [0] = '\0';
+			}
+			return;
+		}
+	warn_printf ("RTPS: Name tracing table full!");
+}
+
+unsigned rtps_def_trace (unsigned handle, const char *name)
+{
+	unsigned	i;
+
+	for (i = 0; i < MAX_HANDLE_TRACES && rtps_handle_traces [i].handle; i++)
+		if (rtps_handle_traces [i].handle == handle)
+			return (rtps_handle_traces [i].mode);
+
+	for (i = 0; i < MAX_NAME_TRACES && rtps_name_traces [i].name [0]; i++)
+		if (!nmatch (rtps_name_traces [i].name, name, NM_NOESCAPE))
+			return (rtps_name_traces [i].mode);
+
+	return (dds_dtrace);
+}
 
 void rtps_trace_w_event (WRITER *wp, char event, const char *s)
 {
 	const char	*names [2];
 
 	endpoint_names (&wp->endpoint, names);
-	log_printf (RTPS_ID, 0, "RTPS: %-32s E -   %c: %s: ",
+	log_printf (RTPS_ID, 0, "RTPS: %-32s E -    %c: %s: ",
 					names [0], event, s);
 }
 
@@ -124,7 +211,7 @@ void rtps_trace_r_event (READER *rp, char event, const char *s)
 	const char	*names [2];
 
 	endpoint_names (&rp->endpoint, names);
-	log_printf (RTPS_ID, 0, "RTPS: %-32s E -   %c: %s: ",
+	log_printf (RTPS_ID, 0, "RTPS: %-32s E -    %c: %s: ",
 				names [0], event, s);
 }
 
@@ -218,7 +305,8 @@ static void rtps_info_dst_dump (InfoDestinationSMsg *dp)
 {
 	uint32_t	*lp = (uint32_t *) &dp->guid_prefix;
 
-	log_printf (RTPS_ID, 0, "%08x:%08x:%08x)\r\n", lp [0], lp [1], lp [2]);
+	log_printf (RTPS_ID, 0, "%08x:%08x:%08x)\r\n",
+				htonl (lp [0]), htonl (lp [1]), htonl (lp [2]));
 }
 
 static void rtps_acknack_dump (AckNackSMsg *ap, unsigned flags)
@@ -322,17 +410,19 @@ const char	*frame_type_str [] = {
 	"?(17)", "NACK_FRAG", "HEARTBEAT_FRAG", "?(20)", "DATA", "DATA_FRAG"
 };
 
-void rtps_r_frame (READER    *rp,
-		   int       rx,
-		   unsigned  type,
-		   void      *p,
-		   unsigned  flags)
+void rtps_r_frame (READER        *rp,
+		   int           rx,
+		   unsigned      type,
+		   Participant_t *pp,
+		   void          *p,
+		   unsigned      flags)
 {
 	const char	*names [2];
 
 	endpoint_names (&rp->endpoint, names);
-	log_printf (RTPS_ID, 0, "RTPS: %-32s %c -    : %s(",
+	log_printf (RTPS_ID, 0, "RTPS: %-32s %c - %04x: %s(",
 			names [0], (rx) ? 'R' : 'T',
+			(pp) ? ntohl (pp->p_guid_prefix.w [2]) & 0xffff : 0, 
 			frame_type_str [type]);
 	switch (type) {
 		case ST_INFO_TS:
@@ -369,17 +459,19 @@ void rtps_r_frame (READER    *rp,
 	}
 }
 
-void rtps_w_frame (WRITER      *wp,
-		   int         rx,
-		   unsigned    type,
-		   void        *p,
-		   unsigned    flags)
+void rtps_w_frame (WRITER        *wp,
+		   int           rx,
+		   unsigned      type,
+		   Participant_t *pp,
+		   void          *p,
+		   unsigned      flags)
 {
 	const char	*names [2];
 
 	endpoint_names (&wp->endpoint, names);
-	log_printf (RTPS_ID, 0, "RTPS: %-32s %c -    : %s(",
+	log_printf (RTPS_ID, 0, "RTPS: %-32s %c - %04x: %s(",
 			names [0], (rx) ? 'R' : 'T',
+			(pp) ? ntohl (pp->p_guid_prefix.w [2]) & 0xffff : 0, 
 			frame_type_str [type]);
 	switch (type) {
 		case ST_INFO_TS:
@@ -495,6 +587,7 @@ int rtps_trace_get (Endpoint_t *r, unsigned *mode)
 	return (DDS_RETCODE_OK);
 }
 
+# if 0
 /* rtps_dtrace_set -- Update the default tracing mode of new endpoints. */
 
 void rtps_dtrace_set (unsigned mode)
@@ -515,10 +608,13 @@ void rtps_dtrace_get (unsigned *mode)
 		*mode = rtps_dtrace;
 }
 
+# endif
 #else
+# if 0
 
 int rtps_trace = 0;
 
+# endif
 #endif /* !RTPS_TRACE */
 
 #ifdef RTPS_TRC_SEQNR

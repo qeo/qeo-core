@@ -51,6 +51,9 @@
 #else
 #include "cdr.h"
 #endif
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+#include "sec_crypto.h"
+#endif
 #include "pl_cdr.h"
 #include "typecode.h"
 #include "cache.h"
@@ -162,17 +165,31 @@ const EntityId_t rtps_builtin_eids [] = {
 	{ ENTITYID_SEDP_BUILTIN_PUBLICATIONS_READER },
 	{ ENTITYID_SEDP_BUILTIN_SUBSCRIPTIONS_WRITER },
 	{ ENTITYID_SEDP_BUILTIN_SUBSCRIPTIONS_READER },
-	{ { 0, } },
-	{ { 0, } },
-	{ { 0, } },
-	{ { 0, } },
+	{ { 0, } }, { { 0, } },
+	{ { 0, } }, { { 0, } },
 	{ ENTITYID_P2P_BUILTIN_PARTICIPANT_MESSAGE_WRITER },
 	{ ENTITYID_P2P_BUILTIN_PARTICIPANT_MESSAGE_READER },
 	{ ENTITYID_SEDP_BUILTIN_TOPIC_WRITER },
 	{ ENTITYID_SEDP_BUILTIN_TOPIC_READER }
+#ifdef DDS_NATIVE_SECURITY
+      ,	{ ENTITYID_P2P_BUILTIN_PARTICIPANT_STATELESS_WRITER },
+	{ ENTITYID_P2P_BUILTIN_PARTICIPANT_STATELESS_READER },
+	{ ENTITYID_SEDP_BUILTIN_PUBLICATIONS_SECURE_WRITER },
+	{ ENTITYID_SEDP_BUILTIN_PUBLICATIONS_SECURE_READER },
+	{ ENTITYID_SEDP_BUILTIN_SUBSCRIPTIONS_SECURE_WRITER },
+	{ ENTITYID_SEDP_BUILTIN_SUBSCRIPTIONS_SECURE_READER },
+	{ ENTITYID_P2P_BUILTIN_PARTICIPANT_MESSAGE_SECURE_WRITER },
+	{ ENTITYID_P2P_BUILTIN_PARTICIPANT_MESSAGE_SECURE_READER },
+	{ ENTITYID_P2P_BUILTIN_PARTICIPANT_VOLATILE_SECURE_WRITER },
+	{ ENTITYID_P2P_BUILTIN_PARTICIPANT_VOLATILE_SECURE_READER }
+#endif
+#ifdef DDS_QEO_TYPES
+      , { ENTITIYID_QEO_BUILTIN_POLICY_STATE_WRITER },
+	{ ENTITIYID_QEO_BUILTIN_POLICY_STATE_READER }
+#endif
 };
 
-const char *rtps_builtin_topic_names [] = {
+const char *rtps_builtin_endpoint_names [] = {
 	"SPDPbuiltinParticipantWriter",
 	"SPDPbuiltinParticipantReader",
 	"SEDPbuiltinPublicationsWriter",
@@ -185,21 +202,53 @@ const char *rtps_builtin_topic_names [] = {
 	"BuiltinParticipantMessageReader",
 	"SEDPbuiltinTopicsWriter",
 	"SEDPbuiltinTopicsReader"
+#ifdef DDS_NATIVE_SECURITY
+      ,	"BuiltinParticipantStatelessMessageWriter",
+	"BuiltinParticipantStatelessMessageReader",
+	"SEDPbuiltinPublicationsSecureWriter",
+	"SEDPbuiltinPublicationsSecureReader",
+	"SEDPbuiltinSubscriptionsSecureWriter",
+	"SEDPbuiltinSubscriptionsSecureReader",
+	"BuiltinParticipantMessageSecureWriter",
+	"BuiltinParticipantMessageSecureReader",
+	"BuiltinParticipantVolatileMessageSecureWriter",
+	"BuiltinParticipantVolatileMessageSecureReader"
+#endif
+#ifdef DDS_QEO_TYPES
+      , "QeobuiltinPolicyStateWriter",
+	"QeobuiltinPolicyStateReader"
+#endif
 };
 
-const char *rtps_builtin_type_names [] = {
-	"SPDPdiscoveredParticipantData",
-	"SPDPdiscoveredParticipantData",
-	"discoveredWriterData",
-	"discoveredWriterData",
-	"discoveredReaderData",
-	"discoveredReaderData",
+const char *rtps_builtin_topic_names [] = {
+	"ParticipantBuiltinTopicData",
+	"ParticipantBuiltinTopicData",
+	"PublicationBuiltinTopicData",
+	"PublicationBuiltinTopicData",
+	"SubscriptionBuiltinTopicData",
+	"SubscriptionBuiltinTopicData",
 	NULL, NULL, /* Proxy */
 	NULL, NULL, /* State */
 	"ParticipantMessageData",
 	"ParticipantMessageData",
-	"discoveredTopicData",
-	"discoveredTopicData"
+	"TopicBuiltinTopicData",
+	"TopicBuiltinTopicData"
+#ifdef DDS_NATIVE_SECURITY
+      ,	"ParticipantStatelessMessage",
+	"ParticipantStatelessMessage",
+	"PublicationBuiltinTopicDataSecure",
+	"PublicationBuiltinTopicDataSecure",
+	"SubscriptionBuiltinTopicDataSecure",
+	"SubscriptionBuiltinTopicDataSecure",
+	"ParticipantMessageData",
+	"ParticipantMessageData",
+	"ParticipantVolatileSecureMessage",
+	"ParticipantVolatileSecureMessage"
+#endif
+#ifdef DDS_QEO_TYPES
+      , "PolicyUpdaterMessageData",
+	"PolicyUpdaterMessageData"
+#endif
 };
 
 const char *mem_names [] = {
@@ -217,112 +266,82 @@ MEM_DESC_ST	rtps_mem_blocks [MB_END];  /* Memory used by RTPS. */
 size_t		rtps_mem_size;		/* Total memory allocated. */
 
 #ifdef PROFILE
-PROF_PID (rtps_w_create)
-PROF_PID (rtps_w_delete)
-PROF_PID (rtps_w_new)
-PROF_PID (rtps_w_remove)
-PROF_PID (rtps_w_urgent)
-PROF_PID (rtps_w_write)
-PROF_PID (rtps_w_dispose)
-PROF_PID (rtps_w_unregister)
-PROF_PID (rtps_w_rloc_add)
-PROF_PID (rtps_w_rloc_rem)
-PROF_PID (rtps_w_proxy_add)
-PROF_PID (rtps_w_proxy_rem)
-PROF_PID (rtps_w_resend)
-PROF_PID (rtps_w_update)
-PROF_PID (rtps_do_changes)
-PROF_PID (rtps_send_msgs)
-PROF_PID (rtps_r_create)
-PROF_PID (rtps_r_delete)
-PROF_PID (rtps_r_proxy_add)
-PROF_PID (rtps_r_proxy_rem)
-PROF_PID (rtps_r_unblock)
-PROF_PID (rtps_rx_msgs)
-PROF_PID (rtps_rx_data)
-PROF_PID (rtps_rx_gap)
-PROF_PID (rtps_rx_hbeat)
-PROF_PID (rtps_rx_acknack)
-PROF_PID (rtps_rx_inf_ts)
-PROF_PID (rtps_rx_inf_rep)
-PROF_PID (rtps_rx_inf_dst)
-PROF_PID (rtps_rx_inf_src)
-PROF_PID (rtps_tx_data)
-PROF_PID (rtps_tx_gap)
-PROF_PID (rtps_tx_hbeat)
-PROF_PID (rtps_tx_acknack)
-PROF_PID (rtps_tx_inf_ts)
-PROF_PID (rtps_tx_inf_rep)
-PROF_PID (rtps_tx_inf_dst)
-PROF_PID (rtps_tx_inf_src)
-PROF_PID (rtps_pw_start)
-PROF_PID (rtps_pw_new)
-PROF_PID (rtps_pw_send)
-PROF_PID (rtps_pw_rem)
-PROF_PID (rtps_pw_finish)
-PROF_PID (rtps_bw_start)
-PROF_PID (rtps_bw_new)
-PROF_PID (rtps_bw_send)
-PROF_PID (rtps_bw_rem)
-PROF_PID (rtps_bw_finish)
-PROF_PID (rtps_rw_start)
-PROF_PID (rtps_rw_new)
-PROF_PID (rtps_rw_send)
-PROF_PID (rtps_rw_rem)
-PROF_PID (rtps_rw_finish)
-PROF_PID (rtps_rw_acknack)
-PROF_PID (rtps_rw_hb_to)
-PROF_PID (rtps_rw_alive_to)
-PROF_PID (rtps_rw_nresp_to)
-PROF_PID (rtps_br_start)
-PROF_PID (rtps_br_data)
-PROF_PID (rtps_br_finish)
-PROF_PID (rtps_rr_start)
-PROF_PID (rtps_rr_data)
-PROF_PID (rtps_rr_finish)
-PROF_PID (rtps_rr_gap)
-PROF_PID (rtps_rr_hbeat)
-PROF_PID (rtps_rr_alive_to)
-PROF_PID (rtps_rr_do_ack)
-PROF_PID (rtps_rr_proc)
+PUB_PROF_PID (rtps_w_create)
+PUB_PROF_PID (rtps_w_delete)
+PUB_PROF_PID (rtps_w_new)
+PUB_PROF_PID (rtps_w_remove)
+PUB_PROF_PID (rtps_w_urgent)
+PUB_PROF_PID (rtps_w_write)
+PUB_PROF_PID (rtps_w_dispose)
+PUB_PROF_PID (rtps_w_unregister)
+PUB_PROF_PID (rtps_w_rloc_add)
+PUB_PROF_PID (rtps_w_rloc_rem)
+PUB_PROF_PID (rtps_w_proxy_add)
+PUB_PROF_PID (rtps_w_proxy_rem)
+PUB_PROF_PID (rtps_w_resend)
+PUB_PROF_PID (rtps_w_update)
+PUB_PROF_PID (rtps_do_changes)
+PUB_PROF_PID (rtps_send_msgs)
+PUB_PROF_PID (rtps_r_create)
+PUB_PROF_PID (rtps_r_delete)
+PUB_PROF_PID (rtps_r_proxy_add)
+PUB_PROF_PID (rtps_r_proxy_rem)
+PUB_PROF_PID (rtps_r_unblock)
+PUB_PROF_PID (rtps_rx_msgs)
+PUB_PROF_PID (rtps_rx_data)
+PUB_PROF_PID (rtps_rx_gap)
+PUB_PROF_PID (rtps_rx_hbeat)
+PUB_PROF_PID (rtps_rx_acknack)
+PUB_PROF_PID (rtps_rx_inf_ts)
+PUB_PROF_PID (rtps_rx_inf_rep)
+PUB_PROF_PID (rtps_rx_inf_dst)
+PUB_PROF_PID (rtps_rx_inf_src)
+PUB_PROF_PID (rtps_rx_data_frag)
+PUB_PROF_PID (rtps_rx_nack_frag)
+PUB_PROF_PID (rtps_rx_hbeat_frag)
+PUB_PROF_PID (rtps_tx_data)
+PUB_PROF_PID (rtps_tx_gap)
+PUB_PROF_PID (rtps_tx_hbeat)
+PUB_PROF_PID (rtps_tx_acknack)
+PUB_PROF_PID (rtps_tx_inf_ts)
+PUB_PROF_PID (rtps_tx_inf_rep)
+PUB_PROF_PID (rtps_tx_inf_dst)
+PUB_PROF_PID (rtps_tx_inf_src)
+PUB_PROF_PID (rtps_pw_start)
+PUB_PROF_PID (rtps_pw_new)
+PUB_PROF_PID (rtps_pw_send)
+PUB_PROF_PID (rtps_pw_rem)
+PUB_PROF_PID (rtps_pw_finish)
+PUB_PROF_PID (rtps_bw_start)
+PUB_PROF_PID (rtps_bw_new)
+PUB_PROF_PID (rtps_bw_send)
+PUB_PROF_PID (rtps_bw_rem)
+PUB_PROF_PID (rtps_bw_finish)
+PUB_PROF_PID (rtps_rw_start)
+PUB_PROF_PID (rtps_rw_new)
+PUB_PROF_PID (rtps_rw_send)
+PUB_PROF_PID (rtps_rw_rem)
+PUB_PROF_PID (rtps_rw_finish)
+PUB_PROF_PID (rtps_rw_acknack)
+PUB_PROF_PID (rtps_rw_hb_to)
+PUB_PROF_PID (rtps_rw_alive_to)
+PUB_PROF_PID (rtps_rw_nresp_to)
+PUB_PROF_PID (rtps_br_start)
+PUB_PROF_PID (rtps_br_data)
+PUB_PROF_PID (rtps_br_finish)
+PUB_PROF_PID (rtps_rr_start)
+PUB_PROF_PID (rtps_rr_data)
+PUB_PROF_PID (rtps_rr_finish)
+PUB_PROF_PID (rtps_rr_gap)
+PUB_PROF_PID (rtps_rr_hbeat)
+PUB_PROF_PID (rtps_rr_alive_to)
+PUB_PROF_PID (rtps_rr_do_ack)
+PUB_PROF_PID (rtps_rr_proc)
 #endif
+
 #ifdef CTRACE_USED
 
-enum {
-	RTPS_W_CREATE, RTPS_W_DELETE,
-	RTPS_W_N_CHANGE, RTPS_W_RM_CHANGE,
-	RTPS_W_URG_CHANGE, RTPS_W_ALIVE,
-	RTPS_W_WRITE, RTPS_W_DISPOSE, RTPS_W_UNREG,
-	RTPS_W_RLOC_ADD, RTPS_W_RLOC_REM,
-	RTPS_W_PROXY_ADD, RTPS_W_PROXY_REMOVE,
-	RTPS_W_RESEND, RTPS_W_UPDATE,
-	RTPS_SCH_W_PREP, RTPS_SCH_RDR, RTPS_SCH_TX, RTPS_SCH_TXD,
-	RTPS_R_CREATE, RTPS_R_DELETE,
-	RTPS_R_PROXY_ADD, RTPS_R_PROXY_REMOVE,
-	RTPS_R_UNBLOCK,
-	RTPS_RX_MSGS,
-	RTPS_RX_DATA, RTPS_RX_GAP, RTPS_RX_HBEAT, RTPS_RX_ACKNACK,
-	RTPS_RX_INFO_TS, RTPS_RX_INFO_REPLY, RTPS_RX_INFO_DEST, RTPS_RX_INFO_SRC,
-	RTPS_RX_DFRAG, RTPS_RX_NACK_FRAG, RTPS_RX_HBEAT_FRAG,
-	RTPS_TX_DATA, RTPS_TX_GAP, RTPS_TX_HBEAT, RTPS_TX_ACKNACK,
-	RTPS_TX_INFO_TS, RTPS_TX_INFO_REPLY, RTPS_TX_INFO_DEST, RTPS_TX_INFO_SRC,
-	RTPS_SLW_BE_START, RTPS_SLW_BE_NEW,
-	RTPS_SLW_BE_SEND, RTPS_SLW_BE_REM, RTPS_SLW_BE_FINISH,
-	RTPS_SFW_BE_START, RTPS_SFW_BE_NEW,
-	RTPS_SFW_BE_SEND, RTPS_SFW_BE_REM, RTPS_SFW_BE_FINISH,
-	RTPS_SFW_REL_START, RTPS_SFW_REL_NEW,
-	RTPS_SFW_REL_SEND, RTPS_SFW_REL_REM, RTPS_SFW_REL_FINISH,
-	RTPS_SFW_REL_ACKNACK,
-	RTPS_SFW_HB_TO, RTPS_SFW_ALIVE_TO, RTPS_SFW_NACK_RSP_TO,
-	RTPS_SFR_BE_START, RTPS_SFR_BE_DATA, RTPS_SFR_BE_FINISH,
-	RTPS_SFR_REL_START, RTPS_SFR_REL_DATA, RTPS_SFR_REL_FINISH,
-	RTPS_SFR_REL_GAP, RTPS_SFR_REL_HBEAT,
-	RTPS_SFR_ALIVE_TO, RTPS_SFR_REL_DO_ACK,
-	RTPS_SFR_PROCESS
-
-};
-
-static const char *rtps_fct_str [] = {
+const char *rtps_fct_str [] = {
 	"writer_create", "writer_delete",
 	"writer_new_change", "writer_delete_change",
 	"writer_urgent_change", "writer_alive",
@@ -340,17 +359,18 @@ static const char *rtps_fct_str [] = {
 	"rx_data_frag", "rx_nack_frag", "rx_heartbeat_frag",
 	"tx_data", "tx_gap", "tx_heartbeat", "tx_acknack",
 	"tx_info_ts", "tx_info_reply", "tx_info_dest", "tx_info_src",
+	"tx_nack_frag", "tx_heartbeat_frag",
 	"slw_be_start", "slw_be_new_change",
 	"slw_be_send", "slw_be_remove_change", "slw_be_finish",
 	"sfw_be_start", "sfw_be_new_change",
 	"sfw_be_send", "sfw_be_remove_change", "sfw_be_finish",
 	"sfw_rel_start", "sfw_rel_new_change",
 	"sfw_rel_send", "sfw_rel_remove_change", "sfw_rel_finish",
-	"sfw_rel_acknack",
+	"sfw_rel_acknack", "sfw_rel_nackfrag",
 	"sfw_heartbeat_to", "sfw_alive_to", "sfw_nack_rsp_to",
 	"sfr_be_start", "sfr_be_data", "sfr_be_finish",
 	"sfr_rel_start", "sfr_rel_data", "sfr_rel_finish",
-	"sfr_rel_gap", "sfr_rel_heartbeat",
+	"sfr_rel_gap", "sfr_rel_heartbeat", "sfr_rel_hbfrag",
 	"sfr_alive_to", "sfr_rel_do_ack",
 	"sfr_process"
 };
@@ -508,11 +528,17 @@ int rtps_participant_create (Domain_t *dp)
 	memcpy (dp->participant.p_proto_version, rtps_protocol_version, sizeof (ProtocolVersion_t));
 	memcpy (dp->participant.p_vendor_id, rtps_vendor_id, sizeof (VendorId_t));
 	dp->participant.p_exp_il_qos = 0;
-#if defined (DDS_NO_MCAST) || defined (DDS_SECURITY)
+#ifdef DDS_NO_MCAST
+	dp->participant.p_no_mcast = 1;
+#elif defined (DDS_SECURITY)
 #ifdef DDS_SECURITY
-	if (dp->security)
+	if (dp->security
+#ifdef DDS_NATIVE_SECURITY
+	    && (dp->participant.p_sec_caps & (SECC_DDS_SEC | (SECC_DDS_SEC << SECC_LOCAL))) == 0
 #endif
-		dp->participant.p_no_mcast = 1;
+	    )
+#endif
+                dp->participant.p_no_mcast = 1;
 #endif
 	dp->participant.p_sw_version = TDDS_VERSION;
 	rtps_transport_locators (dp->domain_id,
@@ -531,7 +557,11 @@ int rtps_participant_create (Domain_t *dp)
 		return (DDS_RETCODE_PRECONDITION_NOT_MET);
 
 #ifdef DDS_SECURITY
-	if (!dp->security)
+	if (!dp->security
+#ifdef DDS_NATIVE_SECURITY
+		|| (dp->participant.p_sec_caps & (SECC_DDS_SEC | (SECC_DDS_SEC << SECC_LOCAL))) != 0
+#endif
+	    )
 #endif
 		rtps_locators_listen (dp->domain_id,
 				      dp->participant.p_def_mcast,
@@ -575,6 +605,9 @@ int rtps_participant_create (Domain_t *dp)
 	return (DDS_RETCODE_OK);
 }
 
+static void matched_reader_locators_update (RemReader_t *rrp);
+static void matched_writer_locators_update (RemWriter_t *rwp);
+
 static int endpoint_flush_reply_fct (Skiplist_t *list, void *node, void *arg)
 {
 	Endpoint_t	*ep, **epp = (Endpoint_t **) node;
@@ -595,13 +628,20 @@ static int endpoint_flush_reply_fct (Skiplist_t *list, void *node, void *arg)
 	if (rep->is_reader) {
 		rp = (READER *) rep;
 		LIST_FOREACH (rp->rem_writers, rwp)
-			rwp->rw_uc_dreply = NULL;
+			if (arg)
+				matched_writer_locators_update (rwp);
+			else
+				rwp->rw_uc_dreply = NULL;
 	}
 	else {
 		wp = (WRITER *) rep;
 		LIST_FOREACH (wp->rem_readers, rrp)
-			if (wp->endpoint.stateful)
-				rrp->rr_uc_dreply = NULL;
+			if (wp->endpoint.stateful) {
+				if (arg)
+					matched_reader_locators_update (rrp);
+				else
+					rrp->rr_uc_dreply = NULL;
+			}
 	}
 	return (1);
 }
@@ -657,9 +697,14 @@ int rtps_check_ep_guids (Domain_t *dp)
 
 int rtps_participant_update (Domain_t *dp)
 {
+	int	old_kinds, ret = DDS_RETCODE_OK;
+
 	/*log_printf (RTPS_ID, 0, "rtps_participant_update().\r\n");*/
 
 	lock_take (dp->lock);
+
+	/* Remember the previous valid locator kinds. */
+	old_kinds = dp->kinds;
 
 	/* Notify that locator lists will be updated. */
 	rtps_locators_update (dp->domain_id, dp->index);
@@ -690,24 +735,29 @@ int rtps_participant_update (Domain_t *dp)
 
 	/* Apply locator lists on transports. */
 	rtps_update_begin (dp);
-	rtps_locators_listen (dp->domain_id,
-			      dp->participant.p_def_ucast,
-			      dp->index);
+	if (rtps_locators_listen (dp->domain_id,
+				  dp->participant.p_def_ucast,
+				  dp->index) != DDS_RETCODE_OK)
+		ret = DDS_RETCODE_ERROR;
 
 #ifdef DDS_SECURITY
-	if (!dp->security)
+	if (!dp->security || (dp->participant.p_sec_caps & SECC_DDS_SEC) != 0)
 #endif
-		rtps_locators_listen (dp->domain_id,
-				      dp->participant.p_def_mcast,
-				      dp->index);
+		if (rtps_locators_listen (dp->domain_id,
+					  dp->participant.p_def_mcast,
+					  dp->index) != DDS_RETCODE_OK)
+			ret = DDS_RETCODE_ERROR;
 
 	rtps_update_kinds (dp);
-	rtps_locators_listen (dp->domain_id,
-			      dp->participant.p_meta_ucast,
-			      dp->index);
-	rtps_locators_listen (dp->domain_id,
-			      dp->participant.p_meta_mcast,
-			      dp->index);
+	if (rtps_locators_listen (dp->domain_id,
+				  dp->participant.p_meta_ucast,
+				  dp->index) != DDS_RETCODE_OK)
+		ret = DDS_RETCODE_ERROR;
+
+	if (rtps_locators_listen (dp->domain_id,
+				  dp->participant.p_meta_mcast,
+				  dp->index) != DDS_RETCODE_OK)
+		ret = DDS_RETCODE_ERROR;
 
 #ifdef DDS_SECURITY
 	if (dp->security && (dp->participant.p_sec_caps & SECC_DTLS_UDP) != 0)
@@ -720,13 +770,15 @@ int rtps_participant_update (Domain_t *dp)
 	rtps_update_end (dp);
 
 	/* Clear all local reply locators. */
-	sl_walk (&dp->participant.p_endpoints, endpoint_flush_reply_fct, NULL);
+	sl_walk (&dp->participant.p_endpoints, 
+		 endpoint_flush_reply_fct,
+		 (old_kinds != dp->kinds) ? dp : NULL);
 
 	/* Notify peer participants. */
 	disc_participant_update (dp);
 
 	lock_release (dp->lock);
-	return (DDS_RETCODE_OK);
+	return (ret);
 }
 
 # if 0
@@ -1092,30 +1144,37 @@ void remote_writer_remove (READER *rp, RemWriter_t *rwp)
 }
 
 
-
-/**********************************************************************/
-/*   Various different behavior implementations.		      */
-/**********************************************************************/
-
 /* remote_reader_new_change -- A new cache change copy is needed for sending. */
 
 static Change_t *remote_reader_new_change (RemReader_t *rrp,
 					   Change_t    *cp,
 					   Change_t    **mctypes,
-					   int         marshall)
+					   int         rmarshall,
+					   int         no_mcast
+#ifdef DDS_NATIVE_SECURITY
+					 , unsigned    crypto_handle,
+					   unsigned    crypto_type
+#endif
+					                          )
 {
 	WRITER			*wp;
 	Change_t		*ncp;
 	TopicType_t		*ttp;
 	const TypeSupport_t	*tsp;
 	unsigned char		*dp;
+	int			marshall;
+#ifdef DDS_NATIVE_SECURITY
+	DBW			dbw;
+	DB			*ndbp;
+	size_t			nlength;
+#endif
 	DDS_ReturnCode_t 	ret;
 
 	wp = rrp->rr_writer;
 	ttp = wp->endpoint.endpoint->ep.topic->type;
 	tsp = ttp->type_support;
-	if (mctypes && (ncp = mctypes [marshall]) != NULL) {
-		if (rrp->rr_no_mcast)
+	if (mctypes && (ncp = mctypes [rmarshall]) != NULL) {
+		if (no_mcast)
 			ncp->c_no_mcast = 1;
 		rcl_access (ncp);
 		ncp->c_nrefs++;
@@ -1134,7 +1193,7 @@ static Change_t *remote_reader_new_change (RemReader_t *rrp,
 	ncp->c_urgent = cp->c_urgent;
 	ncp->c_kind = cp->c_kind;
 	ncp->c_linear = 1;
-	ncp->c_no_mcast = rrp->rr_no_mcast; 
+	ncp->c_no_mcast = no_mcast;
 	ncp->c_writer = cp->c_writer;
 	ncp->c_time = cp->c_time;
 	ncp->c_handle = cp->c_handle;
@@ -1142,7 +1201,7 @@ static Change_t *remote_reader_new_change (RemReader_t *rrp,
 	memcpy (ncp->c_dests, cp->c_dests, sizeof (ncp->c_dests));
 
 	/* Do we need to marshall the data? */
-	if (!marshall || cp->c_kind != ALIVE)
+	if (!rmarshall || cp->c_kind != ALIVE)
 		marshall = 0;
 	else if (tsp->ts_prefer == MODE_PL_CDR) {
 		if (tsp->ts_pl->builtin) {
@@ -1164,25 +1223,48 @@ static Change_t *remote_reader_new_change (RemReader_t *rrp,
 		marshall = 0;
 
 	if (!marshall) {
-		ncp->c_db = cp->c_db;
-		if (cp->c_db) {
-			rcl_access (ncp->c_db);
-			ncp->c_db->nrefs++;
-			rcl_done (ncp->c_db);
-			ncp->c_data = cp->c_data;
-		}
-		else if (cp->c_data == cp->c_xdata) {
-			memcpy (ncp->c_xdata, cp->c_data, cp->c_length);
-			ncp->c_data = ncp->c_xdata;
+#ifdef DDS_NATIVE_SECURITY
+		if (crypto_type) {
+			dbw.dbp = cp->c_db;
+			dbw.data = cp->c_data;
+			if (cp->c_db && cp->c_db->size)
+				dbw.left = cp->c_db->size - 
+						(cp->c_data - cp->c_db->data);
+			else
+				dbw.left = cp->c_length;
+			dbw.length = cp->c_length;
+			ncp->c_db = sec_encode_serialized_data (&dbw,
+								crypto_handle, 
+								&ncp->c_length,
+								&ret);
+			if (!ncp->c_db)
+				goto free_change;
+
+			ncp->c_data = ncp->c_db->data;
 		}
 		else
-			ncp->c_data = cp->c_data;
-		ncp->c_length = cp->c_length;
+#endif
+		{
+			ncp->c_db = cp->c_db;
+			if (cp->c_db) {
+				rcl_access (ncp->c_db);
+				ncp->c_db->nrefs++;
+				rcl_done (ncp->c_db);
+				ncp->c_data = cp->c_data;
+			}
+			else if (cp->c_data == cp->c_xdata) {
+				memcpy (ncp->c_xdata, cp->c_data, cp->c_length);
+				ncp->c_data = ncp->c_xdata;
+			}
+			else
+				ncp->c_data = cp->c_data;
+			ncp->c_length = cp->c_length;
+		}
 #ifdef RTPS_TRC_LRBUFS
 		log_printf (RTPS_ID, 0, "remote_reader_new_change: ncp->c_db->nrefs++\r\n");
 #endif
 		if (mctypes)
-			mctypes [0] = ncp;
+			mctypes [rmarshall] = ncp;
 		return (ncp);
 	}
 	else
@@ -1209,6 +1291,25 @@ static Change_t *remote_reader_new_change (RemReader_t *rrp,
 		log_printf (RTPS_ID, 0, "remote_reader_new_change: error %u marshalling data!\r\n", ret);
 		goto free_change;
 	}
+#ifdef DDS_NATIVE_SECURITY
+	if (crypto_type) {
+		dbw.dbp = ncp->c_db;
+		dbw.data = ncp->c_data;
+		dbw.left = ncp->c_length;
+		dbw.length = ncp->c_length;
+		ndbp = sec_encode_serialized_data (&dbw,
+						   crypto_handle, 
+						   &nlength,
+						   &ret);
+		if (!ndbp)
+			goto free_change;
+
+		db_free_data (ncp->c_db);
+		ncp->c_db = ndbp;
+		ncp->c_data = ndbp->data;
+		ncp->c_length = nlength;
+	}
+#endif
 	if (mctypes)
 		mctypes [1] = ncp;
 	return (ncp);
@@ -1288,13 +1389,27 @@ RR_EVENTS *rtps_rr_event [RR_MAX_TYPES];
 
 static int reader_in_dests (RemReader_t *rrp, handle_t *handles, unsigned max)
 {
+	Entity_t	*ep;
+	Participant_t	*pp;
 	unsigned	i;
+	int		stateless;
 
+	stateless = !rrp->rr_reliable && !rrp->rr_writer->endpoint.stateful;
 	for (i = 0; i < max; i++) {
 		if (!*handles)
 			break;
 
-		if (rrp->rr_endpoint->entity.handle == *handles)
+		if (stateless) {
+			ep = entity_ptr (*handles);
+			if (entity_type (ep) == ET_PARTICIPANT) {
+				pp = (Participant_t *) ep;
+				if (pp->p_src_locators &&
+				    pp->p_src_locators->data->locator.kind == 
+				    		rrp->rr_locator->locator.kind)
+					return (1);
+			}
+		}
+		else if (rrp->rr_endpoint->entity.handle == *handles)
 			return (1);
 
 		handles++;
@@ -1309,6 +1424,10 @@ int proxy_add_change (uintptr_t user, Change_t *cp, HCI hci)
 	RemReader_t	*rrp = (RemReader_t *) user;
 	RRType_t	type;
 	Change_t	*ncp;
+#ifdef DDS_NATIVE_SECURITY
+	LocalEndpoint_t	*wp;
+	unsigned	crypto_type;
+#endif
 	FilterRes_t	res;
 
 	type = rr_type (rrp->rr_writer->endpoint.stateful, rrp->rr_reliable);
@@ -1319,14 +1438,24 @@ int proxy_add_change (uintptr_t user, Change_t *cp, HCI hci)
 
 		else if ((res = DDS_FILTER_WRITE (rrp, cp)) != FR_ALLOW_TX) {
 			if (res == FR_DELAYED)
-				/* Enqueud sample - just return. */
+				/* Enqueued sample - just return. */
 				return (1);
 
 			ncp = NULL;	/* Continue -> filtered sample! */
 		}
 		else {
+#ifdef DDS_NATIVE_SECURITY
+			wp = rrp->rr_writer->endpoint.endpoint;
+			crypto_type = (wp->payload_prot) ? wp->crypto_type : 0;
+#endif
 			ncp = remote_reader_new_change (rrp, cp, NULL, 
-							rrp->rr_marshall);
+							rrp->rr_marshall,
+							rrp->rr_no_mcast
+#ifdef DDS_NATIVE_SECURITY
+						      ,	wp->crypto,
+						        crypto_type
+#endif
+							);
 			if (!ncp)
 				return (0);	/* No memory/don't send. */
 		}
@@ -1371,6 +1500,9 @@ int rtps_writer_create (Writer_t          *w,
 			const Duration_t  *resend_per)
 {
 	WRITER		*wp;
+#ifdef RTPS_TRACE
+	unsigned	dtrace;
+#endif
 
 	ctrc_printd (RTPS_ID, RTPS_W_CREATE, &w, sizeof (w));
 
@@ -1383,11 +1515,11 @@ int rtps_writer_create (Writer_t          *w,
 		nack_rsp = &rtps_def_nack_resp;
 	if (!nack_supp)
 		nack_supp = &rtps_def_nack_supp;
-	if (!resend_per)
-		resend_per = &rtps_def_resend_per;
 
 	/* Check some mandatory fields. */
-	if (!resend_per->secs && resend_per->nanos < MIN_RESEND_TIME_NS) {
+	if (resend_per &&
+	    !resend_per->secs && 
+	    resend_per->nanos < MIN_RESEND_TIME_NS) {
 		warn_printf ("rtps_writer_create: incorrect resend period!\r\n");
 		return (DDS_RETCODE_UNSUPPORTED);
 	}
@@ -1413,10 +1545,11 @@ int rtps_writer_create (Writer_t          *w,
 	wp->endpoint.push_mode = push_mode;
 	wp->endpoint.cache_act = 0;
 #ifdef RTPS_TRACE
-	wp->endpoint.trace_frames = (dds_dtrace & DDS_RTRC_FTRACE) != 0;
-	wp->endpoint.trace_sigs   = (dds_dtrace & DDS_RTRC_STRACE) != 0;
-	wp->endpoint.trace_state  = (dds_dtrace & DDS_RTRC_ETRACE) != 0;
-	wp->endpoint.trace_tmr    = (dds_dtrace & DDS_RTRC_TTRACE) != 0;
+	dtrace = rtps_def_trace (w->w_handle, str_ptr (w->w_topic->name));
+	wp->endpoint.trace_frames = (dtrace & DDS_RTRC_FTRACE) != 0;
+	wp->endpoint.trace_sigs   = (dtrace & DDS_RTRC_STRACE) != 0;
+	wp->endpoint.trace_state  = (dtrace & DDS_RTRC_ETRACE) != 0;
+	wp->endpoint.trace_tmr    = (dtrace & DDS_RTRC_TTRACE) != 0;
 #ifdef RTPS_SEDP_TRACE
 	if (w->w_entity_id.id [3] == (ENTITY_KIND_BUILTIN | ENTITY_KIND_WRITER_KEY) &&
 	    w->w_entity_id.id [0] == 0 &&
@@ -1438,6 +1571,9 @@ int rtps_writer_create (Writer_t          *w,
 		wp->endpoint.trace_frames = wp->endpoint.trace_sigs =
 		wp->endpoint.trace_state  = wp->endpoint.trace_tmr  = 1;
 #endif
+#else
+	wp->endpoint.trace_frames = wp->endpoint.trace_sigs =
+	wp->endpoint.trace_state  = wp->endpoint.trace_tmr  = 0;
 #endif
 #ifdef RTPS_OPT_MCAST
 	wp->endpoint.mc_locators = NULL;
@@ -1448,12 +1584,18 @@ int rtps_writer_create (Writer_t          *w,
 		wp->nack_resp_delay = duration2ticks (nack_rsp);
 		wp->nack_supp_duration = duration2ticks (nack_supp);
 	}
-	else
+	else if (resend_per) {
 		wp->rh_period = duration2ticks (resend_per);
+		wp->endpoint.resends = 1;
+	}
+	else
+		wp->endpoint.resends = 0;
 	wp->backoff = 0;
 	wp->rh_timer = NULL;
 	wp->backoff = 0;
 	wp->prio = w->w_qos->qos.transport_priority.value;
+	wp->no_mcast = 0;
+	wp->mc_marshall = 0;
 
 	/* Initialize the list of Proxy-Readers/ReaderLocators. */
 	LIST_INIT (wp->rem_readers);
@@ -1534,8 +1676,11 @@ static int rtps_writer_new_change (uintptr_t user, Change_t *cp, HCI hci)
 	RRType_t	type;
 	Change_t	*ncp = NULL;
 	Change_t	*mchanges [2];
+#ifdef DDS_NATIVE_SECURITY
+	unsigned	crypto_handle;
+	unsigned	crypto_type;
+#endif
 	FilterRes_t	res;
-	int		marshall;
 	PROF_ITER	(n);
 
 	ctrc_printd (RTPS_ID, RTPS_W_N_CHANGE, &user, sizeof (user));
@@ -1548,13 +1693,16 @@ static int rtps_writer_new_change (uintptr_t user, Change_t *cp, HCI hci)
 
 	/* Add cache change to all existing Remote Readers. */
 	mchanges [0] = mchanges [1] = NULL;
-#if 0
-	marshall = 0;
-	LIST_FOREACH (wp->rem_readers, rrp)
-		if (rrp->rr_marshall)
+#ifdef DDS_NATIVE_SECURITY
+	if (wp->endpoint.endpoint->payload_prot) {
+		crypto_handle = wp->endpoint.endpoint->crypto;
+		crypto_type = wp->endpoint.endpoint->crypto_type;
+	}
+	else {
+		crypto_handle = 0;
+		crypto_type = 0;
+	}
 #endif
-			marshall = 1;
-	
 	LIST_FOREACH (wp->rem_readers, rrp) {
 		PROF_INC (n);
 
@@ -1566,7 +1714,7 @@ static int rtps_writer_new_change (uintptr_t user, Change_t *cp, HCI hci)
 		else if (cp->c_data) {
 			if ((res = DDS_FILTER_WRITE (rrp, cp)) != FR_ALLOW_TX) {
 				if (res == FR_DELAYED)
-					/* Enqueud sample - just return. */
+					/* Enqueued sample - just return. */
 					continue;
 
 				ncp = NULL;	/* Continue -> filtered sample! */
@@ -1574,7 +1722,13 @@ static int rtps_writer_new_change (uintptr_t user, Change_t *cp, HCI hci)
 			else {
 				ncp = remote_reader_new_change (rrp, cp, 
 								mchanges,
-								marshall);
+								wp->mc_marshall,
+								wp->no_mcast
+#ifdef DDS_NATIVE_SECURITY
+							      , crypto_handle,
+							        crypto_type
+#endif
+								);
 				if (!ncp)
 					return (DDS_RETCODE_OUT_OF_RESOURCES);
 			}
@@ -1656,7 +1810,7 @@ static int rtps_writer_new_change (uintptr_t user, Change_t *cp, HCI hci)
 		PROF_INC (n);
 		type = rr_type (wp->endpoint.stateful, rrp->rr_reliable);
 		if (cp->c_data) {
-			ncp = remote_reader_new_change (rrp, cp, mchanges, marshall);
+			ncp = remote_reader_new_change (rrp, cp, mchanges, wp->mc_marshall, wp->no_mcast);
 			if (!ncp)
 				return (DDS_RETCODE_OUT_OF_RESOURCES);
 		}
@@ -1665,7 +1819,7 @@ static int rtps_writer_new_change (uintptr_t user, Change_t *cp, HCI hci)
 			if (!ncp)
 				return (DDS_RETCODE_OUT_OF_RESOURCES);
 
-			ncp->c_no_mcast = rrp->rr_no_mcast;
+			ncp->c_no_mcast = wp->no_mcast;
 		}
 		else {
 			rcl_access (ncp);
@@ -1968,6 +2122,7 @@ int rtps_reader_locator_add (Writer_t      *w,
 	/*rrp->rr_head = rrp->rr_tail = NULL;
 	rrp->rr_link = NULL;*/
 	remote_reader_add (wp, rrp);
+	wp->mc_marshall = 1;
 	type = rr_type (wp->endpoint.stateful, rrp->rr_reliable);
 	if (rtps_rr_event [type]->start)
 		(*rtps_rr_event [type]->start) (rrp);
@@ -2073,9 +2228,9 @@ static void locators_add (LocatorList_t *llp, LocatorList_t slp, LocatorKind_t k
 
 #ifdef DDS_SECURITY
 
-/* rtps_secure_channel -- Check if the proxy connection requires security. */
+/* rtps_secure_tunnel -- Check if the proxy connection needs a secure tunnel. */
 
-static int rtps_secure_channel (Domain_t *dp, Participant_t *pp)
+static int rtps_secure_tunnel (Domain_t *dp, Participant_t *pp)
 {
 	unsigned	lcaps, rcaps;
 
@@ -2091,7 +2246,8 @@ static int rtps_secure_channel (Domain_t *dp, Participant_t *pp)
 		lcaps = dp->participant.p_sec_caps & 0xffff;
 	}
 	if ((rcaps & lcaps) != 0)
-		return (1);
+		return ((rcaps & lcaps & SECC_DDS_SEC) == 0 &&
+			(rcaps & lcaps & SECC_DTLS_UDP) != 0);
 
 #ifdef DDS_DEBUG
 	/* TODO: Remove this and all related code once dtls/tls are fully working */
@@ -2118,7 +2274,7 @@ static void add_relay_locators (Domain_t *dp, Proxy_t *prp, LocatorList_t *list)
 	for (i = 0, p = dp->relays; i < dp->nr_relays; i++, p++) {
 		pp = *p;
 #ifdef DDS_SECURITY
-		if (dp->security) {
+		if (prp->tunnel) {
 			if ((dp->kinds & LOCATOR_KINDS_UDP) != 0)
 				locators_add (list, pp->p_sec_locs, LOCATOR_KINDS_UDP);
 			if ((dp->kinds & ~LOCATOR_KINDS_UDP) != 0) {
@@ -2151,7 +2307,7 @@ static void matched_reader_locators_set (RemReader_t *rrp)
 	dp = dr->dr_participant->p_domain;
 	kinds = dp->kinds;
 #ifdef DDS_SECURITY
-	if (rrp->rr_secure && (kinds & LOCATOR_KINDS_UDP) != 0) {
+	if (rrp->rr_tunnel && (kinds & LOCATOR_KINDS_UDP) != 0) {
 		rrp->rr_mc_locs = NULL;
 		locators_add (&rrp->rr_uc_locs, dr->dr_participant->p_sec_locs, LOCATOR_KINDS_UDP);
 		kinds &= ~LOCATOR_KINDS_UDP;
@@ -2183,11 +2339,26 @@ static void matched_reader_locators_clear (RemReader_t *rrp)
 		locator_list_delete_list (&rrp->rr_uc_locs);
 }
 
+#ifdef RTPS_CHECK_LOCS
+#define	CHECK_R_LOCATORS(rrp, s) log_printf (RTPS_ID, 0, "@%s: Locator list -> {%u} is %s!\r\n", \
+					s, rrp->rr_endpoint->entity.handle, \
+					(rrp->rr_uc_locs || rrp->rr_mc_locs) ? "filled" : "empty")
+#define	CHECK_W_LOCATORS(rwp, s) log_printf (RTPS_ID, 0, "@%s: Locator list -> {%u} is %s!\r\n", \
+					s, rwp->rw_endpoint->entity.handle, \
+					(rwp->rw_uc_locs || rwp->rw_mc_locs) ? "filled" : "empty")
+#else
+#define	CHECK_R_LOCATORS(rrp, s)
+#define	CHECK_W_LOCATORS(rwp, s)
+#endif
+
 static void matched_reader_locators_update (RemReader_t *rrp)
 {
 	lrloc_print1 ("RTPS: matched_reader_locators_update (%p)\r\n", (void *) rrp);
+	CHECK_R_LOCATORS (rrp, "rtps_matched_reader_locators_update(begin)");
 	matched_reader_locators_clear (rrp);
 	matched_reader_locators_set (rrp);
+	CHECK_R_LOCATORS (rrp, "rtps_matched_reader_locators_update(end)");
+	rrp->rr_uc_dreply = NULL;
 }
 
 /* rtps_matched_reader_add -- Add a proxy reader to a stateful writer. */
@@ -2200,13 +2371,13 @@ int rtps_matched_reader_add (Writer_t *w, DiscoveredReader_t *dr)
 	char            buffer[32];
 	const TypeSupport_t	*ts;
 #ifdef DDS_SECURITY
-	int			secure;
+	int			tunnel;
 #endif
 
 	ctrc_printd (RTPS_ID, RTPS_W_PROXY_ADD, &w, sizeof (w));
 	prof_start (rtps_w_proxy_add);
-    if (rtps_log)
-        log_printf (RTPS_ID, 0, "RTPS: matched reader added (%s) to %s.\r\n",
+	if (rtps_log)
+        	log_printf (RTPS_ID, 0, "RTPS: matched reader add (%s) to %s.\r\n",
                         str_ptr (w->w_topic->name), guid_prefix_str(&dr->dr_participant->p_guid_prefix,buffer));
 	wp = w->w_rtps;
 	if (!wp) {
@@ -2224,8 +2395,8 @@ int rtps_matched_reader_add (Writer_t *w, DiscoveredReader_t *dr)
 			return (DDS_RETCODE_PRECONDITION_NOT_MET);
 
 #ifdef DDS_SECURITY
-	secure = rtps_secure_channel (w->w_publisher->domain, dr->dr_participant);
-	if (secure < 0)
+	tunnel = rtps_secure_tunnel (w->w_publisher->domain, dr->dr_participant);
+	if (tunnel < 0)
 		return (DDS_RETCODE_BAD_PARAMETER);
 #endif
 	if ((rrp = mds_pool_alloc (&rtps_mem_blocks [MB_REM_READER])) == NULL) {
@@ -2236,7 +2407,18 @@ int rtps_matched_reader_add (Writer_t *w, DiscoveredReader_t *dr)
 	/*rrp->rr_next_active = rrp->rr_prev_active = NULL;
 	rrp->rr_active = 0; */
 	rrp->rr_writer = wp;
-	rrp->rr_no_mcast = dr->dr_participant->p_no_mcast;
+#ifdef DDS_SECURITY
+	if (tunnel) {
+		rrp->rr_no_mcast = 1;
+		wp->no_mcast = 1;
+	}
+	else
+#endif
+		if (dr->dr_participant->p_no_mcast) {
+			rrp->rr_no_mcast = 1;
+			wp->no_mcast = 1;
+		}
+
 	LIST_INIT (rrp->rr_changes);
 	/* rrp->rr_changes.nchanges = 0;
 	rrp->rr_unsent_changes = rrp->rr_requested_changes = NULL;*/
@@ -2245,13 +2427,15 @@ int rtps_matched_reader_add (Writer_t *w, DiscoveredReader_t *dr)
 	ts = dr->dr_topic->type->type_support;
 	if ((w->w_flags & EF_BUILTIN) != 0 && ts->ts_prefer == MODE_PL_CDR)
 		rrp->rr_marshall = 1;
-	else if (ts->ts_dynamic)
+	else if (ts->ts_dynamic || ts->ts_length > 512)		  
 		rrp->rr_marshall = 1;
 	else if (dr->dr_participant->p_vendor_id [0] != VENDORID_H_TECHNICOLOR ||
 		 dr->dr_participant->p_vendor_id [1] != VENDORID_L_TECHNICOLOR)
 		rrp->rr_marshall = 1;
 	else
 		rrp->rr_marshall = MARSHALL (dr->dr_participant->p_guid_prefix);
+	if (rrp->rr_marshall)
+		wp->mc_marshall = 1;
 	rrp->rr_is_writer = 1;
 	rrp->rr_endpoint = &dr->dr_ep;
 	rrp->rr_next_guid = dr->dr_rtps;
@@ -2259,12 +2443,15 @@ int rtps_matched_reader_add (Writer_t *w, DiscoveredReader_t *dr)
 	/*rrp->rr_last_ack = 0;
 	rrp->rr_mc_locs = rrp->rr_uc_locs = NULL;
 	rrp->rr_uc_dreply = NULL;*/
+
 #ifdef DDS_SECURITY
-	rrp->rr_secure = secure;
+	rrp->rr_tunnel = tunnel;
 #endif
 
 	/* Add all locators to the proxy in order to reach the endpoint. */
 	matched_reader_locators_set (rrp);
+	CHECK_R_LOCATORS (rrp, "rtps_matched_reader_add()");
+
 #ifdef RTPS_OPT_MCAST
 	if (wp->endpoint.mc_locators)
 		locator_list_delete_list (&wp->endpoint.mc_locators);
@@ -2308,8 +2495,8 @@ int rtps_matched_reader_remove (Writer_t *w, DiscoveredReader_t *dr)
 	ctrc_printd (RTPS_ID, RTPS_W_PROXY_REMOVE, &w, sizeof (w));
 	prof_start (rtps_w_proxy_rem);
 
-    if (rtps_log)
-        log_printf (RTPS_ID, 0, "RTPS: matched reader remove (%s) to %s.\r\n",
+	if (rtps_log)
+        	log_printf (RTPS_ID, 0, "RTPS: matched reader remove (%s) to %s.\r\n",
                         str_ptr (w->w_topic->name), guid_prefix_str(&dr->dr_participant->p_guid_prefix,buffer));
 
 
@@ -2366,9 +2553,18 @@ int rtps_matched_reader_remove (Writer_t *w, DiscoveredReader_t *dr)
 
 	/* If this was the last remote reader locator, stop monitoring the
 	   cache changes. */
+	wp->no_mcast = wp->mc_marshall = 0;
 	if (LIST_EMPTY (wp->rem_readers)) {
 		wp->endpoint.cache_act = 0;
 		hc_monitor_end (wp->endpoint.endpoint->cache);
+	}
+	else {
+		LIST_FOREACH (wp->rem_readers, xrrp) {
+			if (xrrp->rr_no_mcast)
+				wp->no_mcast = 1;
+			if (xrrp->rr_marshall)
+				wp->mc_marshall = 1;
+		}
 	}
 
 	/* Free the context. */
@@ -2376,6 +2572,46 @@ int rtps_matched_reader_remove (Writer_t *w, DiscoveredReader_t *dr)
 
 	prof_stop (rtps_w_proxy_rem, 1);
 	return (DDS_RETCODE_OK);
+}
+
+/* rtps_matched_reader_restart -- Restart a matched, i.e. proxy reader for a
+				  stateful writer. */
+
+int rtps_matched_reader_restart (Writer_t *w, DiscoveredReader_t *dr)
+{
+#ifdef RTPS_PROXY_INST
+	WRITER		*wp;
+	RemReader_t	*rrp;
+
+	wp = w->w_rtps;
+	if (!wp) {
+		/* Already deleted -- no need for warnings! */
+		/*log_printf (RTPS_ID, 0, "rtps_matched_reader_restart: writer(%u) doesn't exist!\r\n", w);*/
+		return (DDS_RETCODE_ALREADY_DELETED);
+	}
+	if (!wp->endpoint.stateful)	/* Not applicable in stateless mode. */
+		return (DDS_RETCODE_BAD_PARAMETER);
+
+	LIST_FOREACH (wp->rem_readers, rrp)
+		if ((DiscoveredReader_t *) rrp->rr_endpoint == dr)
+			break;
+
+	if (LIST_END (wp->rem_readers, rrp)) {
+		log_printf (RTPS_ID, 0, "rtps_matched_reader_restart: destination doesn't exist!\r\n");
+		return (DDS_RETCODE_ALREADY_DELETED);
+	}
+	if (!rrp->rr_reliable) {
+		log_printf (RTPS_ID, 0, "rtps_matched_reader_restart: destination is not reliable!\r\n");
+     		return (DDS_RETCODE_UNSUPPORTED);
+	}
+	sfw_restart (rrp);
+	return (DDS_RETCODE_OK);
+#else
+	ARG_NOT_USED (w)
+	ARG_NOT_USED (dr)
+
+	return (DDS_RETCODE_UNSUPPORTED);
+#endif
 }
 
 /* rtps_writer_matches -- Return a non-0 result if the local Writer matches the
@@ -2460,15 +2696,17 @@ static INLINE LocatorList_t best_locator (LocatorList_t list, LocatorKind_t kind
 
 /* writer_best_locator -- Return the best locator for a proxy context. */
 
-static void *writer_best_locator (Proxy_t *pp, int mcast, int *dlist)
+static void *writer_best_locator (Domain_t *dp, Proxy_t *pp, RMBUF *mp, int *dlist)
 {
 	RemReader_t	*rrp;
+	Participant_t	*p;
+	RME		*mep;
 	void		*dest;
 
 	rrp = proxy2rr (pp);
 	if (pp->u.writer->endpoint.stateful) {
 		*dlist = 1;
-		if (mcast) {
+		if ((mp->element.flags & RME_MCAST) != 0) {
 			if (rrp->rr_mc_locs)
 				dest = best_locator (rrp->rr_mc_locs, rtps_mux_mode);
 			else if (rrp->rr_uc_locs)
@@ -2482,6 +2720,15 @@ static void *writer_best_locator (Proxy_t *pp, int mcast, int *dlist)
 			dest = best_locator (rrp->rr_mc_locs, rtps_mux_mode);
 		else
 			dest = NULL;
+	}
+	else if ((mp->element.flags & RME_MCAST) == 0 &&
+		 (mep = mp->first) != NULL &&
+		 (mep->flags & RME_HEADER) != 0 &&
+		 mep->header.id == ST_INFO_DST &&
+		 (p = participant_lookup (dp, (GuidPrefix_t *) mep->data)) != NULL &&
+		 p->p_src_locators) {
+		*dlist = 1;
+		dest = best_locator (p->p_src_locators, rtps_mux_mode);
 	}
 	else {
 		*dlist = 0;
@@ -2740,10 +2987,12 @@ static LocatorList_t optimal_mcast_locators (int writer, void *ep)
 
 /* writer_best_locator -- Return the best locator(s) for a proxy context. */
 
-static void *writer_best_locator (Proxy_t *pp, int mcast, int *dlist)
+static void *writer_best_locator (Domain_t *dp, Proxy_t *pp, int mcast, int *dlist)
 {
 	RemReader_t	*rrp;
 	void		*dest;
+
+	ARG_NOT_USED (dp)
 
 	rrp = proxy2rr (pp);
 	if (pp->u.writer->endpoint.stateful) {
@@ -2882,6 +3131,7 @@ void rtps_send_changes (void)
 	READER		*rp;
 	Reader_t	*r;
 	RMBUF		*mp;
+	Domain_t	*dp;
 	RRType_t	type;
 	void		*dest;
 	int		dlist;
@@ -2889,6 +3139,7 @@ void rtps_send_changes (void)
 	PROF_ITER	(n);
 
 	prof_start (rtps_do_changes);
+	rtps_rx_active = 1;
 	for (pp = get_first_proxy (); pp; pp = get_next_proxy ()) {
 		PROF_INC (n);
 
@@ -2903,6 +3154,7 @@ void rtps_send_changes (void)
 				continue;
 
 			ctrc_printd (RTPS_ID, RTPS_SCH_W_PREP, &w, sizeof (w));
+			dp = w->w_publisher->domain;
 			lock_take (w->w_lock);
 
 			/* Create the RTPS DATA messages to transmit, and
@@ -2929,9 +3181,10 @@ void rtps_send_changes (void)
 						dlist = 0;
 					}
 					else
-						dest = writer_best_locator (pp, 
-							mp->element.flags & RME_MCAST,
-							&dlist);
+						dest = writer_best_locator (dp,
+									    pp, 
+									    mp,
+									    &dlist);
 				}
 				else
 					dlist = 0;
@@ -2988,6 +3241,7 @@ void rtps_send_changes (void)
 	if (get_first_proxy ())
 		dds_signal (DDS_EV_PROXY_NE);
 
+	rtps_rx_active = 0;
 	prof_stop (rtps_do_changes, n);
 }
 
@@ -2999,6 +3253,9 @@ int rtps_reader_create (Reader_t              *r,
 			const Duration_t      *heartbeat_supp)
 {
 	READER		*rp;
+#ifdef RTPS_TRACE
+	unsigned	dtrace;
+#endif
 
 	ctrc_printd (RTPS_ID, RTPS_R_CREATE, &r, sizeof (r));
 	prof_start (rtps_r_create);
@@ -3044,10 +3301,11 @@ int rtps_reader_create (Reader_t              *r,
 	else
 		rp->endpoint.tfilter_rx = 0;
 #ifdef RTPS_TRACE
-	rp->endpoint.trace_frames = (dds_dtrace & DDS_RTRC_FTRACE) != 0;
-	rp->endpoint.trace_sigs   = (dds_dtrace & DDS_RTRC_STRACE) != 0;
-	rp->endpoint.trace_state  = (dds_dtrace & DDS_RTRC_ETRACE) != 0;
-	rp->endpoint.trace_tmr    = (dds_dtrace & DDS_RTRC_TTRACE) != 0;
+	dtrace = rtps_def_trace (r->r_handle, str_ptr (r->r_topic->name));
+	rp->endpoint.trace_frames = (dtrace & DDS_RTRC_FTRACE) != 0;
+	rp->endpoint.trace_sigs   = (dtrace & DDS_RTRC_STRACE) != 0;
+	rp->endpoint.trace_state  = (dtrace & DDS_RTRC_ETRACE) != 0;
+	rp->endpoint.trace_tmr    = (dtrace & DDS_RTRC_TTRACE) != 0;
 #ifdef RTPS_SEDP_TRACE
 	if (r->r_entity_id.id [3] == (ENTITY_KIND_BUILTIN | ENTITY_KIND_READER_KEY) &&
 	    r->r_entity_id.id [0] == 0 &&
@@ -3069,6 +3327,9 @@ int rtps_reader_create (Reader_t              *r,
 		rp->endpoint.trace_frames = rp->endpoint.trace_sigs =
 		rp->endpoint.trace_state  = rp->endpoint.trace_tmr  = 1;
 #endif
+#else
+	rp->endpoint.trace_frames = rp->endpoint.trace_sigs =
+	rp->endpoint.trace_state  = rp->endpoint.trace_tmr  = 0;
 #endif
 #ifdef RTPS_OPT_MCAST
 	rp->endpoint.mc_locators = NULL;
@@ -3134,7 +3395,7 @@ static void matched_writer_locators_set (RemWriter_t *rwp)
 	dp = dw->dw_participant->p_domain;
 	kinds = dp->kinds & dw->dw_participant->p_domain->kinds;
 #ifdef DDS_SECURITY
-	if (rwp->rw_secure && (kinds & LOCATOR_KINDS_UDP) != 0) {
+	if (rwp->rw_tunnel && (kinds & LOCATOR_KINDS_UDP) != 0) {
 		rwp->rw_mc_locs = NULL;
 		locators_add (&rwp->rw_uc_locs, dw->dw_participant->p_sec_locs, LOCATOR_KINDS_UDP);
 		kinds &= ~LOCATOR_KINDS_UDP;
@@ -3169,8 +3430,11 @@ static void matched_writer_locators_clear (RemWriter_t *rwp)
 static void matched_writer_locators_update (RemWriter_t *rwp)
 {
 	lrloc_print1 ("RTPS: matched_writer_locators_update (%p)\r\n", (void *) rwp);
+	CHECK_W_LOCATORS (rwp, "rtps_matched_writer_locators_update(begin)");
 	matched_writer_locators_clear (rwp);
 	matched_writer_locators_set (rwp);
+	CHECK_W_LOCATORS (rwp, "rtps_matched_writer_locators_update(end)");
+	rwp->rw_uc_dreply = NULL;
 }
 
 /* rtps_matched_writer_add -- Add a proxy writer to a stateful reader. */
@@ -3182,14 +3446,14 @@ int rtps_matched_writer_add (Reader_t *r, DiscoveredWriter_t *dw)
 	RWType_t	type;
 	char buffer[32];
 #ifdef DDS_SECURITY
-	int		secure;
+	int		tunnel;
 #endif
 
 	ctrc_printd (RTPS_ID, RTPS_R_PROXY_ADD, &r, sizeof (r));
 	prof_start (rtps_r_proxy_add);
 
-    if (rtps_log)
-        log_printf (RTPS_ID, 0, "RTPS: matched writer add (%s) to %s.\r\n",
+	if (rtps_log)
+        	log_printf (RTPS_ID, 0, "RTPS: matched writer add (%s) to %s.\r\n",
                         str_ptr (r->r_topic->name), guid_prefix_str(&dw->dw_participant->p_guid_prefix,buffer));
 
 	rp = (READER *) r->r_rtps;
@@ -3201,8 +3465,8 @@ int rtps_matched_writer_add (Reader_t *r, DiscoveredWriter_t *dw)
 		return (DDS_RETCODE_BAD_PARAMETER);
 
 #ifdef DDS_SECURITY
-	secure = rtps_secure_channel (r->r_subscriber->domain, dw->dw_participant);
-	if (secure < 0)
+	tunnel = rtps_secure_tunnel (r->r_subscriber->domain, dw->dw_participant);
+	if (tunnel < 0)
 		return (DDS_RETCODE_BAD_PARAMETER);
 #endif
 	LIST_FOREACH (rp->rem_writers, rwp)
@@ -3232,11 +3496,12 @@ int rtps_matched_writer_add (Reader_t *r, DiscoveredWriter_t *dw)
 	rwp->rw_mc_locs = rwp->rw_uc_locs = NULL;
 	rwp->rw_uc_dreply = NULL;*/
 #ifdef DDS_SECURITY
-	rwp->rw_secure = secure;
+	rwp->rw_tunnel = tunnel;
 #endif
 
-	/* Add all locators to the proxy in order to reach the endpoiny. */
+	/* Add all locators to the proxy in order to reach the endpoint. */
 	matched_writer_locators_set (rwp);
+	CHECK_W_LOCATORS (rwp, "rtps_matched_writer_add()");
 
 #ifdef RTPS_OPT_MCAST
 	if (rp->endpoint.mc_locators)
@@ -3278,8 +3543,8 @@ int rtps_matched_writer_remove (Reader_t *r, DiscoveredWriter_t *dw)
 	ctrc_printd (RTPS_ID, RTPS_R_PROXY_REMOVE, &r, sizeof (r));
 	prof_start (rtps_r_proxy_rem);
 
-    if (rtps_log)
-        log_printf (RTPS_ID, 0, "RTPS: matched writer remove (%s) to %s.\r\n",
+	if (rtps_log)
+        	log_printf (RTPS_ID, 0, "RTPS: matched writer remove (%s) to %s.\r\n",
                         str_ptr (r->r_topic->name), guid_prefix_str(&dw->dw_participant->p_guid_prefix,buffer));
 
 
@@ -3341,6 +3606,46 @@ int rtps_matched_writer_remove (Reader_t *r, DiscoveredWriter_t *dw)
 	}
 	prof_stop (rtps_r_proxy_rem, 1);
 	return (DDS_RETCODE_OK);
+}
+
+/* rtps_matched_writer_restart -- Restart a matched, i.e. proxy writer for a
+				  stateful reader. */
+
+int rtps_matched_writer_restart (Reader_t *r, DiscoveredWriter_t *dw)
+{
+#ifdef RTPS_PROXY_INST
+	READER		*rp;
+	RemWriter_t	*rwp;
+
+	rp = r->r_rtps;
+	if (!rp) {
+		/* Already deleted -- no need for warnings! */
+		/*log_printf (RTPS_ID, 0, "rtps_matched_writer_restart: reader(%u) doesn't exist!\r\n", w);*/
+		return (DDS_RETCODE_ALREADY_DELETED);
+	}
+	if (!rp->endpoint.stateful)	/* Not applicable in stateless mode. */
+		return (DDS_RETCODE_BAD_PARAMETER);
+
+	LIST_FOREACH (rp->rem_writers, rwp)
+		if ((DiscoveredWriter_t *) rwp->rw_endpoint == dw)
+			break;
+
+	if (LIST_END (rp->rem_writers, rwp)) {
+		log_printf (RTPS_ID, 0, "rtps_matched_writer_restart: destination doesn't exist!\r\n");
+		return (DDS_RETCODE_ALREADY_DELETED);
+	}
+	if (!rwp->rw_reliable) {
+		log_printf (RTPS_ID, 0, "rtps_matched_writer_restart: destination is not reliable!\r\n");
+     		return (DDS_RETCODE_UNSUPPORTED);
+	}
+	sfr_restart (rwp);
+	return (DDS_RETCODE_OK);
+#else
+	ARG_NOT_USED (r)
+	ARG_NOT_USED (dw)
+
+	return (DDS_RETCODE_UNSUPPORTED);
+#endif
 }
 
 /* rtps_reader_matches -- Return a non-0 result if the local Reader matches the
@@ -3465,6 +3770,67 @@ static void rtps_reader_flush (uintptr_t user, HCI hci)
 			if (crp->relevant && crp->u.c.hci == hci)
 				crp->u.c.hci = 0;
 }
+
+#ifdef DDS_DEBUG
+
+static int rtps_writer_assert (Writer_t *w)
+{
+	WRITER			*wp;
+	RemReader_t		*rrp, *xrrp;
+	DiscoveredReader_t	*dr;
+
+	wp = w->w_rtps;
+	if (!wp->endpoint.stateful)	/* Not applicable in stateless mode. */
+		return (DDS_RETCODE_OK);
+
+	/* Check for every discovered reader whether the RTPS proxy is valid. */
+	LIST_FOREACH (wp->rem_readers, rrp) {
+		dr = (DiscoveredReader_t *) rrp->rr_endpoint;
+		for (xrrp = dr->dr_rtps;
+		     xrrp && xrrp != rrp;
+		     xrrp = (RemReader_t *) xrrp->rr_next_guid)
+			;
+		if (!xrrp)
+			return (DDS_RETCODE_INCONSISTENT_POLICY);
+	}
+	return (DDS_RETCODE_OK);
+}
+
+static int rtps_reader_assert (Reader_t *r)
+{
+	READER			*rp;
+	RemWriter_t		*rwp, *xrwp;
+	DiscoveredWriter_t	*dw;
+
+	rp = r->r_rtps;
+
+	/* Check for every discovered reader whether the RTPS proxy is valid. */
+	LIST_FOREACH (rp->rem_writers, rwp) {
+		dw = (DiscoveredWriter_t *) rwp->rw_endpoint;
+		for (xrwp = dw->dw_rtps;
+		     xrwp && xrwp != rwp;
+		     xrwp = (RemWriter_t *) xrwp->rw_next_guid)
+			;
+		if (!xrwp)
+			return (DDS_RETCODE_INCONSISTENT_POLICY);
+	}
+	return (DDS_RETCODE_OK);
+}
+
+int rtps_endpoint_assert (LocalEndpoint_t *e)
+{
+	if (!e || !e->ep.rtps)
+		return (DDS_RETCODE_OK);
+
+	if (e->ep.entity.type == ET_WRITER)
+		return (rtps_writer_assert ((Writer_t *) e));
+	else if (e->ep.entity.type == ET_READER)
+		return (rtps_reader_assert ((Reader_t *) e));
+	else
+		return (DDS_RETCODE_BAD_PARAMETER);
+}
+
+#endif
 
 /* rtps_endpoint_add_locator -- Add a specific locator to an endpoint. */
 
@@ -3829,6 +4195,7 @@ void proxy_update_reply_locators (LocatorKind_t kinds, Proxy_t *pp, RECEIVER *rx
 	else
 		lrloc_print1 ("can't set reply locator from %s!\r\n", locator_str (&rxp->src_locator));
 #endif
+	lrloc_print ("\r\n");
 }
 
 /* proxy_reset_reply_locators -- Reset the locator lists to default values. */
@@ -4002,6 +4369,105 @@ static void rtps_config_duration (Config_t par, Duration_t *dur)
 	}
 }
 
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+
+/* rtps_peer_reader_crypto_set -- Set a peer reader crypto handle. */
+
+void rtps_peer_reader_crypto_set (Writer_t *w, DiscoveredReader_t *dr, unsigned h)
+{
+	WRITER		*wp;
+	RemReader_t	*rrp;
+
+	if (!dr->dr_rtps)
+		return;
+
+	wp = w->w_rtps;
+	if (!wp)
+		return;
+
+	for (rrp = (RemReader_t *) dr->dr_rtps;
+	     rrp;
+	     rrp = (RemReader_t *) rrp->rr_next_guid)
+		if (rrp->rr_writer == wp) {
+			rrp->rr_crypto = h;
+			break;
+		}
+}
+
+/* rtps_peer_writer_crypto_set -- Set a peer writer crypto handle. */
+
+void rtps_peer_writer_crypto_set (Reader_t *r, DiscoveredWriter_t *dw, unsigned h)
+{
+	READER		*rp;
+	RemWriter_t	*rwp;
+
+	if (!dw->dw_rtps)
+		return;
+
+	rp = r->r_rtps;
+	if (!rp)
+		return;
+
+	for (rwp = (RemWriter_t *) dw->dw_rtps;
+	     rwp;
+	     rwp = (RemWriter_t *) rwp->rw_next_guid)
+		if (rwp->rw_reader == rp) {
+			rwp->rw_crypto = h;
+			break;
+		}
+}
+
+/* rtps_peer_reader_crypto_get -- Get a peer reader crypto handle. */
+
+unsigned rtps_peer_reader_crypto_get (Writer_t *w, DiscoveredReader_t *dr)
+{
+	WRITER		*wp;
+	RemReader_t	*rrp;
+
+	if (!dr->dr_rtps)
+		return (0);
+
+	rrp = (RemReader_t *) dr->dr_rtps;
+	if (!w)
+		return (rrp->rr_crypto);
+
+	wp = w->w_rtps;
+	if (!wp)
+		return (0);
+
+	for (; rrp; rrp = (RemReader_t *) rrp->rr_next_guid)
+		if (rrp->rr_writer == wp)
+			return (rrp->rr_crypto);
+
+	return (0);
+}
+
+/* rtps_peer_writer_crypto_get -- Get a peer writer crypto handle. */
+
+unsigned rtps_peer_writer_crypto_get (Reader_t *r, DiscoveredWriter_t *dw)
+{
+	READER		*rp;
+	RemWriter_t	*rwp;
+
+	if (!dw->dw_rtps)
+		return (0);
+
+	rwp = (RemWriter_t *) dw->dw_rtps;
+	if (!r)
+		return (rwp->rw_crypto);
+
+	rp = r->r_rtps;
+	if (!rp)
+		return (0);
+
+	for (; rwp; rwp = (RemWriter_t *) rwp->rw_next_guid)
+		if (rwp->rw_reader == rp)
+			return (rwp->rw_crypto);
+
+	return (0);
+}
+
+#endif
 
 /* rtps_init -- Initialize the RTPS layer with the given configuration
 		parameters. */
@@ -4010,6 +4476,9 @@ int rtps_init (const RTPS_CONFIG *cp)
 {
 #ifdef CTRACE_USED
 	log_fct_str [RTPS_ID] = rtps_fct_str;
+#endif
+#if defined (RTPS_TRACE) && defined (RTPS_TRACE_BIVS)
+	rtps_name_trace_set ("BuiltinParticipantVolatileMessageSecure*", 15);
 #endif
 	/* Set logging. */
 	rtps_log = log_logged (RTPS_ID, 0);
@@ -4068,6 +4537,9 @@ int rtps_init (const RTPS_CONFIG *cp)
 	PROF_INIT ("R:RxInfRep", rtps_rx_inf_rep);
 	PROF_INIT ("R:RxInfDst", rtps_rx_inf_dst);
 	PROF_INIT ("R:RxInfSrc", rtps_rx_inf_src);
+	PROF_INIT ("R:RxDataFr", rtps_rx_data_frag);
+	PROF_INIT ("R:RxNackFr", rtps_rx_nack_frag);
+	PROF_INIT ("R:RxHBFr", rtps_rx_hbeat_frag);
 	PROF_INIT ("R:TxData", rtps_tx_data);
 	PROF_INIT ("R:TxGap", rtps_tx_gap);
 	PROF_INIT ("R:TxHBeat", rtps_tx_hbeat);
@@ -4109,7 +4581,7 @@ int rtps_init (const RTPS_CONFIG *cp)
 
 #ifdef DDS_DEBUG
 	/* TODO: Remove this and all related code once dtls/tls are fully working */
-	rtps_no_security = config_get_number(DC_NoSecurity, 0);
+	rtps_no_security = config_get_number (DC_NoSecurity, 0);
 #endif
 
 	if (config_defined (DC_RTPS_Mode))
@@ -4156,9 +4628,6 @@ int rtps_init (const RTPS_CONFIG *cp)
 	}
 	if (config_defined (DC_RTPS_FragDelay))
 		rtps_frag_delay = config_get_number (DC_RTPS_FragBurst, 0);
-#endif
-#ifdef RTPS_TRACE
-	rtps_dtrace = config_get_number (DC_RTPS_DefTrace, DEF_RTPS_TRACE);
 #endif
 	return (DDS_RETCODE_OK);
 }

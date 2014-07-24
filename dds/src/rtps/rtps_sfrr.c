@@ -21,6 +21,9 @@
 #include "set.h"
 #include "list.h"
 #include "dcps.h"
+#ifdef DDS_NATIVE_SECURITY
+#include "sec_crypto.h"
+#endif
 #include "rtps_cfg.h"
 #include "rtps_data.h"
 #include "rtps_msg.h"
@@ -33,6 +36,9 @@
 #endif
 #include "rtps_sfrr.h"
 
+#ifdef RTPS_PROXY_INST
+static unsigned rtps_rw_insts;	/* Counts Remote Writer proxy instances. */
+#endif
 #ifdef RTPS_INIT_ACKNACK
 
 /* sfr_rel_alive -- Peer became alive. */
@@ -121,6 +127,9 @@ static void sfr_rel_start (RemWriter_t *rwp)
 	rwp->rw_hb_no_data = 0;
 	rwp->rw_hbrsp_timer = NULL;
 
+#ifdef RTPS_PROXY_INST
+	rwp->rw_loc_inst = ++rtps_rw_insts;
+#endif
 #ifdef RTPS_INIT_ACKNACK
 
 	/* Send an initial ACKNACK to bootstrap the protocol in case the writer
@@ -268,6 +277,10 @@ static void sfr_fragment (RemWriter_t     *rwp,
 	InstanceHandle		h;
 	RejectCause_t		cause;
 	DBW			walk;
+	size_t			ofs = 0;
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	DB			*dbp;
+#endif
 
 	/* If this is the first fragment, create the fragments context. */
 	fip = refp->fragments;
@@ -368,12 +381,33 @@ static void sfr_fragment (RemWriter_t     *rwp,
 			goto no_keys;
 	}
 
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+
+	/* Decrypt payload data if an encrypted payload is present. */
+	if (rwp->rw_crypto &&
+	    fip->length) {
+		walk.dbp = fip->data;
+		walk.data = fip->data->data;
+		walk.length = walk.left = fip->length;
+		dbp = sec_decode_serialized_data (&walk,
+						  0,
+						  rwp->rw_crypto,
+						  &fip->length,
+						  &ofs,
+						  (DDS_ReturnCode_t *) &error);
+		if (!dbp)
+			goto cleanup;
+
+		fip->data = dbp;
+	}
+#endif
+
 	/* Key somewhere in either marshalled data or marshalled key.
 	   Derive key information if not yet done. */
 	if (!fip->key) {
 		if (fip->length) {
 			walk.dbp = fip->data;
-			walk.data = fip->data->data;
+			walk.data = fip->data->data + ofs;
 			walk.left = walk.length = fip->length;
 		}
 		all_key = cp->c_kind != ALIVE;
@@ -385,7 +419,10 @@ static void sfr_fragment (RemWriter_t     *rwp,
 				goto cleanup;
 		}
 		fip->keylen = size;
-		if (ts->ts_mkeysize && ts->ts_fksize && size <= sizeof (KeyHash_t)) {
+		if (ts->ts_mkeysize &&
+		    ts->ts_fksize &&
+		    size <= sizeof (KeyHash_t) &&
+		    !ENC_DATA (&rp->r_lep)) {
 			if (fip->hp) {
 				fip->key = fip->hash.hash;
 				goto got_keys;
@@ -399,7 +436,8 @@ static void sfr_fragment (RemWriter_t     *rwp,
 			if (!fip->key)
 				goto ignore_last_fragment;
 		}
-		error = DDS_KeyFromMarshalled (fip->key, walk, ts, all_key);
+		error = DDS_KeyFromMarshalled (fip->key, walk, ts, all_key,
+							ENC_DATA (&rp->r_lep));
 		if (error) {
 			if (fip->key != fip->hash.hash)
 				xfree (fip->key);
@@ -408,7 +446,8 @@ static void sfr_fragment (RemWriter_t     *rwp,
 			goto cleanup;
 		}
 		if (!fip->hp) {
-			error = DDS_HashFromKey (fip->hash.hash, fip->key, size, ts);
+			error = DDS_HashFromKey (fip->hash.hash, fip->key, size,
+						    ENC_DATA (&rp->r_lep), ts);
 			if (error) {
 				if (fip->key != fip->hash.hash)
 					xfree (fip->key);
@@ -439,7 +478,7 @@ static void sfr_fragment (RemWriter_t     *rwp,
 		goto ignore_last_fragment;
 	}
 	refp->u.c.hci = hci;
-       refp->u.c.change->c_handle = h;
+	refp->u.c.change->c_handle = h;
 	hc_inst_inform (rp->r_cache, hci);
 
     no_keys:
@@ -449,7 +488,7 @@ static void sfr_fragment (RemWriter_t     *rwp,
 	if (refp->relevant) {
 		xcp = refp->u.c.change;
 		xcp->c_db = fip->data;
-		xcp->c_data = fip->data->data;
+		xcp->c_data = fip->data->data + ofs;
 		xcp->c_length = fip->length;
 		rcl_access (xcp);
 		xcp->c_db->nrefs++;
@@ -1064,7 +1103,6 @@ static void sfr_rel_gap (RemWriter_t *rwp, GapSMsg *gp)
 		sfr_rel_gap_range (rwp, &gp->gap_start, &snr_last);
 	}
 
-
 	/* Set all sequence numbers in gap_list to IRRELEVANT. */
 	n = 0;
 	for (snr = gp->gap_list.base, i = 0; i < gp->gap_list.numbits; i++) {
@@ -1193,6 +1231,57 @@ static void sfr_rel_do_ack (uintptr_t user)
 	prof_stop (rtps_rr_do_ack, 1);
 }
 
+#ifdef RTPS_PROXY_INST
+
+/* sfr_rel_reset -- Reset a reliable writer proxy due to the writer being
+		    restarted. */
+
+static void sfr_rel_reset (RemWriter_t *rwp)
+{
+#ifdef RTPS_INIT_ACKNACK
+	Reader_t	 *r = (Reader_t *) (rwp->rw_reader->endpoint.endpoint);
+#endif
+
+	/* Cleanup resources. */
+	if (LIST_NONEMPTY (rwp->rw_changes))
+		ccref_list_delete (&rwp->rw_changes);
+	
+	NEW_RW_CSTATE (rwp, RWCS_INITIAL, 1);
+	LIST_INIT (rwp->rw_changes);
+	rwp->rw_changes.nchanges = 0;
+	NEW_RW_CSTATE (rwp, RWCS_READY, 0);
+	NEW_RW_ASTATE (rwp, RWAS_WAITING, 0);
+	rwp->rw_hb_no_data = 0;
+	memset (&rwp->rw_seqnr_next, 0, sizeof (SequenceNumber_t));
+
+#ifdef RTPS_INIT_ACKNACK
+	rwp->rw_peer_alive = 0;
+	sfr_rel_init_acknack (rwp);
+	if (!rwp->rw_hbrsp_timer) {
+		RALIVE_TMR_ALLOC (rwp);
+		rwp->rw_hbrsp_timer = tmr_alloc ();
+		if (rwp->rw_hbrsp_timer)
+			tmr_init (rwp->rw_hbrsp_timer, "RTPS-RAlive");
+	}
+	if (rwp->rw_hbrsp_timer)
+		RALIVE_TMR_START (rwp, rwp->rw_hbrsp_timer, RALIVE_TO,
+				 (uintptr_t) rwp, sfr_rel_alive_to, &r->r_lock);
+#else
+	if (rwp->rw_hbrsp_timer)
+		HBRSP_TMR_STOP (rwp, rwp->rw_hbrsp_timer);
+#endif
+}
+
+/* sfr_restart -- Restart a stateful reliable remote writer proxy . */
+
+void sfr_restart (RemWriter_t *rwp)
+{
+	rwp->rw_loc_inst = ++rtps_rw_insts;
+	sfr_rel_reset (rwp);
+}
+
+#endif
+
 /* sfr_rel_heartbeat -- A HEARTBEAT submessage was received.  Process its
 			contents. */
 
@@ -1202,7 +1291,7 @@ static void sfr_rel_heartbeat (RemWriter_t   *rwp,
 {
 	CCREF		*rp, *gap_rp;
 	SequenceNumber_t snr, seqnr_first, seqnr_last;
-	unsigned	nlost;
+	unsigned	nlost = 0;
 	int		send_ack = 0;
 	int		wakeup = 0;
 	Reader_t	*r = (Reader_t *) (rwp->rw_reader->endpoint.endpoint);
@@ -1217,6 +1306,17 @@ static void sfr_rel_heartbeat (RemWriter_t   *rwp,
 	if (rwp->rw_reader->endpoint.mark_hb)
 		rtps_marker_notify (rwp->rw_reader->endpoint.endpoint, EM_HEARTBEAT, "sfr_rel_heartbeat");
 #endif
+#ifdef RTPS_PROXY_INST_TX
+	if (hp->instance_id) {
+		if (rwp->rw_rem_inst && rwp->rw_rem_inst != hp->instance_id) {
+
+			/* Remote writer has restarted! Reset the proxy. */			
+			RW_SIGNAL (rwp, "REL-Peer-restart!");
+			sfr_rel_reset (rwp);
+		}
+		rwp->rw_rem_inst = hp->instance_id;
+	}
+#endif
 #ifdef RTPS_INIT_ACKNACK
 
 	/* If first Heartbeat: accept it and become alive. */
@@ -1225,8 +1325,11 @@ static void sfr_rel_heartbeat (RemWriter_t   *rwp,
 		wakeup = 1;
 	}
 #endif
-	if ((flags & SMF_LIVELINESS) != 0)
+	if ((flags & SMF_LIVELINESS) != 0) {
 		hc_alive (rwp->rw_reader->endpoint.endpoint->cache);
+		if ((flags & SMF_FINAL) != 0)
+			return;
+	}
 
 	/* Ignore duplicate heartbeats. */
 	if (hp->count == rwp->rw_last_hb)
@@ -1282,12 +1385,13 @@ static void sfr_rel_heartbeat (RemWriter_t   *rwp,
 	rwp->rw_heartbeats = 1;
 	if (LIST_NONEMPTY (rwp->rw_changes)) {
 		rp = rwp->rw_changes.head;
-		if (rp->relevant)
-			snr = rp->u.c.change->c_seqnr;
-		else
-			snr = rp->u.range.first;
-		seqnr_first = snr;
-		nlost = 0;
+                if (rp) {
+		        if (rp->relevant)
+			        snr = rp->u.c.change->c_seqnr;
+		        else
+			        snr = rp->u.range.first;
+		        seqnr_first = snr;
+                }
 		while (rp && SEQNR_LT (snr, hp->first_sn)) {
 			if (rp->relevant) {
 				if (rp->state != CS_RECEIVED
@@ -1530,7 +1634,7 @@ static void sfr_rel_hbfrag (RemWriter_t *rwp, HeartbeatFragSMsg *hp)
 #endif
 
 
-/* sfr_rel_finish -- Stop a Reliable statefull Reader's writer proxy.
+/* sfr_rel_finish -- Stop a Reliable stateful Reader's writer proxy.
 
    Locks: On entry, the reader associated with the remote writer, its
           domain, subscriber and topic should be locked. */
@@ -1547,9 +1651,6 @@ static void sfr_rel_finish (RemWriter_t *rwp)
 		rtps_marker_notify (rwp->rw_reader->endpoint.endpoint, EM_FINISH, "sfr_rel_finish");
 #endif
 
-	/* Wait until proxy has done sending data. */
-	proxy_wait_inactive (&rwp->proxy);
-
 	/* Cleanup Heartbeat Response timer if it is still active. */
 	if (rwp->rw_hbrsp_timer) {
 		HBRSP_TMR_STOP (rwp, rwp->rw_hbrsp_timer);
@@ -1557,7 +1658,10 @@ static void sfr_rel_finish (RemWriter_t *rwp)
 		tmr_free (rwp->rw_hbrsp_timer);
 		rwp->rw_hbrsp_timer = NULL;
 	}
-	
+
+	/* Wait until proxy has done sending data. */
+	proxy_wait_inactive (&rwp->proxy);
+
 	/* Cleanup resources -- closing down! */
 	if (LIST_NONEMPTY (rwp->rw_changes))
 		ccref_list_delete (&rwp->rw_changes);

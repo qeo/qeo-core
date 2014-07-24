@@ -26,5 +26,9 @@ void sfr_process_samples (RemWriter_t *rwp);
    to the history cache (CS_RECEIVED and relevant != 0) or forget about the
    sample. */
 
+void sfr_restart (RemWriter_t *rwp);
+
+/* Restart a stateful reliable remote writer proxy . */
+
 #endif /* __rtps_sfrr_h_ */
 

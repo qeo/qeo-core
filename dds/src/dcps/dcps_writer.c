@@ -27,6 +27,7 @@
 #include "prof.h"
 #include "error.h"
 #include "str.h"
+#include "dds/dds_security.h"
 #include "dds/dds_dcps.h"
 #include "dds_data.h"
 #include "domain.h"
@@ -235,7 +236,8 @@ DDS_InstanceHandle_t dcps_register_instance (DDS_DataWriter   wp,
 		warn_printf ("DDS_DataWriter_register_instance: invalid DataWriter!");
 		return (DDS_HANDLE_NIL);
 	}
-	keys = dcps_key_data_get (wp->w_topic, instance_data, dynamic, buf, &size, &ret);
+	keys = dcps_key_data_get (wp->w_topic, instance_data, dynamic, 
+					ENC_DATA (&wp->w_lep), buf, &size, &ret);
 	if (!keys) {
 		warn_printf ("DDS_DataWriter_register_instance: invalid parameters!");
 		handle = DDS_HANDLE_NIL;
@@ -328,7 +330,8 @@ DDS_ReturnCode_t dcps_unregister_instance (DDS_DataWriter             wp,
 		goto done;
 	}
 	if (instance_data && handle == DDS_HANDLE_NIL) {
-		hci = handle_get (wp->w_topic, wp->w_cache, instance_data, dynamic, &h, &ret);
+		hci = handle_get (wp->w_topic, wp->w_cache, instance_data, 
+				dynamic, ENC_DATA (&wp->w_lep), &h, &ret);
 		if (!hci)
 			goto done;
 	}
@@ -458,7 +461,8 @@ DDS_InstanceHandle_t DDS_DataWriter_lookup_instance (DDS_DataWriter wp,
 	if (!writer_ptr (wp, 1, &ret))
 		return (DDS_HANDLE_NIL);
 
-	handle_get (wp->w_topic, &wp->w_cache, key_data, 0, &h, &ret);
+	handle_get (wp->w_topic, wp->w_cache, key_data, 0, 
+					ENC_DATA (&wp->w_lep), &h, &ret);
 	lock_release (wp->w_lock);
 	prof_stop (dcps_w_lookup, 1);
 	return ((DDS_InstanceHandle_t) h);
@@ -499,7 +503,8 @@ DDS_ReturnCode_t dcps_write (DDS_DataWriter             wp,
 		}
 	}
 	if (!wp->w_pm_status.current_count &&
-	    wp->w_qos->qos.durability_kind == DDS_VOLATILE_DURABILITY_QOS) {
+	    wp->w_qos->qos.durability_kind == DDS_VOLATILE_DURABILITY_QOS &&
+	    (wp->w_flags & EF_BUILTIN) == 0) {
 		ret = DDS_RETCODE_OK;
 		goto done;
 	}
@@ -507,7 +512,7 @@ DDS_ReturnCode_t dcps_write (DDS_DataWriter             wp,
 	h = handle;
 	ts = wp->w_topic->type->type_support;
 	if (!handle && ts->ts_keys) {
-		keys = dcps_key_data_get (wp->w_topic, instance_data, dynamic, buf, &size, &ret);
+		keys = dcps_key_data_get (wp->w_topic, instance_data, dynamic, ENC_DATA (&wp->w_lep), buf, &size, &ret);
 		if (!keys) {
 			warn_printf ("DDS_DataWriter_write: invalid parameters!");
 			goto done;
@@ -544,7 +549,7 @@ DDS_ReturnCode_t dcps_write (DDS_DataWriter             wp,
 		xd_dump (1, instance_data);
 	}
 #endif
-	if (ts->ts_dynamic) {
+	if (ts->ts_dynamic || ts->ts_length > 512) {
 		ofs = 0;
 		tlen = DDS_MarshalledDataSize (instance_data, dynamic, ts, &ret);
 		if (ret) {
@@ -587,7 +592,7 @@ DDS_ReturnCode_t dcps_write (DDS_DataWriter             wp,
 	}
 	cp->c_db = dbp;
 	dp = dbp->data;
-	if (ts->ts_dynamic) {
+	if (ts->ts_dynamic || ts->ts_length > 512) {
 
 		/* Add marshalled data to DB chain, prefixed with marshalling type. */
 		ret = DDS_MarshallData (dp, instance_data, dynamic, ts);
@@ -754,7 +759,8 @@ DDS_ReturnCode_t dcps_dispose (DDS_DataWriter             wp,
 		goto done;
 	}
 	if (instance_data && handle == DDS_HANDLE_NIL) {
-		hci = handle_get (wp->w_topic, wp->w_cache, instance_data, dynamic, &h, &ret);
+		hci = handle_get (wp->w_topic, wp->w_cache, instance_data, 
+				      dynamic, ENC_DATA (&wp->w_lep), &h, &ret);
 		if (!hci)
 			goto done;
 	}

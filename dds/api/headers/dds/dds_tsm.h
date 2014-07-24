@@ -32,31 +32,32 @@ extern "C" {
 /** Supported CDR types. */
 typedef enum {
 	CDR_TYPECODE_UNKNOWN = 0,
-	CDR_TYPECODE_SHORT,
-	CDR_TYPECODE_USHORT,
-	CDR_TYPECODE_LONG,
-	CDR_TYPECODE_ULONG,
-	CDR_TYPECODE_LONGLONG,
-	CDR_TYPECODE_ULONGLONG,
-	CDR_TYPECODE_FLOAT,
-	CDR_TYPECODE_DOUBLE,
+	CDR_TYPECODE_SHORT,	/* A 16-bit signed integer number. */
+	CDR_TYPECODE_USHORT,	/* A 16-bit unsigned integer number. */
+	CDR_TYPECODE_LONG,	/* A 32-bit signed integer number. */
+	CDR_TYPECODE_ULONG,	/* A 32-bit unsigned integer number. */
+	CDR_TYPECODE_LONGLONG,	/* A 64-bit signed integer number. */
+	CDR_TYPECODE_ULONGLONG,	/* A 64-bit unsigned integer number. */
+	CDR_TYPECODE_FLOAT,	/* A single precision (32-bit) float. */
+	CDR_TYPECODE_DOUBLE,	/* A double precision (64-bit) float. */
 #ifdef LONGDOUBLE
-	CDR_TYPECODE_LONGDOUBLE,
+	CDR_TYPECODE_LONGDOUBLE,/* A Long double (128-bit) float. */
 #endif
-	CDR_TYPECODE_FIXED,
-	CDR_TYPECODE_BOOLEAN,
-	CDR_TYPECODE_CHAR,
-	CDR_TYPECODE_WCHAR,
-	CDR_TYPECODE_OCTET,
-	CDR_TYPECODE_CSTRING,
-	CDR_TYPECODE_WSTRING,
-	CDR_TYPECODE_STRUCT,
-	CDR_TYPECODE_UNION,
-	CDR_TYPECODE_ENUM,
-	CDR_TYPECODE_SEQUENCE,
-	CDR_TYPECODE_ARRAY,
+	CDR_TYPECODE_FIXED,	/* A fixed point type (not currently used). */
+	CDR_TYPECODE_BOOLEAN,	/* A boolean value (0 or 1). */
+	CDR_TYPECODE_CHAR,	/* A normal character. */
+	CDR_TYPECODE_WCHAR,	/* A Wide character. */
+	CDR_TYPECODE_OCTET,	/* A byte/octet. */
+	CDR_TYPECODE_CSTRING,	/* A Character String. */
+	CDR_TYPECODE_WSTRING,	/* A Wide Character String. */
+	CDR_TYPECODE_STRUCT,	/* A Structure type. */
+	CDR_TYPECODE_UNION,	/* A Union type. */
+	CDR_TYPECODE_ENUM,	/* An Enumeration type. */
+	CDR_TYPECODE_SEQUENCE,	/* A sequence of elements. */
+	CDR_TYPECODE_ARRAY,	/* An 1-dimensional array of elements. */
 
-	CDR_TYPECODE_TYPEREF,
+	CDR_TYPECODE_TYPEREF,	/* Nests another type inline. */
+	CDR_TYPECODE_TYPE,	/* Refer to an existing type. */
 
 	CDR_TYPECODE_MAX
 } CDR_TypeCode_t;
@@ -104,6 +105,13 @@ DDS_EXPORT DDS_TypeSupport DDS_DynamicType_register (
 /* Free the resources associated with a type. */
 DDS_EXPORT void DDS_DynamicType_free (
 	DDS_TypeSupport ts
+);
+
+/* Set a type reference to an actual type in the given meta type. */
+DDS_EXPORT void DDS_DynamicType_set_type (
+	DDS_TypeSupport_meta *tc,
+	unsigned offset,
+	DDS_TypeSupport type
 );
 
 /* Free the memory used up by a sample, using the type support metadata. Only

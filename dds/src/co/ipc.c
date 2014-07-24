@@ -44,7 +44,7 @@ union semun {
 /* sem_get -- Try to get either an existing semaphore or create a new one. */
 
 intptr_t sem_get (unsigned name,	/* Id of semaphore (system-wide). */
-	          unsigned val,	/* Initial value (# of users). */
+	          unsigned val,		/* Initial value (# of users). */
 	          unsigned perms,	/* System permissions. */
 	          unsigned flags)	/* Various flags - see above. */
 {
@@ -86,14 +86,14 @@ intptr_t sem_get (unsigned name,	/* Id of semaphore (system-wide). */
 	/* Doesn't exist yet -- create new one. */
 	sem_id = semget ((key_t) name, 1, s_flags | IPC_CREAT);
 	if (sem_id < 0) {
-		log_printf (LOG_DEF_ID, 0, "sem_get: failed to create!\n");
+		log_printf (LOG_DEF_ID, 0, "sem_get: failed to create!\r\n");
 		return (sem_id);	/* Error creating? */
 	}
 
 	/* Successfully created -- now initialize it. */
 	sem_union.val = val;
 	if (semctl (sem_id, 0, SETVAL, sem_union) < 0) { /* Can't init: abort! */
-		log_printf (LOG_DEF_ID, 0, "sem_get: failed to initialize!\n");
+		log_printf (LOG_DEF_ID, 0, "sem_get: failed to initialize!\r\n");
 		sem_free (sem_id);
 		sem_id = -1;
 	}
@@ -128,7 +128,7 @@ void sem_p (intptr_t sem)
 	b.sem_op = -1;
 	b.sem_flg = SEM_UNDO;
 	if (semop (sem, &b, 1) < 0)
-		log_printf (LOG_DEF_ID, 0, "sem_p: failed!\n");
+		log_printf (LOG_DEF_ID, 0, "sem_p: failed!\r\n");
 #endif
 }
 
@@ -145,7 +145,7 @@ void sem_v (intptr_t sem)
 	b.sem_op = 1;
 	b.sem_flg = SEM_UNDO;
 	if (semop (sem, &b, 1) < 0)
-		log_printf (LOG_DEF_ID, 0, "sem_v: failed!\n");
+		log_printf (LOG_DEF_ID, 0, "sem_v: failed!\r\n");
 #endif
 }
 
@@ -203,7 +203,7 @@ static SHM_REF *shm_lookup (void *p)
 		if (rp->ptr == p)
 			return (rp);
 
-	log_printf (LOG_DEF_ID, 0, "shm_lookup: pointer not in table!\n");
+	log_printf (LOG_DEF_ID, 0, "shm_lookup: pointer not in table!\r\n");
 
 	return (NULL);
 }
@@ -257,7 +257,7 @@ void *shm_get (unsigned name,	/* Id of memory region. */
 			/* Doesn't exist yet -- create new one. */
 			shm_id = shmget ((key_t) name, size, s_flags | IPC_CREAT);
 			if (shm_id < 0) {
-				log_printf (LOG_DEF_ID, 0, "shm_get: failed to create!\n");
+				log_printf (LOG_DEF_ID, 0, "shm_get: failed to create!\r\n");
 				return (NULL);	/* Error creating? */
 			}
 		}
@@ -283,7 +283,7 @@ void shm_free (void *p)
 	SHM_REF	*rp;
 
 	if ((rp = shm_lookup (p)) == NULL) {
-		log_printf (LOG_DEF_ID, 0, "shm_free: no such shared memory!\n");
+		log_printf (LOG_DEF_ID, 0, "shm_free: no such shared memory!\r\n");
 		return;
 	}
 #ifdef _WIN32
@@ -291,11 +291,11 @@ void shm_free (void *p)
 	CloseHandle ((HANDLE) rp->id);
 #else
 	if (shmdt (p) < 0) {
-		log_printf (LOG_DEF_ID, 0, "shm_free: shmdt(%p) returned error!\n", p);
+		log_printf (LOG_DEF_ID, 0, "shm_free: shmdt(%p) returned error!\r\n", p);
 		return;
 	}
 	if (shmctl (rp->id, IPC_RMID, 0) == -1)
-		log_printf (LOG_DEF_ID, 0, "shm_free: can't delete shared memory region!\n");
+		log_printf (LOG_DEF_ID, 0, "shm_free: can't delete shared memory region!\r\n");
 #endif
 	shm_currefs--;
 	rp->id = -1;
@@ -307,7 +307,7 @@ void shm_detach (void *p)
 	SHM_REF	*rp;
 
 	if ((rp = shm_lookup (p)) == NULL) {
-		log_printf (LOG_DEF_ID, 0, "shm_free: no such shared memory!\n");
+		log_printf (LOG_DEF_ID, 0, "shm_free: no such shared memory!\r\n");
 		return;
 	}
 #ifdef _WIN32
@@ -315,7 +315,7 @@ void shm_detach (void *p)
 	CloseHandle ((HANDLE) rp->id);
 #else
 	if (shmdt (p) < 0)
-		log_printf (LOG_DEF_ID, 0, "shm_free: shmdt(%p) returned error!\n", p);
+		log_printf (LOG_DEF_ID, 0, "shm_free: shmdt(%p) returned error!\r\n", p);
 #endif
 }
 

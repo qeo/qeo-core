@@ -319,6 +319,11 @@ static EVP_PKEY *load_private_key_locked(qeo_security_hndl qeoSec)
     char    buf[MAX_KEY_ID_LEN];
     size_t  len = sizeof(buf);
 
+    if (_engine == NULL) {
+        qeo_log_e("engine not initialized");
+        return NULL;
+    }
+
     return ENGINE_load_private_key(_engine, realm_to_string_locked(&qeoSec->cfg.id, buf, &len), NULL, NULL);
 }
 
@@ -327,6 +332,11 @@ static STACK_OF(X509) * load_certificate_chain_locked(qeo_security_hndl qeoSec)
     char                              buf[MAX_KEY_ID_LEN];
     size_t                            len     = sizeof(buf);
     qeo_openssl_engine_cmd_load_cert_chain_t params  = {0};
+    
+    if (_engine == NULL) {
+        qeo_log_e("engine not initialized");
+        return NULL;
+    }
 
     params.friendlyName = realm_to_string_locked(&qeoSec->cfg.id, buf, &len);
     if (ENGINE_ctrl(_engine, QEO_OPENSSL_ENGINE_CMD_LOAD_CERT_CHAIN, 0, (void *)&params, NULL) == 0) {
@@ -441,6 +451,7 @@ qeo_retcode_t get_realms_locked(qeo_security_identity **sec_id, unsigned int *le
 
     do {
         if (_initialized == false) {
+            qeo_log_e("Error: not initialized");
             ret = QEO_EBADSTATE;
             break;
         }
@@ -453,9 +464,16 @@ qeo_retcode_t get_realms_locked(qeo_security_identity **sec_id, unsigned int *le
 
         *length = get_friendly_names.number_of_friendly_names;
         if (*length != 0){
+            if (*length != 1) {
+                qeo_log_e("currently only 1 certificate is supported");
+                ret = QEO_EBADSTATE;
+                break;
+            }
+
             *sec_id = (qeo_security_identity *)malloc(sizeof(**sec_id) * *length);
             if (*sec_id == NULL) {
                 *length = 0;
+                qeo_log_e("out of memory");
                 ret = QEO_ENOMEM;
                 break;
             }
@@ -985,10 +1003,12 @@ static bool wait_for_registration_method(qeo_security_hndl qeoSec, EVP_PKEY **pk
     qeoutilret = qeo_platform_security_registration_credentials_needed((qeo_platform_security_context_t)qeoSec, 
             set_registration_credentials,
             retrieving_registration_credentials_user_cancel);
+    qeosec_lock(qeoSec);
 
     if (pthread_join(key_gen_thread, (void **)(void *)pkey) != 0){
         qeo_log_e("Could not join keygenthread");
         *reason = QEO_PLATFORM_SECURITY_AUTHENTICATION_FAILURE_REASON_INTERNAL_ERROR;
+        qeosec_unlock(qeoSec);
         return retval;
     }
     //pass keypair to remote registration anyway so it can still use it (eg android)
@@ -997,17 +1017,18 @@ static bool wait_for_registration_method(qeo_security_hndl qeoSec, EVP_PKEY **pk
     if (qeoutilret != QEO_UTIL_OK) {
         qeo_log_e("Not able to request registration method/credentials.");
         *reason = QEO_PLATFORM_SECURITY_AUTHENTICATION_FAILURE_REASON_PLATFORM_FAILURE;
+        qeosec_unlock(qeoSec);
         return retval;
     }
 
     if (*pkey == NULL) {
         qeo_log_e("Could not construct keypair");
         *reason = QEO_PLATFORM_SECURITY_AUTHENTICATION_FAILURE_REASON_INTERNAL_ERROR;
+        qeosec_unlock(qeoSec);
         return retval;
     }
-    update_authentication_state(qeoSec, QEO_SECURITY_RETRIEVING_REGISTRATION_CREDENTIALS_KEY_GENERATED);
+    update_authentication_state_locked(qeoSec, QEO_SECURITY_RETRIEVING_REGISTRATION_CREDENTIALS_KEY_GENERATED);
 
-    qeosec_lock(qeoSec);
     do {
         while (qeoSec->stop_reason == QEO_SECURITY_STOP_REASON_NONE && qeoSec->reg_method == QEO_PLATFORM_SECURITY_REGISTRATION_METHOD_NONE) {
             qeo_log_d("Waiting until we get registration method...");
@@ -1402,16 +1423,24 @@ static bool authenticate(qeo_security_hndl qeoSec)
 
     qeosec_lock(qeoSec);
     if (has_identity_locked(qeoSec) == false){
-        /* let's see if there is an identity we can use */
-    
-        if ((ret = get_realms_locked(&identities, &number_of_identities)) != QEO_OK) {
+        /* let's see if there is an identity we can use */ 
+        if ((ret = get_realms_locked(&identities, &number_of_identities)) == QEO_OK) {
+            if (number_of_identities > 0) {
+                memcpy(&qeoSec->cfg.id, &identities[0], sizeof(qeoSec->cfg.id));
+            }
+            qeo_security_free_realms(&identities, number_of_identities);
+        }
+        else {
             qeo_log_e("Get QEO identities failed");
+
+            qeosec_unlock(qeoSec);
+            update_authentication_state(qeoSec, QEO_SECURITY_AUTHENTICATION_FAILURE);
+#ifdef NO_CONCURRENT_REGISTRATION
+            release_qeo_registration_lock();
+#endif
+            return false;
         }
 
-        if (number_of_identities > 0) {
-            memcpy(&qeoSec->cfg.id, &identities[0], sizeof(qeoSec->cfg.id));
-        }
-        qeo_security_free_realms(&identities, number_of_identities);
     }
 
     qeo_log_i("We will use realm_id %" PRIx64 ", user_id %"PRIx64, qeoSec->cfg.id.realm_id, qeoSec->cfg.id.user_id);
@@ -1421,16 +1450,17 @@ static bool authenticate(qeo_security_hndl qeoSec)
         certificate_chain = load_certificate_chain_locked(qeoSec);
 
         if (pkey == NULL) {
-            qeo_log_i("No private key loaded");
+            qeo_log_w("No private key loaded");
         }
         if (certificate_chain == NULL) {
-            qeo_log_i("No certificate chain loaded");
+            qeo_log_w("No certificate chain loaded");
         }
     }
     qeosec_unlock(qeoSec);
 
     if ((pkey == NULL) && (certificate_chain == NULL)) {
         /* no stored credentials exist or can be loaded, we have to register first */
+        qeo_log_d("no stored credentials exist or can be loaded, we have to register first");
         retval = register_qeo(qeoSec);
     }
     else {
@@ -1552,6 +1582,7 @@ static ENGINE *init_engine(const char *id)
             qeo_log_e("Could not init engine %s", id);
             break;
         }
+        qeo_log_d("created openssl engine");
     } while (0);
 
     return engine;
@@ -1560,6 +1591,7 @@ static ENGINE *init_engine(const char *id)
 static void destroy_engine(ENGINE *e)
 {
     if (e != NULL) {
+        qeo_log_d("destroy openssl engine");
         ENGINE_finish(e);
         ENGINE_free(e);
         ENGINE_cleanup();
@@ -1668,6 +1700,7 @@ qeo_retcode_t qeo_security_destroy(void)
 
             qeo_remote_registration_destroy();
             destroy_engine(_engine);
+            _engine = NULL;
             free(_engine_id);
             openSSL_rough_cleanup();
 
@@ -1797,16 +1830,18 @@ qeo_retcode_t qeo_security_destruct(qeo_security_hndl *_qeoSec)
             }
         }
 
-        free_qeosec(qeoSec);
         *_qeoSec = NULL;
         --_qeosec_objects_count;
+
+        api_unlock();
+        free_qeosec(qeoSec);
 
         ret = QEO_OK;
     } while (0);
     if (ret != QEO_OK) {
         qeosec_unlock(qeoSec);
+        api_unlock();
     }
-    api_unlock();
     return ret;
 }
 

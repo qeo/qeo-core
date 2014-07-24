@@ -121,17 +121,25 @@ $($(COMPONENT)_$(E)_PREFIX)/$(COMPONENT)_all_headers_$(E).tgz: $(COMPONENT)_sdk
 ifeq ($(qeo-native_DEBUG), 1)
 $(COMPONENT)_sdk_lib_$(E)_DEBUG.tgz: $($(COMPONENT)_$(E)_PREFIX)/$(COMPONENT)_sdk_lib_$(E).tgz
 	$(cp) $< $@
+
+$(COMPONENT)_sdk_headers_$(E)_DEBUG.tgz: $($(COMPONENT)_$(E)_PREFIX)/$(COMPONENT)_sdk_headers_$(E).tgz
+	$(cp) $< $@
+
+$(COMPONENT)_all_headers_$(E)_DEBUG.tgz: $($(COMPONENT)_$(E)_PREFIX)/$(COMPONENT)_all_headers_$(E).tgz
+	$(cp) $< $@
 else
 $(COMPONENT)_sdk_lib_$(E).tgz: $($(COMPONENT)_$(E)_PREFIX)/$(COMPONENT)_sdk_lib_$(E).tgz
 	$(cp) $< $@
 
 $(COMPONENT)_sdk_symbols_$(E).tgz: $($(COMPONENT)_$(E)_PREFIX)/$(COMPONENT)_sdk_symbols_$(E).tgz
 	$(cp) $< $@
-endif
+
 $(COMPONENT)_sdk_headers_$(E).tgz: $($(COMPONENT)_$(E)_PREFIX)/$(COMPONENT)_sdk_headers_$(E).tgz
 	$(cp) $< $@
+
 $(COMPONENT)_all_headers_$(E).tgz: $($(COMPONENT)_$(E)_PREFIX)/$(COMPONENT)_all_headers_$(E).tgz
 	$(cp) $< $@
+endif
 
 # Vim Modeline, used to enable folds on this Makefile
 # vim: foldmethod=marker foldmarker=##<,##> :

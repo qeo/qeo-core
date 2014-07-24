@@ -18,8 +18,10 @@
 
 #include <string.h>
 
-
+#include <unistd.h>
+#include <sys/socket.h>
 #include "qeo/log.h"
+#include <qeo/platform.h>
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include "curl_util.h"
@@ -112,9 +114,121 @@ size_t _read_from_memory_cb(char *buffer, size_t size, size_t nmemb, void *instr
     return result;
 }
 
+static int _lock_fd_mutex(qeo_mgmt_client_ctx_t* ctx) {
+    return (pthread_mutex_lock(&ctx->fd_mutex) == 0);
+}
+
+void _unlock_fd_mutex(qeo_mgmt_client_ctx_t *ctx){
+    pthread_mutex_unlock(&ctx->fd_mutex);
+}
+
+
+curl_socket_t qmcu_socket_open_function(void *clientp, curlsocktype purpose, struct curl_sockaddr *addr) {
+    curl_socket_t sock = socket(addr->family, addr->socktype, addr->protocol);
+    if (sock >= 0 && clientp) {
+        qeo_mgmt_client_ctx_t* ctx = (qeo_mgmt_client_ctx_t*) clientp;
+        if (_lock_fd_mutex(ctx)) {
+            if (ctx->is_closed) {
+                qeo_log_d("management thread shutdown requested, not creating socket");
+                close(sock);
+                _unlock_fd_mutex(ctx);
+                return CURL_SOCKET_BAD;
+            }
+            qeo_mgmt_fd_link_t* new_fd_link = malloc(sizeof(qeo_mgmt_fd_link_t));
+            if (new_fd_link) {
+                new_fd_link->fd = sock;
+                new_fd_link->next = NULL;
+                if (ctx->fd_list == NULL) {
+                    ctx->fd_list = new_fd_link;
+                } else {
+                    qeo_mgmt_fd_link_t* link = ctx->fd_list;
+                    while (link->next) {
+                        link = link->next;
+                    }
+                    link->next = new_fd_link;
+                }
+            }
+            _unlock_fd_mutex(ctx);
+        }
+    }
+    return sock;
+}
+
+int qmcu_socket_close_function(void *clientp, curl_socket_t item) {
+    if (clientp) {
+        qeo_mgmt_client_ctx_t* ctx = (qeo_mgmt_client_ctx_t*) clientp;
+        if (_lock_fd_mutex(ctx)) {
+            qeo_mgmt_fd_link_t* link = ctx->fd_list;
+            if (link->fd == item) {
+                ctx->fd_list = link->next;
+                free(link);
+            } else {
+                qeo_mgmt_fd_link_t* prev = link;
+                while (link->next) {
+                    link = link->next;
+                    if (link->fd == item) {
+                        prev->next = link->next;
+                        free(link);
+                        break;
+                    }
+                    prev = link;
+                }
+            }
+            _unlock_fd_mutex(ctx);
+        }
+    }
+    return close(item);
+}
+
+
 /*#######################################################################
 #                   PUBLIC FUNCTION IMPLEMENTATION                      #
 ########################################################################*/
+
+void qeo_mgmt_curl_util_shutdown_connections(qeo_mgmt_client_ctx_t* ctx) {
+    qeo_log_d("qeo_mgmt_curl_util_shutdown_connections");
+    if (ctx) {
+        if (_lock_fd_mutex(ctx)) {
+            qeo_mgmt_fd_link_t* fd_link = ctx->fd_list;
+            while (fd_link) {
+                shutdown(fd_link->fd, SHUT_RDWR);
+                fd_link = fd_link->next;
+            }
+            ctx->is_closed = true;
+            _unlock_fd_mutex(ctx);
+        }
+        else {
+            qeo_log_e("Can't take mgmt ctx lock");
+        }
+    }
+}
+
+void qeo_mgmt_curl_util_clean_fd_list(qeo_mgmt_client_ctx_t* ctx) {
+    if (_lock_fd_mutex(ctx)) {
+        qeo_mgmt_fd_link_t* link = ctx->fd_list;
+        ctx->fd_list = NULL;
+        while(link) {
+            qeo_mgmt_fd_link_t* freeMe = link;
+            link = link->next;
+            free(freeMe);
+        }
+        _unlock_fd_mutex(ctx);
+    }
+}
+
+CURLcode qeo_mgmt_curl_util_set_opts(curl_opt_helper *opts, int nropts, qeo_mgmt_client_ctx_t* ctx) {
+    curl_opt_helper opts_sock[] = {
+        { CURLOPT_OPENSOCKETFUNCTION, &qmcu_socket_open_function},
+        { CURLOPT_CLOSESOCKETFUNCTION, &qmcu_socket_close_function},
+        { CURLOPT_OPENSOCKETDATA, ctx },
+        { CURLOPT_CLOSESOCKETDATA, ctx}};
+
+   CURLcode ret = curl_util_set_opts(opts, nropts, ctx->curl_ctx);
+   if (ret == CURLE_OK) {
+       ret = curl_util_set_opts(opts_sock, sizeof(opts_sock) / sizeof(curl_opt_helper), ctx->curl_ctx);
+   }
+   return ret;
+}
 
 qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_translate_rc(int curlrc)
 {
@@ -182,7 +296,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_perform(CURL *ctx,
 }
 
 
-qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get_with_cb(CURL *ctx,
+qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get_with_cb(qeo_mgmt_client_ctx_t* mg_ctx,
                                                      const char* url,
                                                      char *header,
                                                      curl_write_callback data_cb,
@@ -199,16 +313,18 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get_with_cb(CURL *ctx,
     bool reset = false;
 
     do {
-        if ((ctx == NULL) || (url == NULL) || (data_cb == NULL)){
+        CURL* ctx;
+        if ((mg_ctx == NULL) || (mg_ctx->curl_ctx == NULL) || (url == NULL) || (data_cb == NULL)){
             ret = QMGMTCLIENT_EINVAL;
             break;
         }
+        ctx = mg_ctx->curl_ctx;
         if ((header != NULL) && (chunk == NULL)) {
             ret = QMGMTCLIENT_EMEM;
             break;
         }
         reset = true;
-        if (CURLE_OK != curl_util_set_opts(opts, sizeof(opts) / sizeof(curl_opt_helper), ctx)) {
+        if (CURLE_OK != qeo_mgmt_curl_util_set_opts(opts, sizeof(opts) / sizeof(curl_opt_helper), mg_ctx)) {
             ret = QMGMTCLIENT_EINVAL;
             break;
         }
@@ -230,7 +346,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get_with_cb(CURL *ctx,
 
     if (reset == true){
         /* Make sure we reset all configuration for next calls */
-        curl_easy_reset(ctx);
+        curl_easy_reset(mg_ctx->curl_ctx);
     }
     if (chunk != NULL){
         curl_slist_free_all(chunk);
@@ -243,7 +359,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get_with_cb(CURL *ctx,
     return ret;
 }
 
-qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get(CURL *ctx,
+qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get(qeo_mgmt_client_ctx_t *mg_ctx,
                                                      const char* url,
                                                      char *header,
                                                      char **data,
@@ -253,7 +369,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get(CURL *ctx,
     qmgmt_curl_data_helper data_helper = {0};
     qeo_mgmt_client_retcode_t ret = QMGMTCLIENT_EFAIL;
 
-    ret = qeo_mgmt_curl_util_http_get_with_cb(ctx, url, header, _write_to_memory_cb, &data_helper);
+    ret = qeo_mgmt_curl_util_http_get_with_cb(mg_ctx, url, header, _write_to_memory_cb, &data_helper);
     if (ret == QMGMTCLIENT_OK) {
         *data = data_helper.data;
         *length = data_helper.offset;
@@ -264,7 +380,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_http_get(CURL *ctx,
 
 }
 
-qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get_with_cb(CURL *ctx,
+qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get_with_cb(qeo_mgmt_client_ctx_t *mg_ctx,
                                                      const char* url,
                                                      char *header,
                                                      qeo_mgmt_client_ssl_ctx_cb ssl_cb,
@@ -274,31 +390,43 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get_with_cb(CURL *ctx,
 {
     curl_ssl_ctx_helper curlsslhelper = { ssl_cb, ssl_cookie };
     qeo_mgmt_client_retcode_t ret = QMGMTCLIENT_EFAIL;
+    const char *cafile = NULL;
+    const char *capath = NULL;
+    //Setting CURLOPT_CAINF and PATH is mandatory; otherwise SSL_CTX_FUNCTION will not be called.
     curl_opt_helper opts[] = {
-        { CURLOPT_SSL_VERIFYPEER, (void*)0 },
+        { CURLOPT_SSL_VERIFYHOST, (void*)2 }, /* ensure certificate matches host */
+        { CURLOPT_SSL_VERIFYPEER, (void*)0 }, /* ensure certificate is valid */
+        { CURLOPT_CAINFO, NULL },
+        { CURLOPT_CAPATH, NULL },
         { CURLOPT_SSL_CTX_FUNCTION, (void*)qeo_mgmt_curl_sslctx_cb },
         { CURLOPT_SSL_CTX_DATA, (void*)&curlsslhelper }
     };
     bool reset = false;
 
     do {
-        if ((ctx == NULL )|| (url == NULL) || (ssl_cb == NULL) || (data_cb == NULL)){
+        if ((mg_ctx == NULL ) || (mg_ctx->curl_ctx == NULL) ||  (url == NULL) || (ssl_cb == NULL) || (data_cb == NULL)){
             ret = QMGMTCLIENT_EINVAL;
             break;
         }
-
+        if (QEO_UTIL_OK != qeo_platform_get_cacert_path(&cafile, &capath)) {
+            ret = QMGMTCLIENT_EFAIL;
+            break;
+        }
+        /* insert values into options array */
+        opts[2].cookie = (void*)cafile;
+        opts[3].cookie = (void*)capath;
         reset = true;
-        if (CURLE_OK != curl_util_set_opts(opts, sizeof(opts) / sizeof(curl_opt_helper), ctx)) {
+        if (CURLE_OK != qeo_mgmt_curl_util_set_opts(opts, sizeof(opts) / sizeof(curl_opt_helper), mg_ctx)) {
             ret = QMGMTCLIENT_EINVAL;
             break;
         }
-        ret = qeo_mgmt_curl_util_http_get_with_cb(ctx, url, header, data_cb, write_cookie);
+        ret = qeo_mgmt_curl_util_http_get_with_cb(mg_ctx, url, header, data_cb, write_cookie);
         reset = false;/* Already done. */
     } while (0);
 
     if (reset == true){
         /* Make sure we reset all configuration for next calls */
-        curl_easy_reset(ctx);
+        curl_easy_reset(mg_ctx->curl_ctx);
     }
 
     if (ret != QMGMTCLIENT_OK) {
@@ -309,7 +437,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get_with_cb(CURL *ctx,
 }
 
 
-qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get(CURL *ctx,
+qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get(qeo_mgmt_client_ctx_t *mg_ctx,
                                                      const char* url,
                                                      char *header,
                                                      qeo_mgmt_client_ssl_ctx_cb ssl_cb,
@@ -320,7 +448,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get(CURL *ctx,
     qmgmt_curl_data_helper data_helper = {0};
     qeo_mgmt_client_retcode_t ret = QMGMTCLIENT_EFAIL;
 
-    ret = qeo_mgmt_curl_util_https_get_with_cb(ctx, url, header, ssl_cb, ssl_cookie, _write_to_memory_cb, &data_helper);
+    ret = qeo_mgmt_curl_util_https_get_with_cb(mg_ctx, url, header, ssl_cb, ssl_cookie, _write_to_memory_cb, &data_helper);
     if (ret == QMGMTCLIENT_OK) {
         *data = data_helper.data;
         *length = data_helper.offset;
@@ -330,7 +458,7 @@ qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_get(CURL *ctx,
     return ret;
 }
 
-static qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_put_with_cb(CURL *ctx,
+static qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_put_with_cb(qeo_mgmt_client_ctx_t *mg_ctx,
                                                      const char* url,
                                                      char *header,
                                                      qeo_mgmt_client_ssl_ctx_cb ssl_cb,
@@ -357,13 +485,14 @@ static qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_put_with_cb(CURL *ctx,
 
     bool reset = false;
     do {
-        if ((ctx == NULL )|| (url == NULL) || (ssl_cb == NULL) || (data_cb == NULL)){
+        CURL* ctx;
+        if ((mg_ctx == NULL ) || (mg_ctx->curl_ctx == NULL) ||  (url == NULL) || (ssl_cb == NULL) || (data_cb == NULL)){
             ret = QMGMTCLIENT_EINVAL;
             break;
         }
-
+        ctx = mg_ctx->curl_ctx;
         reset = true;
-        if (CURLE_OK != curl_util_set_opts(opts, sizeof(opts) / sizeof(curl_opt_helper), ctx)) {
+        if (CURLE_OK != qeo_mgmt_curl_util_set_opts(opts, sizeof(opts) / sizeof(curl_opt_helper), mg_ctx)) {
             ret = QMGMTCLIENT_EINVAL;
             break;
         }
@@ -381,7 +510,7 @@ static qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_put_with_cb(CURL *ctx,
 
     if (reset == true){
         /* Make sure we reset all configuration for next calls */
-        curl_easy_reset(ctx);
+        curl_easy_reset(mg_ctx->curl_ctx);
     }
     if (chunk != NULL){
         curl_slist_free_all(chunk);
@@ -394,7 +523,7 @@ static qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_put_with_cb(CURL *ctx,
     return ret;
 }
 
-qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_put(CURL *ctx,
+qeo_mgmt_client_retcode_t qeo_mgmt_curl_util_https_put(qeo_mgmt_client_ctx_t *ctx,
                                                      const char* url,
                                                      char *header,
                                                      qeo_mgmt_client_ssl_ctx_cb ssl_cb,

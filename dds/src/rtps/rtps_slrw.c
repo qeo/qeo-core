@@ -14,6 +14,7 @@
 
 /* rtps_slrw.c -- Implements the RTPS Reliable Stateless Writer functionality. */
 
+#include "prof.h"
 #include "rtps_cfg.h"
 #include "rtps_data.h"
 #include "rtps_priv.h"

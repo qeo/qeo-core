@@ -18,6 +18,7 @@
 #include "log.h"
 #include "error.h"
 #include "dds/dds_security.h"
+#include "dds_data.h"
 #include "domain.h"
 #include "disc.h"
 #include "security.h"
@@ -27,16 +28,32 @@
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
 
+int dds_openssl_init_global = 1;
+
+static lock_t	*ssl_mutexes;
+
 #define	MAX_CERTIFICATES	10
 
-IdentityHandle_t	local_identity;
-PermissionsHandle_t	local_permissions;
+Identity_t		local_identity;
+Permissions_t		local_permissions;
+DDS_SecurityPolicy	plugin_policy;
 
-static DDS_SecurityPolicy	plugin_policy;
 static DDS_SecurityPluginFct	plugin_fct;
 
-int dds_openssl_init_global = 1;
-static lock_t		*ssl_mutexes;
+void DDS_SP_init_library (void)
+{
+	if (!dds_openssl_init_global)
+		return;
+
+	DDS_Security_set_library_lock ();
+	OpenSSL_add_ssl_algorithms ();
+
+#ifdef DDS_DEBUG
+	SSL_load_error_strings ();
+#endif
+	
+	dds_openssl_init_global = 0;
+}
 
 void DDS_Security_set_library_init (int val)
 {
@@ -232,8 +249,20 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 #ifdef DDS_DEBUG
 			log_printf (SEC_ID, 0, "cert %d is: \r\n", i);
 
-			X509_NAME_print_ex_fp (stdout, X509_get_subject_name (sk_X509_value (crp->info.sslData.certificate_list, i)),
+			BIO *dbg_out = BIO_new(BIO_s_mem());
+			char dbg_out_string[256];
+			int size;
+			X509_NAME_print_ex (dbg_out, X509_get_subject_name (sk_X509_value (crp->info.sslData.certificate_list, i)),
 					       1, XN_FLAG_MULTILINE);
+			while(1) {
+				size = BIO_read(dbg_out, &dbg_out_string, 255);
+				if (size <= 0) {
+					break;
+				}
+				dbg_out_string[size] = '\0';
+				log_printf (SEC_ID, 0, dbg_out_string);
+			}
+			BIO_free(dbg_out);
 			log_printf (SEC_ID, 0, "\r\n");
 #endif		
 
@@ -255,20 +284,20 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 		    !crp->info.data.private_key.length ||
 		    !crp->info.data.num_certificates ||
 		    !crp->info.data.num_certificates > MAX_CERTIFICATES ||
-		    !crp->info.data.certificate [0].data ||
-		    !crp->info.data.certificate [0].length)
+		    !crp->info.data.certificates [0].data ||
+		    !crp->info.data.certificates [0].length)
 			return (DDS_RETCODE_BAD_PARAMETER);
 
 		xlength = sizeof (DDS_Credentials) +
 			  crp->info.data.num_certificates * sizeof (DDS_Credential) +
 			  crp->info.data.private_key.length +
-			  crp->info.data.certificate [0].length;
+			  crp->info.data.certificates [0].length;
 		for (i = 1; i < crp->info.data.num_certificates; i++) {
-			if (!crp->info.data.certificate [i].data ||
-			    !crp->info.data.certificate [i].length)
+			if (!crp->info.data.certificates [i].data ||
+			    !crp->info.data.certificates [i].length)
 				return (DDS_RETCODE_BAD_PARAMETER);
 
-			xlength += crp->info.data.certificate [i].length;
+			xlength += crp->info.data.certificates [i].length;
 		}
 		credentials = malloc (xlength);
 		if (!credentials)
@@ -285,12 +314,12 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 		credentials->info.data.private_key.data = dp;
 		dp += n;
 		for (i = 0; i < crp->info.data.num_certificates; i++) {
-			credentials->info.data.certificate [i].format = crp->info.data.certificate [i].format;
-			n = crp->info.data.certificate [i].length;
-			credentials->info.data.certificate [i].length = n;
-			sp = crp->info.data.certificate [i].data;
+			credentials->info.data.certificates [i].format = crp->info.data.certificates [i].format;
+			n = crp->info.data.certificates [i].length;
+			credentials->info.data.certificates [i].length = n;
+			sp = crp->info.data.certificates [i].data;
 			memcpy (dp, sp, n);
-			credentials->info.data.certificate [i].data = dp;
+			credentials->info.data.certificates [i].data = dp;
 			dp += n;
 		}
 	}
@@ -313,7 +342,7 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 			      DomainParticipant.  If successful, a non-zero
 			      identity handle is returned. */
 
-IdentityHandle_t validate_local_identity (const char      *name,
+Identity_t validate_local_identity (const char      *name,
 					  DDS_Credentials *credentials,
 					  size_t          xlength)
 {
@@ -343,7 +372,7 @@ IdentityHandle_t validate_local_identity (const char      *name,
 		else {
 			ADJUST_PTR (credentials, credentials->info.data.private_key.data);
 			for (i = 0; i < credentials->info.data.num_certificates; i++)
-				ADJUST_PTR (credentials, credentials->info.data.certificate [i].data);
+				ADJUST_PTR (credentials, credentials->info.data.certificates [i].data);
 		}
 	}
 	log_printf (SEC_ID, 0, "Security: call security plugin\r\n");
@@ -359,8 +388,8 @@ IdentityHandle_t validate_local_identity (const char      *name,
 	return (data.handle);
 }
 
-DDS_ReturnCode_t set_local_handle (PermissionsHandle_t perm,
-				   DDS_DomainId_t      id )
+DDS_ReturnCode_t set_local_handle (Permissions_t  perm,
+				   DDS_DomainId_t id )
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -376,7 +405,7 @@ DDS_ReturnCode_t set_local_handle (PermissionsHandle_t perm,
 	return (ret);
 }
 
-DDS_ReturnCode_t set_peer_handle (PermissionsHandle_t  perm,
+DDS_ReturnCode_t set_peer_handle (Permissions_t        perm,
 				  DDS_InstanceHandle_t handle)
 {
 	DDS_SecurityReqData	data;
@@ -398,14 +427,19 @@ DDS_ReturnCode_t set_peer_handle (PermissionsHandle_t  perm,
 			     returned.  If the action is AA_CHALLENGE_NEEDED,
 			     the challenge argument will be populated. */
 
-DDS_AuthAction_t validate_peer_identity (unsigned char *identity,
-				         size_t        identity_length,
-				         unsigned char *challenge,
-				         size_t        *challenge_length)
+int validate_peer_identity (Identity_t    id,
+			    void	  *token,
+			    unsigned char *identity,
+			    size_t        identity_length,
+			    unsigned char *challenge,
+			    size_t        *challenge_length)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
 	
+	ARG_NOT_USED (id)
+	ARG_NOT_USED (token)
+
 	log_printf (SEC_ID, 0, "Security: validate peer identity\r\n");
 
 	if (!plugin_policy) {
@@ -415,6 +449,7 @@ DDS_AuthAction_t validate_peer_identity (unsigned char *identity,
 	}
 	if (!challenge_length)
 		return (DDS_AA_REJECTED);
+
 	data.data = identity;
 	data.length = identity_length;
 	data.rdata = challenge;
@@ -424,7 +459,7 @@ DDS_AuthAction_t validate_peer_identity (unsigned char *identity,
 		*challenge_length = 0;
 		return (DDS_AA_REJECTED);
 	}
-	if (data.action == DDS_AA_CHALLENGE_NEEDED) {
+	if (data.action == DDS_AA_HANDSHAKE) {
 		memcpy (challenge, data.data, data.rlength);
 		*challenge_length = data.rlength;
 	}
@@ -435,9 +470,9 @@ DDS_AuthAction_t validate_peer_identity (unsigned char *identity,
 
 
 struct addr2perm {
-	Locator_t           *loc;
-	PermissionsHandle_t perm;
-	Participant_t       *pp;
+	Locator_t       *loc;
+	Permissions_t	perm;
+	Participant_t   *pp;
 };
 
 /* Walk through the skiplist and find the participant with the same locator */
@@ -467,9 +502,9 @@ static int peer_walk (Skiplist_t *list, void *node, void *arg)
 
 /* Get the premissions handle based on the locator */
 
-static PermissionsHandle_t get_permissions_handle (struct sockaddr *addr, 
-						   unsigned        id, 
-						   Participant_t   **pp)
+static Permissions_t get_permissions_handle (struct sockaddr *addr, 
+					     unsigned        id, 
+					     Participant_t   **pp)
 {
 	struct addr2perm a2p;
 	Locator_t        loc;
@@ -491,8 +526,8 @@ static PermissionsHandle_t get_permissions_handle (struct sockaddr *addr,
 
 /* check_DTLS_handshake_initiator -- Do extra check check for DTLS handshake. */
 
-DDS_AuthAction_t check_DTLS_handshake_initiator (struct sockaddr *addr,
-						 unsigned        domain_id)
+int check_DTLS_handshake_initiator (struct sockaddr *addr,
+				    unsigned        domain_id)
 {
 	/*if (!get_permissions_handle (addr, domain_id, NULL))
 	  return (DDS_AA_REJECTED);*/
@@ -505,13 +540,13 @@ DDS_AuthAction_t check_DTLS_handshake_initiator (struct sockaddr *addr,
 
 /* accept_ssl_connection -- Check if a TLS/SSL connection is allowed. */
 
-DDS_AuthAction_t accept_ssl_connection (SSL             *ssl,
-					struct sockaddr *addr,
-					unsigned        domain_id)
+int accept_ssl_connection (SSL             *ssl,
+			   struct sockaddr *addr,
+			   unsigned        domain_id)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
-	PermissionsHandle_t     perm = 0;
+	Permissions_t		perm = 0;
 	Participant_t           *pp;
 
 	if (!plugin_policy) {
@@ -543,9 +578,9 @@ DDS_AuthAction_t accept_ssl_connection (SSL             *ssl,
 
 /* Return an identity token from an Identity handle. */
 
-DDS_ReturnCode_t get_identity_token (IdentityHandle_t handle,
-				     unsigned char    *identity,
-				     size_t           *identity_length)
+DDS_ReturnCode_t get_identity_token (Identity_t    handle,
+				     unsigned char *identity,
+				     size_t        *identity_length)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -596,7 +631,7 @@ DDS_ReturnCode_t challenge_identity (unsigned char *challenge,
 /* validate_response -- Handle the response of an Identity challenge from a
 			peer participant. */
 
-DDS_AuthAction_t validate_response (unsigned char *response,
+int validate_response (unsigned char *response,
 				    size_t        response_length)
 {
 	DDS_SecurityReqData	data;
@@ -615,8 +650,8 @@ DDS_AuthAction_t validate_response (unsigned char *response,
 				 DomainParticipant.  If successful, a non-zero
 				 permissions handle is returned. */
 
-PermissionsHandle_t validate_local_permissions (DDS_DomainId_t   domain_id,
-						IdentityHandle_t handle)
+Permissions_t validate_local_permissions (DDS_DomainId_t domain_id,
+					  Identity_t     handle)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -640,9 +675,9 @@ PermissionsHandle_t validate_local_permissions (DDS_DomainId_t   domain_id,
 				handle is returned, or 0, if the particant is
 				rejected. */
 
-PermissionsHandle_t validate_peer_permissions (DDS_DomainId_t domain_id,
-					       unsigned char  *permissions,
-					       size_t         length)
+Permissions_t validate_peer_permissions (DDS_DomainId_t domain_id,
+					 unsigned char  *permissions,
+					 size_t         length)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -663,7 +698,7 @@ PermissionsHandle_t validate_peer_permissions (DDS_DomainId_t domain_id,
 /* check_create_participant -- Check if a local DomainParticipant can be
 			       created for the domain. */
 
-DDS_ReturnCode_t check_create_participant (PermissionsHandle_t            perm,
+DDS_ReturnCode_t check_create_participant (Permissions_t                  perm,
 					   const DDS_DomainParticipantQos *qos,
 					   unsigned                       *secure)
 {
@@ -684,9 +719,9 @@ DDS_ReturnCode_t check_create_participant (PermissionsHandle_t            perm,
 
 /* check_create_topic -- Check if a topic may be created. */
 
-DDS_ReturnCode_t check_create_topic (PermissionsHandle_t permissions,
-				     const char          *topic_name,
-				     const DDS_TopicQos  *qos)
+DDS_ReturnCode_t check_create_topic (Permissions_t      permissions,
+				     const char         *topic_name,
+				     const DDS_TopicQos *qos)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -704,7 +739,7 @@ DDS_ReturnCode_t check_create_topic (PermissionsHandle_t permissions,
 /* check_create_writer -- Check if a datawriter may be created for the given
 			  topic. */
 
-DDS_ReturnCode_t check_create_writer (PermissionsHandle_t     permissions,
+DDS_ReturnCode_t check_create_writer (Permissions_t           permissions,
 				      Topic_t                 *topic,
 				      const DDS_DataWriterQos *qos,
 				      const Strings_t         *partitions)
@@ -727,7 +762,7 @@ DDS_ReturnCode_t check_create_writer (PermissionsHandle_t     permissions,
 /* check_create_reader -- Check if a datareader may be created for the given
 			  topic. */
 
-DDS_ReturnCode_t check_create_reader (PermissionsHandle_t     permissions,
+DDS_ReturnCode_t check_create_reader (Permissions_t           permissions,
 				      Topic_t                 *topic,
 				      const DDS_DataReaderQos *qos,
 				      const Strings_t         *partitions)
@@ -749,8 +784,8 @@ DDS_ReturnCode_t check_create_reader (PermissionsHandle_t     permissions,
 /* check_peer_participant -- Check if a peer DomainParticipant may be created
 			     for the domain. */
 
-DDS_ReturnCode_t check_peer_participant (PermissionsHandle_t      perm,
-					 String_t                 *user_data)
+DDS_ReturnCode_t check_peer_participant (Permissions_t perm,
+					 String_t      *user_data)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -766,7 +801,7 @@ DDS_ReturnCode_t check_peer_participant (PermissionsHandle_t      perm,
 
 /* check_peer_topic -- Check if a topic may be created. */
 
-DDS_ReturnCode_t check_peer_topic (PermissionsHandle_t      permissions,
+DDS_ReturnCode_t check_peer_topic (Permissions_t            permissions,
 				   const char               *topic_name,
 				   const DiscoveredTopicQos *qos)
 {
@@ -786,7 +821,7 @@ DDS_ReturnCode_t check_peer_topic (PermissionsHandle_t      permissions,
 /* check_peer_writer -- Check if a datawriter may be created for the given
 			topic. */
 
-DDS_ReturnCode_t check_peer_writer (PermissionsHandle_t       permissions,
+DDS_ReturnCode_t check_peer_writer (Permissions_t             permissions,
 				    const char                *topic_name,
 				    const DiscoveredWriterQos *qos)
 {
@@ -806,7 +841,7 @@ DDS_ReturnCode_t check_peer_writer (PermissionsHandle_t       permissions,
 /* check_peer_reader -- Check if a datareader may be created for the given 
 			topic. */
 
-DDS_ReturnCode_t check_peer_reader (PermissionsHandle_t       permissions,
+DDS_ReturnCode_t check_peer_reader (Permissions_t             permissions,
 				    const char                *topic_name,
 				    const DiscoveredReaderQos *qos)
 {
@@ -825,9 +860,9 @@ DDS_ReturnCode_t check_peer_reader (PermissionsHandle_t       permissions,
 
 /* Return an Permissions token from a Permissions handle. */
 
-DDS_ReturnCode_t get_permissions_token (PermissionsHandle_t handle,
-				        unsigned char       *permissions,
-					size_t              *perm_length)
+DDS_ReturnCode_t get_permissions_token (Permissions_t handle,
+				        unsigned char *permissions,
+					size_t        *perm_length)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -866,8 +901,8 @@ uint32_t get_domain_security (DDS_DomainId_t domain)
 
 /* get_certificate -- get the certificate for this particular identity handle*/
 
-DDS_ReturnCode_t get_certificate (void *certificate,
-				  IdentityHandle_t identityHandle)
+DDS_ReturnCode_t get_certificate (void       *certificate,
+				  Identity_t identityHandle)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -885,8 +920,8 @@ DDS_ReturnCode_t get_certificate (void *certificate,
 
 /* get_nb_of_CA_certificates -- to get the number of CA certificates */
 
-DDS_ReturnCode_t get_nb_of_CA_certificates(int *nb, 
-					   IdentityHandle_t identityHandle)
+DDS_ReturnCode_t get_nb_of_CA_certificates (int       *nb, 
+					   Identity_t identityHandle)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -904,8 +939,8 @@ DDS_ReturnCode_t get_nb_of_CA_certificates(int *nb,
 
 /* get_CA_certificate_list -- to get all the trusted CA certificates */
 
-DDS_ReturnCode_t get_CA_certificate_list (void *CAcertificates, 
-					  IdentityHandle_t identityHandle)
+DDS_ReturnCode_t get_CA_certificate_list (void       *CAcertificates, 
+					  Identity_t identityHandle)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -923,12 +958,12 @@ DDS_ReturnCode_t get_CA_certificate_list (void *CAcertificates,
 
 /* sign_with_private_key -- sign m with the private key from a particular identity */
 
-DDS_ReturnCode_t sign_with_private_key(int type, 
+DDS_ReturnCode_t sign_with_private_key(int                 type, 
 				       const unsigned char *m, 
-				       unsigned int m_len,
-				       unsigned char *sigret, 
-				       unsigned int *siglen, 
-				       IdentityHandle_t id_handle)
+				       size_t              m_len,
+				       unsigned char       *sigret, 
+				       size_t              *siglen, 
+				       Identity_t          id_handle)
 {
 
 	DDS_SecurityReqData	data;
@@ -957,13 +992,13 @@ DDS_ReturnCode_t sign_with_private_key(int type,
 
 /* verify_signature -- verify a signature */
 
-DDS_ReturnCode_t verify_signature(int type, 
-				  const unsigned char *m, 
-				  unsigned int m_len, 
-				  unsigned char *sigbuf, 
-				  unsigned int siglen, 
-				  IdentityHandle_t peer_id_handle, 
-				  void *security_context)
+DDS_ReturnCode_t verify_signature (int                 type, 
+				   const unsigned char *m, 
+				   size_t              m_len, 
+				   unsigned char       *sigbuf, 
+				   size_t              siglen, 
+				   Identity_t          peer_id_handle, 
+				   void                *security_context)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;
@@ -986,8 +1021,8 @@ DDS_ReturnCode_t verify_signature(int type,
 
 /* get_private_key -- get the private key from a certain identity */
 
-DDS_ReturnCode_t get_private_key(void *privateKey, 
-				 IdentityHandle_t identityHandle)
+DDS_ReturnCode_t get_private_key (void       *privateKey, 
+				  Identity_t identityHandle)
 {
 	DDS_SecurityReqData	data;
 	DDS_ReturnCode_t	ret;

@@ -61,9 +61,10 @@ static const char *mem_names [] = {
 
 static MEM_DESC_ST	mem_blocks [MB_END];	/* Memory used by driver. */
 static size_t		mem_size;		/* Total memory allocated. */
-static Skiplist_t	loc_list;	/* Sorted list of unique locator ptrs.*/
-static lock_t		loc_lock;	/* Lock on loc_list. */
-static IpFilter_t	loc_no_mcast;	/* IP address ranges without mcast. */
+static Skiplist_t	loc_list;		/* List of unique locator ptrs*/
+static lock_t		loc_lock;		/* Lock on loc_list. */
+static int		loc_force_no_mcast;	/* No multicast at all. */
+static IpFilter_t	loc_no_mcast;		/* IP addresses without mcast.*/
 
 unsigned char loc_addr_invalid [16] = LOCATOR_ADDRESS_INVALID;
 Locator_t locator_invalid = LOCATOR_INVALID;
@@ -97,9 +98,18 @@ int locator_pool_init (const POOL_LIMITS *locrefs, const POOL_LIMITS *locators)
 	sl_init (&loc_list, sizeof (LocatorNode_t *));
 	lock_init_nr (loc_lock, "Locators");
 
-	if ((env_str = config_get_string (DC_IP_NoMCast, NULL)) != NULL)
-		loc_no_mcast = ip_filter_new (env_str, IPF_DOMAIN | IPF_MASK, 0);
-
+	if ((env_str = config_get_string (DC_IP_NoMCast, NULL)) != NULL) {
+		if (!*env_str ||
+		    !strcmp (env_str, "any") ||
+		    !strcmp (env_str, "ANY")) {
+			loc_force_no_mcast = 1;
+			loc_no_mcast = NULL;
+		}
+		else {
+			loc_force_no_mcast = 0;
+			loc_no_mcast = ip_filter_new (env_str, IPF_DOMAIN | IPF_MASK, 0);
+		}
+	}
 	return (LOC_OK);
 }
 
@@ -196,8 +206,8 @@ LocatorNode_t *locator_list_add (LocatorList_t       *list,
 		np = *npp;
 		if (np->locator.scope_id != scope_id ||
 		    (np->locator.scope && scope && np->locator.scope != scope) ||
-		    (np->locator.flags && flags && 
-		     (np->locator.flags & LOCF_MFLAGS) != (flags & LOCF_MFLAGS)) ||
+		    /*(np->locator.flags && flags && 
+		     (np->locator.flags & LOCF_MFLAGS) != (flags & LOCF_MFLAGS)) ||*/
 		    (np->locator.sproto && sproto && np->locator.sproto != sproto))
 			log_printf (LOC_ID, 0, "locator_list_add: incompatible locator attributes for %s, "
 						"%u:%u, %u:%u, 0x%x:0x%x, %u:%u!\r\n",
@@ -560,6 +570,9 @@ int locator_list_no_mcast (unsigned domain, LocatorList_t l)
 	LocatorRef_t	*rp;
 	LocatorNode_t	*np;
 
+	if (loc_force_no_mcast)
+		return (1);
+
 	if (!loc_no_mcast)
 		return (0);
 
@@ -749,7 +762,7 @@ static int remove_handle (Skiplist_t *list, void *node, void *arg)
 	ARG_NOT_USED (arg)
 
 	np = *npp;
-	if (np->locator.handle == *handle)
+	if (np->locator.handle == *handle || !*handle)
 		np->locator.handle = 0;
 
 	return (1);

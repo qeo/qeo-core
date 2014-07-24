@@ -46,8 +46,11 @@ typedef enum {
 	DDS_RETCODE_TIMEOUT,
 	DDS_RETCODE_NO_DATA,
 	DDS_RETCODE_ILLEGAL_OPERATION,
-	DDS_RETCODE_ACCESS_DENIED
+	DDS_RETCODE_NOT_ALLOWED_BY_SEC
 } DDS_ReturnCode_t;
+
+/* For backwards compatibility: */
+#define	DDS_RETCODE_ACCESS_DENIED DDS_RETCODE_NOT_ALLOWED_BY_SEC
 
 /* Return a readable error string from a DDS error code. */
 DDS_EXPORT const char *DDS_error (DDS_ReturnCode_t e);

@@ -294,6 +294,10 @@ static int add_portmap(igd_t *igd)
         }
     }
 
+    if (0 == rc) {
+        printf("- Public address : %s:%s\n", igd->wan_ip, igd->wan_port);
+    }
+
 
     return rc;
 }
