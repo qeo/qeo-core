@@ -285,6 +285,7 @@ static int errlevel_to_syslog [] = {
 	LOG_CRIT
 };
 #endif
+#ifndef CDR_ONLY
 
 static void log_dir_change (Config_t c)
 {
@@ -297,6 +298,8 @@ static void log_dir_change (Config_t c)
 	else
 		snprintf (logname, sizeof (logname), "%s%u", BASE_LOG_NAME, sys_pid ());
 }
+
+#endif
 
 static void do_actions (ErrLevel_t level, 
 			unsigned   act_flags,
@@ -394,9 +397,10 @@ static void do_actions (ErrLevel_t level,
 	}
 #endif
 	if ((act_flags & ACT_LOG) != 0) {
+#ifndef CDR_ONLY
 		if (logname [0] == '\0')
 			config_notify (DC_LogDir, log_dir_change);
-
+#endif
 		if (openf (f, logname, "a")) {
 			gettimeofday (&tv, NULL);
 #ifdef _WIN32

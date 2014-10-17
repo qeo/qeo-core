@@ -1,0 +1,8 @@
+
+//define default targets for which to make the SDK
+ext.targets = ["HOSTLINUX", "RPI_ARMHFLINUX"];
+ext.publishAllHeaders = false
+
+apply from: project(":qeo-native").file("common.gradle")
+
+

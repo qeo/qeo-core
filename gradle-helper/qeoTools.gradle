@@ -1,0 +1,60 @@
+
+
+project.ext.qeoToolsDir = new File("$buildDir/qeo-tools")
+project.ext.qeoCredentialsDir = new File("$buildDir/qeo-credentials")
+
+//Add an extra configuration on order to be able to download dependencies
+configurations {
+    qeoTools {
+        description = "dependencies containing qeo Tools"
+    }
+}
+
+task getQeoTools() {
+	group 'qeoTools'
+    description "Download and extract qeo tools"
+    def filesToExtract = []
+    outputs.dir qeoToolsDir
+    afterEvaluate {
+        project.configurations.getByName("qeoTools").resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            inputs.file artifact.file
+            filesToExtract += artifact.file
+        }
+    }
+    doLast {
+        filesToExtract.each { f ->
+            copy {
+                if (f.name.endsWith(".zip")) {
+                    from zipTree(f)
+                }
+                else if (f.name.endsWith(".tgz") || f.name.endsWith(".tar.gz")) {
+                    from tarTree(resources.gzip(f))
+                }
+                else {
+                    throw new IllegalArgumentException("can't handle file for \"generated\" configuration: ${f}");
+                }
+                into qeoToolsDir
+            }
+        }
+    }
+}
+    
+task generateQeoCredentials(type:Exec, group: 'qeoTools', dependsOn: getQeoTools, description: "Create qeo credentials to be included inside your tests.") {
+	commandLine "$qeoToolsDir/qeo-credentials/generate_qeo_storage.sh"
+	args = [ qeoCredentialsDir, "$qeoCredentialsDir/truststore", 1, 1, 1 ]
+	outputs.dir qeoCredentialsDir //We assume that this task is up to date when the credentials are already created. 
+}
+
+afterEvaluate {                           
+        if (project.hasProperty("test")) {
+			test.dependsOn generateQeoCredentials
+            test {                                                         
+				//Make sure the unit tests use the correct environment variable to point to the correct credentials.
+				environment["QEO_STORAGE_DIR"] = qeoCredentialsDir
+			}
+        }                           
+}      
+
+dependencies {
+    qeoTools "org.qeo:qeo-credentials:${project.qeoVersion}:@tgz"
+}

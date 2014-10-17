@@ -23,7 +23,7 @@
 
 #include "core.h"
 
-qeocore_writer_t* qeo_deviceinfo_publish(qeo_factory_t *factory)
+void qeo_deviceinfo_publish(qeo_factory_t *factory)
 {
     qeocore_writer_t *devinfo_writer = NULL;
     qeocore_type_t *t = NULL;
@@ -41,6 +41,23 @@ qeocore_writer_t* qeo_deviceinfo_publish(qeo_factory_t *factory)
             qeo_log_d("Device info publishing disabled");
             ret = QEO_OK;
             break;
+        }
+       
+        qeocore_domain_id_t domainId;
+        qeocore_factory_get_domainid(factory, &domainId);
+        if (core_get_domain_id_open() == domainId) {
+            /* open domain */
+            pubInfo = qeocore_parameter_get_number("CMN_PUB_DEVICEINFO_OPEN_DOMAIN");
+            if (pubInfo == -1) {
+                qeo_log_w("Unable to fetch config parameter");
+                /* publish anyway, don't break out */
+            }
+    
+            if (pubInfo == 0) {
+                qeo_log_d("Device info publishing disabled for the open domain");
+                ret = QEO_OK;
+                break;
+            }
         }
 
         qeo_log_d("Device info publishing is enabled");
@@ -86,12 +103,16 @@ qeocore_writer_t* qeo_deviceinfo_publish(qeo_factory_t *factory)
             devinfo_writer = NULL;
         }
     }
-
-    return devinfo_writer;
+    else {
+        factory->deviceinfo_writer = devinfo_writer;
+    }
 }
 
-void qeo_deviceinfo_destruct(qeocore_writer_t *devinfo_writer)
+void qeo_deviceinfo_destruct(qeo_factory_t* factory)
 {
-    qeocore_writer_close(devinfo_writer);
+    if (factory != NULL && factory->deviceinfo_writer != NULL) {
+        qeocore_writer_close(factory->deviceinfo_writer);
+        factory->deviceinfo_writer = NULL;
+    }
 }
 

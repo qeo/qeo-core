@@ -1,0 +1,29 @@
+apply plugin: "sonar-runner"
+
+sonarRunner {
+    sonarProperties {
+        property "sonar.host.url", "http://cplx147.edegem.eu.thmulti.com:9000"
+        property "sonar.jdbc.url", "jdbc:h2:tcp://cplx147.edegem.eu.thmulti.com:9092/sonar"
+    }
+}
+
+/**
+ * US11814: make sure subprojects are taken into account when calculating code coverage in Sonar.
+ */
+gradle.projectsEvaluated {
+    subprojects {
+        sonarRunner {
+            def sonarExtraSources = []
+            def depProjs = configurations.compile.getAllDependencies().withType(ProjectDependency).collect{it.getDependencyProject()}
+            depProjs.each {
+                sonarExtraSources += it.sourceSets.main.java.srcDirs
+            }
+            if (sonarExtraSources) {
+                println ("sonarExtraSources:${sonarExtraSources}")
+                sonarProperties {
+                    properties["sonar.sources"] += sonarExtraSources
+                }
+            }
+        }
+    }
+}

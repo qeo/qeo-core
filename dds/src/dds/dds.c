@@ -68,28 +68,28 @@ static const DDS_PoolConstraints def_pool_reqs = {
 	1,		/* Supported domains. */
 	2, ~0,		/* Min/max Subscribers. */
 	2, ~0,		/* Min/max Publishers. */
-	12, ~0,		/* Min/max Local Readers. */
-	8, ~0,		/* Min/max Local Writers. */
-	16, ~0,		/* Min/max Topics. */
+	16, ~0,		/* Min/max Local Readers. */
+	12, ~0,		/* Min/max Local Writers. */
+	22, ~0,		/* Min/max Topics. */
 	1, ~0,		/* Min/max Filtered Topics. */
-	10, ~0,		/* Min/max Topic Types. */
-	10, ~0,		/* Min/max Reader proxies. */
-	10, ~0,		/* Min/max Writer proxies. */
+	14, ~0,		/* Min/max Topic Types. */
+	16, ~0,		/* Min/max Reader proxies. */
+	16, ~0,		/* Min/max Writer proxies. */
 	8, ~0,		/* Min/max Remote Participants. */
 	24, ~0,		/* Min/max Remote Readers. */
 	24, ~0,		/* Min/max Remote Writers. */
-	32 * KB, ~0,	/* Min/max Data Buffer pool size. */
+	64 * KB, ~0,	/* Min/max Data Buffer pool size. */
 	4,		/* # of 8K receive buffers. */
-	64, ~0,		/* Min/max Cache change entries. */
-	32, ~0,		/* Min/max Cache instance entries. */
-	32, ~0,		/* Min/max Samples used in applications. */
+	160, ~0,	/* Min/max Cache change entries. */
+	80, ~0,		/* Min/max Cache instance entries. */
+	64, ~0,		/* Min/max Samples used in applications. */
 	2, ~0,		/* Min/max Local matching caches. */
 	2, ~0,		/* Min/max Cache waiter contexts. */
 	2, ~0,		/* Min/max Cache pending transfers. */
 	2, ~0,		/* Min/max Time-based filters. */
 	2, ~0,		/* Min/max Time-based filter instances. */
-	64, 0,		/* Min/max strings. */
-	4 * KB, ~0,	/* Min/max string data storage. */
+	128, 0,		/* Min/max strings. */
+	8 * KB, ~0,	/* Min/max string data storage. */
 	32, ~0,		/* Min/max locators. */
 	16, ~0,		/* Min/max uniques QoS combinations. */
 	8, ~0,		/* Min/max Lists. */
@@ -617,11 +617,21 @@ void dds_config_update (Config_t c, CFG_NOTIFY_FCT fct)
 #ifdef THREADS_USED
 	int		wakeup = 0;
 
-	if (!dds_core_thread || thread_id () == dds_core_thread) {
+	if (!dds_core_thread) {
 		(*fct) (c);
 		return;
 	}
 #endif
+
+	lock_take (ev_lock);
+	for (p = cfg_change_head; p; p = p->next)
+		if (p->id == c && p->fct == fct)
+			break;
+
+	lock_release (ev_lock);
+	if (p)
+		return;
+
 	p = mds_pool_alloc (&mem_blocks [MB_CFG_UPD]);
 	if (!p) {
 		warn_printf ("Out-of-memory for scheduled configuration update.");
@@ -1169,7 +1179,7 @@ void dds_pre_init (void)
 			reqs->max_topics + reqs->max_topic_types +
 			reqs->max_remote_readers + reqs->max_remote_writers;
 	pool_limits_set (str, reqs->min_strings, reqs->max_strings, reqs->grow_factor);
-	pool_limits_set (refs, min_endpoints, max_endpoints, reqs->grow_factor);
+	pool_limits_set (refs, min_endpoints * 2, (max_endpoints == ~0U) ? ~0U : max_endpoints * 2, reqs->grow_factor);
 	error = str_pool_init (&str, &refs, reqs->min_string_data,
 			       (reqs->min_string_data < reqs->max_string_data) ? 1 : 0);
 	if (error) {
@@ -1198,7 +1208,7 @@ void dds_pre_init (void)
 	dds_typesupport_init ();
 	log_printf (DDS_ID, 0, "Typesupport initialized.\r\n");
 
-	error = sock_fd_init ();
+	error = sock_fd_init (reqs->max_ip_sockets, reqs->grow_factor);
 	if (error) {
 		lock_release (pre_init_lock);
 		fatal_printf ("sock_fd_init() failed: error = %d", error);
@@ -1301,7 +1311,8 @@ int dds_init (void)
 			 	~0UL :
 			reqs->max_topics + reqs->max_topic_types +
 			reqs->max_remote_readers + reqs->max_remote_writers;
-	pool_limits_set (loc_refs, min_endpoints, max_endpoints, reqs->grow_factor);
+	pool_limits_set (loc_refs, min_endpoints,
+			 (max_endpoints == ~0U) ? ~0U : max_endpoints * 3, reqs->grow_factor);
 	pool_limits_set (locators, reqs->min_locators, reqs->max_locators, reqs->grow_factor);
 	error = locator_pool_init (&loc_refs, &locators);
 	if (error)
@@ -1373,10 +1384,10 @@ int dds_init (void)
 
 #ifdef RTPS_USED
 	if (rtps_used) {
-		pool_limits_set (rtps_cfg.readers, reqs->min_local_readers + 3,
-				reqs->max_local_readers, reqs->grow_factor);
-		pool_limits_set (rtps_cfg.writers, reqs->min_local_writers + 3,
-				reqs->max_local_writers, reqs->grow_factor);
+		pool_limits_set (rtps_cfg.readers, reqs->min_local_readers + 8,
+				reqs->max_local_readers + 8, reqs->grow_factor);
+		pool_limits_set (rtps_cfg.writers, reqs->min_local_writers + 8,
+				reqs->max_local_writers + 8, reqs->grow_factor);
 		pool_limits_set (rtps_cfg.rreaders, reqs->min_reader_proxies,
 				reqs->max_reader_proxies, reqs->grow_factor);
 		pool_limits_set (rtps_cfg.rwriters, reqs->min_writer_proxies,
@@ -1943,6 +1954,7 @@ void DDS_Debug_type_dump (unsigned scope, const char *name)
 {
 #if defined (DDS_DEBUG) && defined (XTYPES_USED)
 	debug_type_dump (scope, name);
+	dbg_printf ("\r\n");
 #else
 	ARG_NOT_USED (scope)
 	ARG_NOT_USED (name)
@@ -1964,6 +1976,7 @@ void DDS_Debug_dump_static (unsigned indent,
 		DDS_TypeSupport_dump_key (indent, ts, data, 1, 0, secure, field_names);
 	else
 		DDS_TypeSupport_dump_data (indent, ts, data, 1, 0, field_names);
+	dbg_printf ("\r\n");
 #else
 	ARG_NOT_USED (indent)
 	ARG_NOT_USED (ts)
@@ -1991,6 +2004,7 @@ void DDS_Debug_dump_dynamic (unsigned indent,
 		DDS_TypeSupport_dump_key (indent, (TypeSupport_t *) ts, ddr->ddata, 1, 1, secure, field_names);
 	else
 		DDS_TypeSupport_dump_data (indent, (TypeSupport_t *) ts, ddr->ddata, 1, 1, field_names);
+	dbg_printf ("\r\n");
 #else
 	ARG_NOT_USED (indent)
 	ARG_NOT_USED (ts)

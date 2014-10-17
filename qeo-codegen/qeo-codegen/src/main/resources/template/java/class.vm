@@ -1,0 +1,105 @@
+/**************************************************************
+ ********          THIS IS A GENERATED FILE         ***********
+ **************************************************************/
+
+package $class.packageName;
+
+#if ($class.hasRelevantArrays)
+import java.util.Arrays;
+#end
+import org.qeo.QeoType;
+#if($class.behavior)
+import org.qeo.QeoType.Behavior;
+#end
+#if ($class.hasKeys)
+import org.qeo.Key;
+#end
+
+#if ($class.doc)
+/**
+ * $class.doc
+ */
+#end
+#if($class.behavior)
+@QeoType(behavior = Behavior.${class.behavior})
+#else
+@QeoType
+#end
+public class $class.name
+{
+#foreach ($member in $class.members)
+#if ($member.doc)
+    /**
+     * $member.doc
+     */
+#end   
+#if ($member.key)
+    @Key
+#end
+    public $member.type $member.name;
+
+#end
+    /**
+     * Default constructor.  This is used by Qeo to construct new objects.
+     */
+    public ${class.name}()
+    {
+    }
+
+    @Override
+    public boolean equals(Object obj)
+    {
+        if (obj == this) {
+            return true;
+        }
+        if ((obj == null) || (obj.getClass() != this.getClass())) {
+            return false;
+        }
+        final $class.name myObj = ($class.name) obj;
+#foreach ($member in $class.members)
+#if (!$class.hasKeys || $member.key)
+#if ($member.primitive)
+        if (${member.name} != myObj.${member.name}) {
+            return false;
+        }
+#elseif ($member.array)
+        if (!Arrays.equals(${member.name}, myObj.${member.name})) {
+            return false;
+        }
+#else
+        if (!${member.name}.equals(myObj.${member.name})) {
+            return false;
+        }
+#end
+#end
+#end 
+        return true;
+    }
+
+    @Override
+    public int hashCode()
+    {
+        final int prime = 31;
+        int result = 1;
+#foreach ($member in $class.members)  
+#if (!$class.hasKeys || $member.key)
+#if ($member.type.equals("boolean"))
+        result = prime * result + ($member.name ? 1 : 0);
+#elseif ($member.type.equals("long"))
+        result = prime * result + (int) ($member.name ^ ($member.name >>> 32));
+#elseif ($member.type.equals("float"))
+        result = prime * result + Float.floatToIntBits($member.name);
+#elseif ($member.type.equals("double"))
+        result = prime * result + (Double.doubleToLongBits($member.name) ^ ((Double.doubleToLongBits($member.name) >>> 32));
+#elseif ($member.type.equals("byte") || $member.type.equals("char") || $member.type.equals("short") || $member.type.equals("int"))    
+        result = prime * result + ${member.name};
+#elseif ($member.array)    
+        result = prime * result + Arrays.hashCode(${member.name});
+#else
+        result = prime * result + (($member.name == null) ? 0 : ${member.name}.hashCode());
+#end
+#end
+#end
+        return result;
+    }
+}

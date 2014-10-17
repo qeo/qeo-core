@@ -1,0 +1,56 @@
+/**************************************************************
+ ********          THIS IS A GENERATED FILE         ***********
+ **************************************************************/
+if (typeof Qeo === "undefined") {Qeo = {registerType: function(td) {this.ttr.push(td);},ttr: []};}
+
+#foreach($enum in $enums)
+Qeo.registerType({
+"enum": "${enum.fullName}",
+"values" : {
+#foreach ($value in $enum.members)
+"${value.name}": ${foreach.index}#if( $foreach.hasNext ),#end
+
+#end
+}                                                                                                                                                                                                      
+});
+#end
+#foreach ($struct in $json)
+Qeo.registerType({
+"topic": "${struct.topic}",
+#if(${struct.behavior})
+"behavior": "${struct.behavior}",
+#end
+"properties": {
+#foreach ($member in $struct.members)
+#set($start = 0)
+#set($end = $member.level)
+#set($range = [$start..$end])
+"${member.name}": {
+"type": "${member.type}"#if($member.key || !$member.isBasicType()), #end
+#if($member.key)
+"key": ${member.key}#if(!$member.isBasicType()),#end
+#end
+
+#if($member.type.equals("object") || $member.type.equals("enum"))
+"item": "${member.itemsType}"
+#elseif($member.type.equals("array"))
+"items":#if($start<$end) #foreach($i in $range) {
+"type": "${member.type}",
+"items":#end #end
+#if(!$member.isArrayOfBasic()) {
+"type": "object",
+"item": "${member.itemsType}"
+}
+#else {
+"type": "${member.itemsType}"
+} 
+#end
+#end
+#if($start<$end) #foreach($i in $range) }#if( $foreach.hasNext ), #end #end #end
+}#if( $foreach.hasNext ), #end  
+#end
+
+}
+});
+#end
+

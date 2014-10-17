@@ -1,0 +1,33 @@
+#foreach ($struct in $source.tsms)
+#foreach ($member in $struct.members)
+#if($language.equals("OBJECTIVEC"))
+#if($member.tsm)
+extern const DDS_TypeSupport_meta _${member.tsm}[]; 
+#end
+#end
+#end
+
+#if($language.equals("OBJECTIVEC"))
+const DDS_TypeSupport_meta _${struct.name}[] = {
+#else 
+const DDS_TypeSupport_meta ${struct.name}[] = {
+#end
+#foreach ($member in $struct.members)
+    {#if($member.type) .tc = ${member.type}#end 
+#if($member.name)#if($member.type),#end .name = "${member.name}"#end 
+#if($member.label), .label = ${member.label}#end 
+#if($member.flags.length()!=0), .flags = ${member.flags}#end
+#if($member.type.equals("CDR_TYPECODE_STRUCT")), .nelem = ${member.nelem}#end  
+#if($member.type.equals("CDR_TYPECODE_ENUM")), .nelem = ${member.nelem}#end  
+#if($language.equals("C"))
+#if($member.offset), .offset = ${member.offset}#end
+#if($member.size), .size = ${member.size}#end
+#if($member.tsm), .tsm = ${member.tsm}#end
+#else
+#if($member.tsm), .tsm = _${member.tsm}#end
+#end
+ },
+#end
+};
+
+#end

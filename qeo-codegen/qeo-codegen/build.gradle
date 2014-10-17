@@ -1,0 +1,70 @@
+
+// ext.findbugsHtml = true //uncomment for readable findbugs report. Don't check it in.
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'application'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/findbugs.gradle'
+
+mainClassName = "com.technicolor.qeo.codegen.Main"
+
+//Set JDK source/target to version 6
+sourceCompatibility=1.6
+targetCompatibility=1.6
+
+eclipse {
+    jdt {
+        //set JDK source/target in eclipse to version 6
+        sourceCompatibility = 1.6
+        targetCompatibility = 1.6
+    }
+    classpath {
+        //Set eclipse properties to use JDK 6 JVM for compilation
+        containers.clear()
+        containers.add('org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.6')
+
+    }
+}
+
+task executableJar(type: Jar) {
+    dependsOn classes
+    description "Create an executable jar-file with all libraries packaged (for debugging)"
+    group "Build"
+    doFirst {
+        from files(sourceSets.main.output.classesDir)
+        from files(sourceSets.main.output.resourcesDir)
+        from configurations.runtime.asFileTree.files.collect { zipTree(it) }
+        classifier "executable"
+
+        manifest {
+            attributes 'Main-Class': mainClassName
+        }
+    }
+}
+
+task generateTestCode(type: Exec, dependsOn:executableJar, description: "Generate generated code for validating qdm generation.", group: "Verification") {
+  commandLine './updateTests.pl'
+} 
+
+test {
+    inputs.dir files("test")
+    testLogging {
+        info {
+            // set options for log level LIFECYCLE
+            events "started", "skipped", "failed", "passed", "standard_out", "standard_error"
+        }
+    }
+}
+
+dependencies {
+    compile group: 'org.apache.velocity', name: 'velocity', version: '1.7'
+    compile group: 'commons-cli', name: 'commons-cli', version: '1.2'
+    testCompile 'junit:junit:4.11'
+}
+
+artifacts {
+    archives distZip
+}
+

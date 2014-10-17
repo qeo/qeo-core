@@ -83,6 +83,20 @@ void qeo_factory_close(qeo_factory_t *factory);
  */
 const char *qeo_version_string(void);
 
+/**
+ * Set whether Qeo should initialize OpenSSL or not.
+ * By default Qeo will initialize OpenSSL.
+ *
+ * This must be called before any other Qeo function.
+ *
+ * WARNING: Qeo uses multi-threaded calls to OpenSSL. It's important to provide
+ * all required callbacks for OpenSSL to support this. Info on:
+ * https://www.openssl.org/docs/crypto/threads.html
+ *
+ * \param[in] value 1 to let Qeo do the init, 0 to skip this.
+ */
+void qeo_security_set_init_openssl(int value);
+
 /// \}
 
 #ifdef __cplusplus

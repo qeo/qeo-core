@@ -68,6 +68,7 @@ int di_sys_init (void)
 #endif
 							       ;
 	if (bind (netlink_fd, (struct sockaddr *) &addr, sizeof (addr)) == -1) {
+		perror ("di_sys_init:bind()");
 		warn_printf ("di_sys_init: couldn't bind NETLINK_ROUTE socket");
 		close (netlink_fd);
 		netlink_fd = -1;

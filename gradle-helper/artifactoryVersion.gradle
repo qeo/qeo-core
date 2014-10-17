@@ -1,0 +1,38 @@
+
+//script to fetch latest buildversion from artifactory and set the ext.displayVersion variable
+
+if (System.env.JENKINS_URL) {
+    //jenkins is active
+    def g = group.replaceAll("\\.", "/")
+    def mavenPropertiesUrl = "${rootProject.artifactoryResolveRepo}/${g}/${project.name}/${version}/maven-metadata.xml"
+    logger.info("fetching url: ${mavenPropertiesUrl}")
+    //destinationFile.bytes = new URL(mavenPropertiesUrl).text
+    int buildnr = 0;
+    try {
+        def metadata = new XmlSlurper().parse(mavenPropertiesUrl)
+        buildnr = Integer.parseInt(metadata.versioning.snapshot.buildNumber.toString())
+    }
+    catch (FileNotFoundException e) {
+        logger.warn("Can't find previous buildversion, assuming this is the first version")
+    }
+    logger.debug("Previous buildnr: ${buildnr}")
+    project.ext.displayVersion = version.replaceAll("SNAPSHOT", Integer.toString((buildnr + 1)))
+}
+else {
+    //no jenkins, try to get git hash
+    //date/time would be nice too, but this causes rebuilds every time since that changes on every build, so don't do that.
+    def hash = ""
+    new ByteArrayOutputStream().withStream { out ->
+        project.exec {
+            workingDir = project.projectDir
+            executable = new File("git")
+            args = ['rev-parse', '--verify', '--short', 'HEAD']
+            standardOutput = out
+        }
+        hash = out.toString().trim()
+    }
+
+    project.ext.displayVersion = version.replaceAll("SNAPSHOT", hash)
+}
+logger.info("DisplayVersion: ${displayVersion}")
+

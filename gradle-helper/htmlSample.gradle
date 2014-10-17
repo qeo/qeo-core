@@ -1,0 +1,42 @@
+
+project.ext.artifactoryPomPackaging = "zip"
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactDownloader.gradle'
+
+group = project.qeoGroup + ".sample"
+
+artifactDownload {
+    outputDir = "${buildDir}/generated-src/assets"
+    unzip = true
+}
+
+task assembleWeb(type: Copy) {
+    dependsOn generateTypes, artifactDownload
+    from file(artifactDownload.outputDir)
+    from file("${buildDir}/generated-src/types")
+    from file("assets")
+    into "${buildDir}/web"
+    afterEvaluate {
+        from generateTypes.outputDir
+    }
+}
+
+task zipAssets(type: Zip) {
+    dependsOn generateTypes
+    from files("assets")
+    from files("${buildDir}/generated-src/types")
+}
+
+tasks.assemble.dependsOn(assembleWeb)
+
+dependencies {
+    download (group: 'org.qeo', name: 'qeo-js', version: version )
+}
+
+artifacts {
+        archives zipAssets
+}
+
+

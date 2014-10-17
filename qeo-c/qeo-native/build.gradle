@@ -1,0 +1,45 @@
+
+//define default targets for which to make the SDK
+ext.targets = ["HOSTLINUX", "REVG_MIPSLINUX", "RPI_ARMHFLINUX"];
+ext.publishAllHeaders = true
+
+apply from: file("common.gradle")
+
+//create doxygen
+boolean createDoxygen = targets.contains("HOSTLINUX") && doAssembleRelease
+if (createDoxygen) {
+    //generate from HOSTLINUX release header files. They're common anyway
+    def doxygenRoot = "../output/qeo-native/HOSTLINUX/sdk/install"
+    task doxygen(type:Exec) {
+        workingDir projectDir
+        dependsOn mwbuildTgzHOSTLINUX
+        workingDir doxygenRoot
+        environment PROJECT_ROOT: projectDir
+        commandLine = ['/home/users/cpeqeo/tools/bin/doxygen', file("Doxyfile.sdk")]
+    }
+    
+    task sdkDoc(type:Zip) {
+        description "Creates doxygen documentation zip file for SDK."
+        group "Documentation"
+        dependsOn doxygen
+        classifier = "doxygen"
+        from "${doxygenRoot}/doc/html"
+    }
+}
+else {
+    logger.warn("WARNING: doxygen not created as not building for HOSTLINUX")
+}
+
+task sdkExtras(type: Zip) {
+    from file("sdk.makefile")
+    from file("sdk.makefile.crosscompile")
+    classifier = "extras"
+}
+
+artifacts {
+    if (createDoxygen) {
+        archives sdkDoc
+    }
+    archives sdkExtras
+}
+

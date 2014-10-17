@@ -16,6 +16,7 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <assert.h>
 #ifdef _WIN32
 #include "win.h"
 #include "Ws2IpDef.h"
@@ -444,6 +445,7 @@ void rtps_udp_send (unsigned id, Locator_t *first, LocatorList_t *next, RMBUF *m
 		memcpy (rtps_tx_buf, &mp->header, sizeof (mp->header));
 		ofs = sizeof (mp->header);
 		for (mep = mp->first; mep; mep = mep->next) {
+			assert (mep->pad < 4);
 			if ((mep->flags & RME_HEADER) != 0) {
 				n = sizeof (mep->header);
 				if (ofs + n > MAX_TX_SIZE)
@@ -1168,9 +1170,10 @@ int rtps_udpv4_attach (void)
 
 	act_printf ("rtps_udpv4_attach()\r\n");
 	error = rtps_transport_add (&rtps_udpv4);
-	if (error)
+	if (error) {
+		act_printf (" .. rtps_transport_add() -> error!\r\n");
 		return (error);
-
+	}
 	if (!udp_v4_pars.pb && !udp_v4_pars.dg && !udp_v4_pars.pg)
 		rtps_parameters_set (LOCATOR_KIND_UDPv4, NULL);
 
@@ -1752,9 +1755,10 @@ int rtps_udpv6_attach (void)
 
 	act_printf ("rtps_udpv6_attach()\r\n");
 	error = rtps_transport_add (&rtps_udpv6);
-	if (error)
+	if (error) {
+		act_printf (" .. rtps_transport_add() -> error!\r\n");
 		return (error);
-
+	}
 	if (!udp_v6_pars.pb && !udp_v6_pars.dg && !udp_v6_pars.pg)
 		rtps_parameters_set (LOCATOR_KIND_UDPv6, NULL);
 

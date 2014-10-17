@@ -1,0 +1,76 @@
+/**************************************************************
+ ********          THIS IS A GENERATED FILE         ***********
+ **************************************************************/
+
+#ifndef ${header.ifDefGuard}
+\#define ${header.ifDefGuard}
+
+#foreach ($include in $header.externalIncludes)
+\#include <$include>
+#end
+#foreach ($include in $header.localIncludes)
+\#include "$include"
+#end
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+#foreach ($typedef in $header.typeDefs.keySet())
+typedef $header.typeDefs.get($typedef) $typedef;
+#end  
+
+#foreach ($dds in $header.ddsSequences.keySet())
+DDS_SEQUENCE(${dds}, $header.ddsSequences.get($dds));
+#end  
+
+#foreach ($module in $header.modules) 
+#foreach ($enum in $module.enum)
+#if ($enum.doc)
+/**
+ * $enum.doc
+ */
+#end
+typedef enum {
+#foreach($enumValue in $enum.members)
+#if ($enumValue.doc)
+  /**
+   * $enumValue.doc
+   */
+#end
+ ${enumValue.fullName}#if( $foreach.hasNext ),#end
+
+#end
+} ${enum.fullName}_t;
+extern const DDS_TypeSupport_meta ${enum.fullName}_type[];
+
+#end
+#foreach ($struct in $module.struct)
+#foreach ($ddsSeq in $struct.ddsSequences.keySet())
+DDS_SEQUENCE($struct.ddsSequences.get($ddsSeq), ${ddsSeq});
+#end  
+#if ($struct.doc)
+/**
+ * $struct.doc
+ */
+#end
+typedef struct {
+#foreach ($member in $struct.members)
+#if ($member.doc)
+  /**
+   * $member.doc
+   */
+#end
+    $member.type $member.name;
+#end
+} ${struct.name};
+extern const DDS_TypeSupport_meta ${struct.type}[];
+
+#end
+#end
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* ${header.ifDefGuard} */
+

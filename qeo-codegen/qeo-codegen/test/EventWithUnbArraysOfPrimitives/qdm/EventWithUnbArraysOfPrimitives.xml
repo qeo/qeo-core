@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+    <module name="org::qeo::test">
+
+        <!-- struct representing an event containing unbound arrays (sequences) of primitives -->
+        <struct name="EventWithUnbArraysOfPrimitivesStruct" behavior="event">       
+            <doc>struct representing an event containing 
+                 unbound arrays (sequences) of primitives 
+            </doc> 
+            <member name="MyUnbArrayOfBoolean" type="boolean" sequenceMaxLength="-1"/>
+            <member name="MyUnbArrayOfByte" type="byte" sequenceMaxLength="-1"/>
+            <member name="MyUnbArrayOfByte1" type="byte" sequenceMaxLength="-1"/>
+            <member name="MyUnbArrayOfInt16" type="int16" sequenceMaxLength="-1"/>
+            <member name="MyUnbArrayOfInt32" type="int32" sequenceMaxLength="-1"/>
+            <member name="MyUnbArrayOfInt64" type="int64" sequenceMaxLength="-1"/> 
+            <member name="MyUnbArrayOfFloat32" type="float32" sequenceMaxLength="-1"/>
+            <member name="MyUnbArrayOfString" type="string" sequenceMaxLength="-1"/>
+        </struct>
+
+    </module>
+</types>

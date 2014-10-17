@@ -1,0 +1,45 @@
+import java.security.MessageDigest
+
+def generateMD5(final file) {
+   MessageDigest digest = MessageDigest.getInstance("MD5")
+   file.withInputStream(){is->
+     byte[] buffer = new byte[8192]
+     int read = 0
+     while( (read = is.read(buffer)) > 0) {
+       digest.update(buffer, 0, read);
+     }
+   }
+   BigInteger bigInt = new BigInteger(1, digest.digest())
+   return bigInt.toString(16).padLeft(32, '0')
+}
+
+task licenseFile {
+  ext.destFile = project.file("${buildDir}/technicolor.license")
+  //    def destfile = project.file("${buildDir}/${project.group}.${project.name}-${project.version}.license")
+  doLast {
+    file("$buildDir/technicolor.description").withWriter { desc ->
+      destFile.withWriter { dest ->
+        def packaged=project.hasProperty('android') ? 'packaged' : 'non-packaged'
+
+        /* Just listing all dependencies here, is it better to travel the graph? */
+        project.configurations.runtime.resolvedConfiguration.resolvedArtifacts.each {
+          def id = it.moduleVersion.id
+          def depName = "${id.group}.${id.name}"
+          def versionString = "${id.group}.${id.name}.${id.version}"
+          def md5Sum = id.version ==~ /.*-SNAPSHOT/ ? "" : generateMD5(it.file)
+
+          desc.println ";${md5Sum};${depName};${versionString};none"
+          dest.println "${project.group}.${project.name}.${project.version}:dynamic:${versionString},${packaged}"
+        }
+      }
+    }
+  }
+}
+
+artifacts {
+  archives(licenseFile.destFile) {
+    name ".${project.name}-${project.version}.license"
+    type 'license'
+    builtBy licenseFile
+  }
+}

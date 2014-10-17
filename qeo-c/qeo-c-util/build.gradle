@@ -1,0 +1,47 @@
+
+ext.kwUseJNI = true
+ext.artifactoryPomPackaging = "zip"
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/klocwork.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/mwbuild.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+
+group = project.qeoGroup
+version = project.qeoVersion
+
+task generateZipForSdk(type: Zip) {
+	into("platform/src/qeo") {
+		from files("src/platform") {
+			include "*.*"
+		}
+		from files("src/platform/impl/default") {
+			include "*.*"
+		}
+		from files("src/"){
+			include "*.c"
+			include "*.h"
+		}
+	}
+	into("platform/include/qeo") {
+		from files("api/headers/qeo") {
+			include "*.h"
+		}
+	}
+	into("platform/include/platform_api") {
+		from files("api/headers/platform_api") {
+			include "*.h"
+		}
+	}
+	
+	into("platform/script") {
+                from files("script") {
+                        include "*.*"
+                }
+        }
+
+}
+
+artifacts {
+	archives generateZipForSdk
+}
+

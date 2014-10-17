@@ -271,9 +271,9 @@ static size_t element_size (const DDS_TypeSupport_meta *tsm)
 		return (~0);
 }
 
-static Type *tsm_create_sequence (TypeLib                    *lp,
-				  const DDS_TypeSupport_meta **tsm,
-				  unsigned                   *iflags)
+Type *tsm_create_sequence (TypeLib                    *lp,
+			   const DDS_TypeSupport_meta **tsm,
+			   unsigned                   *iflags)
 {
 	size_t			size, nelem = (*tsm)->nelem, esize;
 	Type			*tp, *element_type;
@@ -302,9 +302,9 @@ static Type *tsm_create_sequence (TypeLib                    *lp,
 	return (tp);
 }
 
-static Type *tsm_create_array (TypeLib                    *lp,
-			       const DDS_TypeSupport_meta **tsm,
-			       unsigned                   *iflags)
+Type *tsm_create_array (TypeLib                    *lp,
+			const DDS_TypeSupport_meta **tsm,
+			unsigned                   *iflags)
 {
 	size_t			size, nelem = (*tsm)->nelem, esize;
 	Type			*tp, *element_type;

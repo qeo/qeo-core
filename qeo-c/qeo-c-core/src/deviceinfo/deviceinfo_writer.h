@@ -17,9 +17,9 @@
 
 #include <qeocore/api.h>
 
-qeocore_writer_t* qeo_deviceinfo_publish(qeo_factory_t *factory);
+void qeo_deviceinfo_publish(qeo_factory_t *factory);
 
-void qeo_deviceinfo_destruct(qeocore_writer_t *devinfo_writer);
+void qeo_deviceinfo_destruct(qeo_factory_t *factory);
 
 
 #endif /* DEVICEINFO_WRITER_H_ */

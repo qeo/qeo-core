@@ -14,6 +14,7 @@
 
 /* rtps_msg.c -- Implements the RTPS message construction and parsing. */
 
+#include <assert.h>
 #include "atomic.h"
 #include "pool.h"
 #include "log.h"
@@ -355,9 +356,9 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 	size_t			dsize;
 	int			i, add_time_on_split = 0;
 	Type			*tp;
+	unsigned char		*xp;
 #ifdef DDS_NATIVE_SECURITY
 	DBW			dbw;
-	unsigned char		*xp;
 	DB			*ndbp, *kdbp;
 	size_t			nlength;
 	DDS_ReturnCode_t	ret;
@@ -526,7 +527,6 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 				goto next_frag_chunk;
 			}
 			else if (dfp) {
-				data_mep->pad = dlen - clen;
 				TX_DATA_FRAG (rrp->rr_writer, dfp, mep->header.flags);
 				STATS_INC (rrp->rr_ndatafrags);
 				add_proxy_elements (&rrp->proxy,
@@ -713,6 +713,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 				cp->c_nrefs++;
 				rcl_done (cp);
 				np->arg = cp;
+				assert (data_mep->pad < 4);
 			}
 			mep->header.length += dlen;
 			msize += dlen;
@@ -720,6 +721,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 				str_unref (kp);
 				kp = NULL;
 			}
+			assert (mep->pad < 4);
 		}
 		else {
 			/* Add serializedKey submessage element. */
@@ -740,27 +742,34 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 				mep->d [ofs++] = 0;
 				remain -= 4;
 				dlen -= 4;
-				kh = 0;
+				clen -= 4;
+				msize += 4;
 			}
 
 			/* Check if key data fits directly in rest of buffer. */
 	 		if (dlen <= remain) { /* Fits! */
-				tp= (ts->ts_prefer == MODE_CDR) ? ts->ts_cdr: ts->ts_pl->xtype;
+				tp = (ts->ts_prefer == MODE_CDR) ? ts->ts_cdr: ts->ts_pl->xtype;
 
 				/* Just copy change data. */
-				if (kp)
-					memcpy (mep->d + ofs, str_ptr (kp) + fofs - kh, dlen);
+				if (kp) {
+					xp = (unsigned char *) (str_ptr (kp) + fofs);
+					if (fofs)
+						xp -= kh;
+					memcpy (mep->d + ofs, xp, dlen);
+				}
 				else if (!tp || (ENDIAN_CPU == ENDIAN_BIG && ts->ts_fksize))
-					memcpy (mep->d + ofs, hp + fofs, dlen);
+					memcpy (mep->d + ofs, hp, dlen);
 				else {
-					cdr_key_fields (mep->d + ofs, 4, hp, 4 + fofs, tp,
+					cdr_key_fields (mep->d + ofs, 4, hp, 4, tp,
 							1, 1, ENDIAN_CPU ^ ENDIAN_BIG, 0);
 					while (clen < dlen)
 						mep->d [ofs + clen++] = 0;
 				}
 				mep->length += dlen;
+				mep->pad = dlen - clen;
 			}
 			else {	/* Doesn't fit :-(  Needs extra container! */
+				mep->pad = 0;
 				data_mep = rtps_msg_append_mep (mep);
 				if (!data_mep) {
 					if (kp) {
@@ -770,10 +779,17 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 					log_printf (RTPS_ID, 0, "rtps_msg_add_data: no memory for extra key element.\r\n");
 					goto no_key_data;
 				}
+				if (kp) {
+					xp = (unsigned char *) (str_ptr (kp) + fofs);
+					if (fofs)
+						xp -= kh;
+				}
+				else
+					xp = NULL;
 				if (!kp || (kp && dlen <= MAX_ELEMENT_DATA)) {
 					data_mep->data = data_mep->d;
 					memcpy (data_mep->data,
-						(kp) ? str_ptr (kp) + fofs - kh : (char *) hp->hash + fofs,
+						(kp) ? xp : hp->hash,
 						dlen);
 					if (kp) {
 						str_unref (kp);
@@ -784,13 +800,17 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 					np = (NOTIF_DATA *) data_mep->d;
 					np->type = NT_STR_FREE;
 					np->arg = kp;
-					data_mep->data = (unsigned char *) str_ptr (str_ref (kp)) + fofs;
+					str_ref (kp);
+					data_mep->data = xp;
 					data_mep->db = NULL;
 				}
 				data_mep->length = dlen;
+				data_mep->pad = dlen - clen;
+				assert (data_mep->pad < 4);
 			}
 			mep->header.length += dlen;
 			msize += dlen;
+			assert (mep->pad < 4);
 		}
 
 	    no_key_data:
@@ -819,10 +839,6 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 	if (nfrags)
 		*nfrags = (dsize > rtps_frag_size) ? f - 1: 0;
 	if (dsize > rtps_frag_size) {
-		if (data_mep)
-			data_mep->pad = dlen - clen;
-		else
-			mep->pad = dlen - clen;
 		TX_DATA_FRAG (rrp->rr_writer, dfp, mep->header.flags);
 		STATS_INC (rrp->rr_ndatafrags);
 		add_proxy_elements (&rrp->proxy, first_mep, msize, 

@@ -1,0 +1,158 @@
+
+apply plugin: 'java'
+
+ext.mainClassName = "com.technicolor.qeo.codegen.Main"
+
+
+configurations {
+    testCompileC
+    testCompileJava
+    testCompileJS
+}
+
+//download and extract qeo-c headers/libraries
+task downloadQeoC(type: Copy) {
+    from project.configurations.testCompileC
+    into "${buildDir}/download"
+    doFirst {
+        delete "${buildDir}/download"
+    }
+}
+
+task getQeoC() {
+    dependsOn downloadQeoC
+    inputs.dir "${buildDir}/download"
+    outputs.dir "${buildDir}/qeo-sdk/c"
+    doLast {
+        mkdir "${buildDir}/qeo-sdk/c"
+        file("${buildDir}/download").listFiles().each { f ->
+            exec {
+                workingDir "${buildDir}/qeo-sdk/c"
+                commandLine = ['tar', '-xzf', f.absolutePath]
+            }
+        }
+    }
+}
+
+//dummy task to execute all test compilations
+task execTestCompiles() { }
+
+project(":qeo-codegen").file("test").listFiles().each { dir ->
+    if (dir.isDirectory()) {
+        createTestCompileTask(dir)
+    }
+}
+
+void createTestCompileTask(File dir) {
+    def taskName = dir.name
+    def taskNameGenerateC = "generateTestCompileC${taskName}"
+    def taskNameGenerateJava = "generateTestCompileJava${taskName}"
+    def taskNameGenerateJS = "generateTestCompileJS${taskName}"
+    def taskNameCompileC = "execTestCompileC${taskName}"
+    def taskNameCompileJava = "execTestCompileJava${taskName}"
+    def taskNameCompileJS = "execTestCompileJS${taskName}"
+    def outDirC = "${buildDir}/testcompile/c/${taskName}"
+    def outDirJava = "${buildDir}/testcompile/java/${taskName}"
+    def outDirJS = "${buildDir}/testcompile/js/${taskName}"
+    File qdmDir = new File(dir, "qdm");
+    def testMakefile = file("test/Makefile")
+    def testMainc = file("test/main.c")
+    if (!qdmDir.directory) {
+        logger.warn("Directory ${qdmDir} not found, not generating tests")
+    }
+    task "${taskNameGenerateC}"(type: JavaExec) {
+        main = mainClassName
+        classpath configurations.testRuntime
+        args "-lc"
+        args "-o${outDirC}/src"
+        inputs.dir qdmDir
+        inputs.file testMakefile
+        inputs.file testMainc
+        outputs.dir outDirC
+        doFirst {
+            qdmDir.listFiles().grep(~/^.*\.xml$/).each { qdm ->
+                //add every xml file in the qdm folder to the arguments
+                args qdm.path
+            }
+        }
+        doLast {
+            copy {
+                from testMakefile
+                into outDirC
+            }
+            copy {
+                from testMainc
+                into "${outDirC}/src"
+            }
+            mkdir "${outDirC}/bin"
+        }
+    }
+    task "${taskNameGenerateJava}"(type: JavaExec) {
+        main = mainClassName
+        classpath configurations.testRuntime
+        args "-ljava"
+        args "-o${outDirJava}/src"
+        inputs.dir qdmDir
+        outputs.dir outDirJava
+        doFirst {
+            qdmDir.listFiles().grep(~/^.*\.xml$/).each { qdm ->
+                //add every xml file in the qdm folder to the arguments
+                args qdm.path
+            }
+        }
+    }
+    task "${taskNameGenerateJS}"(type: JavaExec) {
+        main = mainClassName
+        classpath configurations.testRuntime
+        args "-ljs"
+        args "-o${outDirJS}/src"
+        inputs.dir qdmDir
+        outputs.dir outDirJS
+        doFirst {
+            qdmDir.listFiles().grep(~/^.*\.xml$/).each { qdm ->
+                //add every xml file in the qdm folder to the arguments
+                args qdm.path
+            }
+        }
+    }
+    task "${taskNameCompileC}"(type: Exec) {
+        dependsOn getQeoC
+        dependsOn "${taskNameGenerateC}"
+        workingDir outDirC
+        inputs.dir "${outDirC}/src"
+        inputs.file "${outDirC}/Makefile"
+        outputs.dir "${outDirC}/bin"
+        outputs.file "${outDirC}/qdmtest"
+        commandLine = ["make"]
+        environment << [ "QEO_HOME": "${buildDir}/qeo-sdk"]
+    }
+    task "${taskNameCompileJava}"(type: JavaCompile) {
+        dependsOn "${taskNameGenerateJava}"
+        classpath = configurations.testCompileJava
+        source "${outDirJava}/src"
+        destinationDir = file("${outDirJava}/bin")
+    }
+    task "${taskNameCompileJS}"(type: JavaCompile) {
+        dependsOn "${taskNameGenerateJS}"
+        classpath = configurations.testCompileJS
+        source "${outDirJS}/src"
+        destinationDir = file("${outDirJS}/bin")
+    }
+    tasks.execTestCompiles.dependsOn("${taskNameCompileC}")
+    tasks.execTestCompiles.dependsOn("${taskNameCompileJava}")
+//    tasks.execTestCompiles.dependsOn("${taskNameCompileJS}")
+    tasks.check.dependsOn(execTestCompiles)
+}
+
+
+test {
+    inputs.dir project(":qeo-codegen").files("test")
+}
+
+dependencies {
+    testCompile project(":qeo-codegen")
+    testCompileC "org.qeo:qeo-native:${version}:HOSTLINUX@tgz" //hostlinux so files
+    testCompileC "org.qeo:qeo-native:${version}:@tgz" //headers
+    testCompileJava "org.qeo:qeo-java-core:${version}" //qeo-java-core
+}
+

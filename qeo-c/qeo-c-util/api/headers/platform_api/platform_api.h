@@ -86,6 +86,7 @@ qeo_util_retcode_t qeo_platform_set_device_storage_path(const char* path);
 /**
  * Store a pointer to the CA certificate storage path (only pointer is stored, ownership is not transferred)
  * This function should be called prior to using the Qeo API (e.g. creating factories)
+ * Note that only 1 or the 2 parameters should be given, the other parameter must be NULL.
  *
  * \param[in] ca_file A file containing a list of CA certificates in PEM format, or \c NULL.
  * \param[in] ca_path A directory containing CA certificates in PEM format, or \c NULL.

@@ -630,7 +630,7 @@ static size_t cdr_generate_array (unsigned char   *out,
 	unsigned		i, nelems = atp->bound [0];
 	const unsigned char	*prev_src, *sp;
 	const DynData_t		*prev_sdp, **dpp = NULL;
-	int			prev_dynamic;
+	int			prev_dynamic, dump = ip->dump;
 	size_t			delta = offset;
 
 	if (ip->key_mode && !kf)
@@ -660,9 +660,13 @@ static size_t cdr_generate_array (unsigned char   *out,
 		dbg_printf ("{");
 
 	for (i = 0; i < nelems; i++) {
-		if (ip->dump && i)
+		if (ip->dump && i) {
 			dbg_printf (", ");
-
+			if (i > 64) {
+				dbg_printf ("... (%u entries)", nelems);
+				ip->dump = 0;
+			}
+		}
 		sp = ip->src;
 		if (ip->dynamic)
 			ip->sdp = dpp [i];
@@ -682,9 +686,10 @@ static size_t cdr_generate_array (unsigned char   *out,
 	ip->src = prev_src;
 	ip->sdp = prev_sdp;
 	ip->dynamic = prev_dynamic;
-	if (ip->dump)
+	if (dump) {
+		ip->dump = dump;
 		dbg_printf ("}");
-
+	}
 	return (delta);
 }
 
@@ -699,7 +704,7 @@ static size_t cdr_generate_seqmap (unsigned char      *out,
 	uint32_t		nelem;
 	const unsigned char	*prev_src, *sp;
 	const DynData_t		*prev_sdp, **dpp = NULL;
-	int			prev_dynamic, do_write = out != NULL;
+	int			prev_dynamic, do_write = out != NULL, dump = ip->dump;
 	size_t			delta = offset;
 
 	etp = real_type_ptr (stp->collection.type.scope,
@@ -750,9 +755,13 @@ static size_t cdr_generate_seqmap (unsigned char      *out,
 		return (delta);
 
 	for (i = 0; i < nelem; i++) {
-		if (ip->dump && i)
+		if (ip->dump && i) {
 			dbg_printf (", ");
-
+			if (i > 64) {
+				dbg_printf ("... (%u entries)", nelem);
+				ip->dump = 0;
+			}
+		}
 		sp = ip->src;
 		if (ip->dynamic)
 			ip->sdp = dpp [i];
@@ -772,9 +781,10 @@ static size_t cdr_generate_seqmap (unsigned char      *out,
 	ip->src = prev_src;
 	ip->sdp = prev_sdp;
 	ip->dynamic = prev_dynamic;
-	if (ip->dump)
+	if (dump) {
+		ip->dump = dump;
 		dbg_printf ("}");
-
+	}
 	return (delta);
 }
 
@@ -1373,6 +1383,7 @@ typedef struct parse_info_st {
 	unsigned	key_mode:1;	/* Key mode. */
 	unsigned	copy_data:1;	/* No references, copy all data. */
 	unsigned	names:1;	/* Dump field names. */
+	unsigned	dump:1;		/* Dump data flag. */
 	int64_t		*label;		/* Discriminator value while parsing. */
 } ParseInfo;
 
@@ -1473,9 +1484,11 @@ static size_t cdr_parse_string (const unsigned char *src,
 		ip->dofs += 4;
 	}
 	if (!PA_CopyData (ip->action)) { /* Length calculation. */
-		if (ip->action == PA_DumpData)
-			cdr_dump_string ((l) ? (char *) src + sofs : NULL,
-					 l, stp->collection.element_size);
+		if (ip->action == PA_DumpData) {
+			if (ip->dump)
+				cdr_dump_string ((l) ? (char *) src + sofs : 
+					NULL, l, stp->collection.element_size);
+		}
 		else if (ip->action == PA_GetAuxLength && !stp->bound)
 
 			/* Unbounded string: increase total length
@@ -1768,10 +1781,12 @@ static size_t cdr_parse_member (const unsigned char *src,
 					     ((const UnionType *) dp->type)->member;
 	}
 	else if (action == PA_DumpData && (!ip->key_mode || key)) {
-		if (ip->names)
-			dbg_printf ("%s=", str_ptr (mp->name));
-		else if (mutable)
-			dbg_printf (".%s=", str_ptr (mp->name));
+		if (ip->dump) {
+			if (ip->names)
+				dbg_printf ("%s=", str_ptr (mp->name));
+			else if (mutable)
+				dbg_printf (".%s=", str_ptr (mp->name));
+		}
 	}
 	else if (action == PA_GetAuxLength &&
 		 (mp->is_optional || mp->is_shareable) &&
@@ -1838,8 +1853,10 @@ static size_t cdr_parse_cdr_unordered (const unsigned char *src,
 
 		if (ip->action == PA_DumpData &&
 		    (!ip->key_mode || key_member) &&
-		    nf++)
-			dbg_printf (", ");
+		    nf++) {
+			if (ip->dump)
+				dbg_printf (", ");
+		}
 		else if (ip->action == PA_GetOffset &&
 		         ip->field == i)
 			return (sofs);
@@ -1926,7 +1943,7 @@ static size_t cdr_parse_cdr_ordered (const unsigned char *src,
 
 	/* 5. Parse each field in sorted key field order. */
 	for (i = 0, fp = fds; i < nkf; i++, fp++) {
-		if (ip->action == PA_DumpData && i)
+		if (ip->action == PA_DumpData && ip->dump && i)
 			dbg_printf (", ");
 
 		mp = &stp->member [fp->index];
@@ -1983,8 +2000,10 @@ static size_t cdr_parse_mutable_unordered (const unsigned char *src,
 			key_field = key && (mp->is_key || !stp->keyed);
 			if (ip->action == PA_DumpData &&
 			    (!ip->key_mode || key_field) && 
-			    nf++)
-				dbg_printf (", ");
+			    nf++) {
+				if (ip->dump)
+					dbg_printf (", ");
+			}
 			else if (ip->action == PA_GetOffset &&
 				 ip->field == i)
 				return (sofs);
@@ -2111,7 +2130,7 @@ static size_t cdr_parse_mutable_ordered (const unsigned char *src,
 
 	/* 5. Parse each field in sorted key field order. */
 	for (i = 0, fp = fds; i < nkf; i++, fp++) {
-		if (ip->action == PA_DumpData && i)
+		if (ip->action == PA_DumpData && ip->dump && i)
 			dbg_printf (", ");
 
 		mp = &stp->member [fp->index];
@@ -2153,7 +2172,7 @@ static size_t cdr_parse_struct (const unsigned char *src,
 		p->dp += n;
 		dm_printf ("cdr_parse_struct(dd=%p);\r\n", p);
 	}
-	else if (ip->action == PA_DumpData)
+	else if (ip->action == PA_DumpData && ip->dump)
 		dbg_printf ("{");
 
 	if (stp->type.extensible != MUTABLE)
@@ -2165,7 +2184,7 @@ static size_t cdr_parse_struct (const unsigned char *src,
 	else
 		sofs = cdr_parse_mutable_ordered (src, sofs, stp, ip, key);
 
-	if (ip->action == PA_DumpData)
+	if (ip->action == PA_DumpData && ip->dump)
 		dbg_printf ("}");
 	return (sofs);
 }
@@ -2204,7 +2223,7 @@ static size_t cdr_parse_union (const unsigned char *src,
 		p->dp += n;
 		dm_printf ("cdr_parse_union(dd=%p);\r\n", p);
 	}
-	else if (ip->action == PA_DumpData)
+	else if (ip->action == PA_DumpData && ip->dump)
 		dbg_printf ("{");
 	if (ip->sformat == CF_CDR && utp->type.extensible == MUTABLE)
 		for (;;) {
@@ -2240,7 +2259,7 @@ static size_t cdr_parse_union (const unsigned char *src,
 					if (!n)
 						return (0);
 
-					if (ip->action == PA_DumpData)
+					if (ip->action == PA_DumpData && ip->dump)
 						dbg_printf (": ");
 
 					ip->label = NULL;
@@ -2296,7 +2315,7 @@ static size_t cdr_parse_union (const unsigned char *src,
 		if (!n)
 			return (0);
 
-		if (ip->action == PA_DumpData)
+		if (ip->action == PA_DumpData && ip->dump)
 			dbg_printf (": ");
 		sofs = n;
 
@@ -2349,7 +2368,7 @@ static size_t cdr_parse_union (const unsigned char *src,
 		if (!sofs)
 			return (0);
 	}
-	if (ip->action == PA_DumpData)
+	if (ip->action == PA_DumpData && ip->dump)
 		dbg_printf ("}");
 	return (sofs);
 }
@@ -2364,6 +2383,7 @@ static size_t cdr_parse_array (const unsigned char *src,
 	Type		*tp;
 	DynData_t	*p;
 	size_t		dofs;
+	int		dump;
 
 	for (i = 1; i < atp->nbounds; i++)
 		nelems *= atp->bound [i];
@@ -2394,11 +2414,19 @@ static size_t cdr_parse_array (const unsigned char *src,
 		s = atp->collection.element_size;
 		p = NULL;
 	}
-	if (ip->action == PA_DumpData)
-		dbg_printf ("{");
+	if (ip->action == PA_DumpData) {
+		dump = ip->dump;
+		if (ip->dump)
+			dbg_printf ("{");
+	}
 	for (i = 0, dofs = ip->dofs; i < nelems; i++, dofs += s) {
-		if (ip->action == PA_DumpData && i)
+		if (ip->action == PA_DumpData && ip->dump && i) {
 			dbg_printf (", ");
+			if (i > 64) {
+				dbg_printf ("... (%u elements)", nelems);
+				ip->dump = 0;
+			}
+		}
 		ip->dofs = dofs;
 		n = cdr_parse (src, sofs, tp, ip, key);
 		if (!n)
@@ -2411,8 +2439,10 @@ static size_t cdr_parse_array (const unsigned char *src,
 	}
 	if (ip->action == PA_GetDynamic)
 		ip->dyn_dst = p;
-	else if (ip->action == PA_DumpData)
+	else if (ip->action == PA_DumpData && dump) {
 		dbg_printf ("}");
+		ip->dump = dump;
+	}
 	return (sofs);
 }
 
@@ -2429,6 +2459,7 @@ static size_t cdr_parse_seqmap (const unsigned char *src,
 	uint32_t	nelem;
 	unsigned	i, n, dofs, s, ts;
 	size_t		esize;
+	int		dump;
 	
 	tp = real_type_ptr (stp->collection.type.scope,
 			    stp->collection.element_type);
@@ -2446,8 +2477,11 @@ static size_t cdr_parse_seqmap (const unsigned char *src,
 
 	if (!PA_CopyData (ip->action)) {
 		s = stp->collection.element_size;
-		if (ip->action == PA_DumpData)
-			dbg_printf ("{");
+		if (ip->action == PA_DumpData) {
+			dump = ip->dump;
+			if (ip->dump)
+				dbg_printf ("{");
+		}
 		else if (ip->action == PA_GetAuxLength) {
 			ip->dlength = cdr_field_ofs (tp, ip->dlength, &esize);
 			ip->dlength += nelem * s;
@@ -2519,8 +2553,13 @@ static size_t cdr_parse_seqmap (const unsigned char *src,
 			}
 		}
 		else if (ip->action == PA_DumpData) {
-			if (i)
+			if (i && ip->dump) {
 				dbg_printf (", ");
+				if (i > 64) {
+					dbg_printf ("... (%u entries)", nelem);
+					ip->dump = 0;
+				}
+			}
 		}
 		n = cdr_parse (src, sofs, tp, ip, key);
 		if (!n)
@@ -2536,8 +2575,11 @@ static size_t cdr_parse_seqmap (const unsigned char *src,
 	}
 	if (ip->action == PA_GetDynamic)
 		ip->dyn_dst = p;
-	if (ip->action == PA_DumpData)
+	ip->dump = dump;
+	if (ip->action == PA_DumpData && dump) {
 		dbg_printf ("}");
+		ip->dump = dump;
+	}
 	return (sofs);
 }
 
@@ -2563,7 +2605,7 @@ static size_t cdr_parse (const unsigned char *src,
 			if (!ip->key_mode || key) {
 				if (PA_CopyData (ip->action))
 					ip->dst [ip->dofs] = src [sofs];
-				else if (ip->action == PA_DumpData) {
+				else if (ip->action == PA_DumpData && ip->dump) {
 					if (tp->kind == DDS_CHAR_8_TYPE)
 						dbg_printf ("'%s'", 
 						 cdr_char8 ((char) src [sofs]));
@@ -2617,19 +2659,22 @@ static size_t cdr_parse (const unsigned char *src,
 					if (tp->kind == DDS_INT_16_TYPE) {
 						if (ip->label)
 							*ip->label = (short) s;
-						if (ip->action == PA_DumpData)
+						if (ip->action == PA_DumpData &&
+						    ip->dump)
 							dbg_printf ("%d", (short) s);
 					}
 					else if (tp->kind == DDS_UINT_16_TYPE) {
 						if (ip->label)
 							*ip->label = s;
-						if (ip->action == PA_DumpData)
+						if (ip->action == PA_DumpData &&
+						    ip->dump)
 							dbg_printf ("%uU", s);
 					}
 					else {
 						if (ip->label)
 							*ip->label = s;
-						if (ip->action == PA_DumpData)
+						if (ip->action == PA_DumpData &&
+						    ip->dump)
 							dbg_dump_e_b (tp, (short) s);
 					}
 					ip->label = NULL;
@@ -2670,7 +2715,8 @@ static size_t cdr_parse (const unsigned char *src,
 							memcswap32 (&f, &src [sofs]);
 						else
 							memcpy32 (&f, &src [sofs]);
-						dbg_printf ("%f", f);
+						if (ip->dump)
+							dbg_printf ("%f", f);
 					}
 					else {
 						if (ip->int_swap)
@@ -2683,7 +2729,8 @@ static size_t cdr_parse (const unsigned char *src,
 							else
 								*ip->label = (int32_t) l;
 						}
-						if (ip->action == PA_DumpData) {
+						if (ip->action == PA_DumpData &&
+						    ip->dump) {
 							if (tp->kind == DDS_INT_32_TYPE)
 								dbg_printf ("%d", (int32_t) l);
 							else if (tp->kind == DDS_UINT_32_TYPE)
@@ -2736,7 +2783,8 @@ static size_t cdr_parse (const unsigned char *src,
 							memcswap64 (&d, &src [sofs]);
 						else
 							memcpy64 (&d, &src [sofs]);
-						dbg_printf ("%f", d);
+						if (ip->dump)
+							dbg_printf ("%f", d);
 					}
 					else {
 						if (ip->int_swap)
@@ -2745,7 +2793,8 @@ static size_t cdr_parse (const unsigned char *src,
 							memcpy64 (&ll, &src [sofs]);
 						if (ip->label)
 							*ip->label = ll;
-						if (ip->action == PA_DumpData) {
+						if (ip->action == PA_DumpData &&
+						    ip->dump) {
 							if (tp->kind == DDS_INT_64_TYPE)
 								dbg_printf ("%" PRId64, (int64_t) ll);
 							else if (tp->kind == DDS_UINT_64_TYPE)
@@ -2791,7 +2840,8 @@ static size_t cdr_parse (const unsigned char *src,
 						memcpy64 (&ld, &src [sofs]);
 						memcpy64 (((char *) &ld) + 8, &src [sofs + 8]);
 					}
-					dbg_printf ("%Lf", ld);
+					if (ip->dump)
+						dbg_printf ("%Lf", ld);
 				}
 			}
 			if (ip->sformat == CF_CDR || key)
@@ -3253,6 +3303,7 @@ DDS_ReturnCode_t cdr_dump_cdr (unsigned   indent,
 	info.int_swap = swap;
 	info.key_mode = key;
 	info.names = names;
+	info.dump = 1;
 	if (type->kind == DDS_STRUCTURE_TYPE) {
 		stp = (const StructureType *) type;
 		if (!cdr_parse_struct (src - hsize, hsize, stp, &info, 1))

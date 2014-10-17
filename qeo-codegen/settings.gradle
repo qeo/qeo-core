@@ -1,0 +1,3 @@
+include 'qeo-codegen', 'qeo-codegen-test'
+rootProject.name = "qeo-codegen-root"
+

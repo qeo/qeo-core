@@ -1,0 +1,8 @@
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/klocwork.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/mwbuild.gradle'
+
+version = project.qeoVersion
+
+//note: for updating generated types, execute "gradle -b codegen.gradle assemble"
+//this is put in a separate gradle file by design. This avoids artifactory to put an unneeded dependency on the codegen.
+

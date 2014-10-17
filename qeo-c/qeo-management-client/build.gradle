@@ -1,0 +1,13 @@
+
+ext.artifactoryPomPackaging = "tgz"
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/mwbuild.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/klocwork.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+
+group = project.qeoGroup
+version = project.qeoVersion
+
+artifacts {
+	archives file: file("${projectDir}/${project.name}-test-full.tgz"), name: project.name, extension:"tgz", builtBy:build_test_full_tarball
+}

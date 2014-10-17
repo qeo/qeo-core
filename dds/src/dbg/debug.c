@@ -1975,16 +1975,19 @@ static void dbg_sessions_reset (int suspend)
 		if (sp->in_fd == tty_stdin && suspend)
 			continue;
 
-		if (i) {
 #ifdef _WIN32
-			if (sp->sk_session)
-				closesocket (sp->sk);
-			else
-				CloseHandle (sp->in_fd);
-#else
-				close (sp->in_fd);
-#endif
+		if (sp->sk_session) {
+			closesocket (sp->sk);
+			sock_fd_remove_socket (sp->sk);
 		}
+		else {
+			CloseHandle (sp->in_fd);
+			sock_fd_remove_handle (sp->in_fd);
+		}
+#else
+		close (sp->in_fd);
+		sock_fd_remove (sp->in_fd);
+#endif
 		if (sp->in_fd == tty_stdin && !suspend)
 			cl_save (sp->cmdline, ".tdds_hist");
 
@@ -2078,6 +2081,7 @@ void dbg_server_stop (void)
 #endif
 	sock_fd_remove_socket (dbg_server_fd);
 	dbg_server_fd = 0;
+	printf ("TDDS Debug: server stopped.\r\n");
 }
 
 void dbg_server_exit (void)

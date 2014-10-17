@@ -1,0 +1,71 @@
+
+//helper script to have pom files published with the artifactoryPublish plugin needed for some cases.
+
+boolean debug = false //use for debugging this without the artifactory plugin
+
+if (tasks.findByPath("artifactoryPublish") != null || debug) {
+    def pomFile = "${buildDir}/artifactory.pom"
+
+    if (project.hasProperty("artifactoryGenerateUploadPom") && !project.hasProperty("artifactoryNoArchives")) {
+        //Create pom by abusing the upload task. This works better for android
+        //sidenote: this task only works if there is at least 1 archive
+        pomFile = "${buildDir}/poms/pom-default.xml"
+
+        task (writeUploadPom, type:Upload) {
+            configuration = configurations.archives
+            repositories {
+                mavenDeployer {
+                    repository(url: "file:///tmp/artifactory-gradle")
+                }
+            }
+            doLast {
+                project.delete("/tmp/artifactory-gradle")
+            }
+        }
+        if (debug) {
+            assemble.dependsOn writeUploadPom
+        }
+        else {
+            artifactoryPublish.dependsOn writeUploadPom
+        }
+    }
+    else {
+        //create tasks to write the pom
+        task writeArtifactoryPom << {
+            logger.debug "Writing pomfile to ${pomFile}"
+            pom {
+                if (project.hasProperty("artifactoryPomPackaging")) {
+                    packaging = project.artifactoryPomPackaging
+                }
+                project {
+                    //nothing special to configure
+                }
+            }.writeTo(pomFile)
+        }
+        if (debug) {
+            assemble.dependsOn writeArtifactoryPom
+        }
+        else {
+            artifactoryPublish.dependsOn writeArtifactoryPom
+        }
+    }
+    logger.info("Pom file defined as ${pomFile}")
+    
+    if (debug) {
+        assemble {
+            doFirst {
+                assert(file(pomFile).exists())
+            }
+        }
+    }
+    else {
+        //tell artifactory plugin to use that pom
+        artifactoryPublish {
+            mavenDescriptor = pomFile
+            doFirst {
+                assert(file(pomFile).exists())
+            }
+        }
+    }
+}
+

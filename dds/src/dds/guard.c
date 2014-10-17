@@ -24,6 +24,14 @@
 
 /*#define LOG_GUARD	** Define this for guard event logging. */
 
+static const char *guard_tmr_names [] = {
+	"G.Liveliness",
+	"G.Deadline",
+	"G.Lifespan",
+	"G.AutoP_NW",
+	"G.AutoP_Disp"
+};
+
 static lock_t *lock_ptr (Guard_t *gp)
 {
 	LocalEndpoint_t	*lep;
@@ -89,7 +97,7 @@ static Guard_t *guard_insert (Guard_t      **list,
 			guard_free (gp);
 			return (NULL);
 		}
-		tmr_init (gp->timer, "Guard");
+		tmr_init (gp->timer, guard_tmr_names [type]);
 		gp->cmode = mode;
 		tmr_start_lock (gp->timer, p,
 					(uintptr_t) gp, fct, lock_ptr (gp));
@@ -264,7 +272,7 @@ static void guard_restart (Guard_t *list,
 		if (!tp)
 			warn_printf ("guard_restart: failed to allocate timer!");
 		else {
-			tmr_init (tp, "Guard");
+			tmr_init (tp, guard_tmr_names [type]);
 			tmr_start_lock (tp, p, (uintptr_t) first_gp, tmr_fct,
 							lock_ptr (first_gp));
 		}
@@ -332,7 +340,7 @@ static void wl_rem_auto (Domain_t *dp, Writer_t *wp, Endpoint_t *rp)
 {
 #ifdef LOG_GUARD
 	dbg_printf ("wl_rem_auto ({%u}->{%u})\r\n",
-			wp->w_handle, rp->entity.handle));
+			wp->w_handle, rp->entity.handle);
 #endif
 	wl_rem_part (dp, DDS_AUTOMATIC_LIVELINESS_QOS, wp, rp);
 }
@@ -424,7 +432,7 @@ static void rl_rem_auto (Domain_t *dp, Reader_t *rp, Endpoint_t *wp)
 {
 #ifdef LOG_GUARD
 	dbg_printf ("rl_rem_auto ({%u}<-{%u})\r\n",
-			rp->r_entity.handle, wp->entity.handle));
+			rp->r_handle, wp->entity.handle);
 #endif
 	rl_rem_part (dp, DDS_AUTOMATIC_LIVELINESS_QOS, rp, wp); 
 }
@@ -1275,7 +1283,7 @@ void action_continue (LocalEndpoint_t *ep, GuardType_t type)
 		if (!gp->timer)
 			return;
 
-		tmr_init (gp->timer, "Guard");
+		tmr_init (gp->timer, guard_tmr_names [type]);
 		gp->cmode = gp->mode;
 	}
 	else if (tmr_active (gp->timer))
@@ -1396,7 +1404,7 @@ void lifespan_disable (Endpoint_t *wp, Endpoint_t *rp)
 		rls_remove ((Reader_t *) rp, wp);
 }
 
-/* lifespan_continue -- Continue with Deadline checking on an endpoint. */
+/* lifespan_continue -- Continue with lifespan checking on an endpoint. */
 
 void lifespan_continue (LocalEndpoint_t *ep)
 {
@@ -1421,7 +1429,7 @@ int autopurge_no_writers_enable (Reader_t *rp)
 					      autopurge_nowriter_samples_delay);
 #ifdef LOG_GUARD
 	dbg_printf ("autopurge_nw_add ({%u}, %u)\r\n",
-			rp->r_handle, NULL, period);
+			rp->r_handle, period);
 #endif
 	gp = guard_insert (&rp->r_guard, GT_AUTOP_NW, 0,
 		           0, GM_ONE_SHOT, period,
@@ -1468,7 +1476,7 @@ int autopurge_disposed_enable (Reader_t *rp)
 					      autopurge_disposed_samples_delay);
 #ifdef LOG_GUARD
 	dbg_printf ("autopurge_disp_add ({%u}, %u)\r\n",
-			rp->r_handle, NULL, period);
+			rp->r_handle, period);
 #endif
 	gp = guard_insert (&rp->r_guard, GT_AUTOP_DISP, 0,
 		           0, GM_ONE_SHOT, period,

@@ -1,0 +1,18 @@
+
+
+//Android NDK properties
+ext.androidGccVersion = "4.6"
+ext.androidNdkApi = 9
+ext.androidNdkLocation = System.getProperty('androidNdk') ?: System.env.ANDROID_NDK
+if (!androidNdkLocation) {
+    if (System.getProperty("os.arch") == "amd64") {
+        //64bit
+        ext.androidNdkLocation = "/home/users/cpeqeo/tools/android-ndk-r9d_64" //default
+    }
+    else {
+        //32bit
+        ext.androidNdkLocation = "/home/users/cpeqeo/tools/android-ndk-r9b" //default
+    }
+}
+logger.info("Using android NDK ${androidNdkLocation}")
+

@@ -607,7 +607,6 @@ static void fwd_server_on_data(const qeocore_reader_t *reader,
     if (QEOCORE_NOTIFY == qeocore_data_get_status(data)) {
         qeo_factory_t *factory = (qeo_factory_t *)reader->entity.factory;
         int cnt = fwd_server_count_instances(reader);
-
         fwd_server_state_machine_eval(factory, cnt, false);
     }
 }

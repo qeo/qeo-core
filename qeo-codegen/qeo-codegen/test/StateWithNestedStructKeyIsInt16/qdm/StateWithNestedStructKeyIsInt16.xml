@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+    <include file="StructWithPrimitives.xml"/>
+    <include file="qeo.xml"/>
+    <module name="org::qeo::test">
+
+        <!-- struct representing a state containing a nested struct -->
+        <struct name="StateWithNestedStructKeyIsInt16" behavior="state">       
+            <doc>struct representing an event containing 
+                 a nested struct
+            </doc> 
+            <member name="MyBoolean" type="boolean" />
+            <member name="MyByte" type="byte"/>
+            <member name="MyInt16" type="int16" key="true"/>
+            <member name="MyInt32" type="int32"/>
+            <member name="MyInt64" type="int64"/> 
+            <member name="MyFloat32" type="float32"/>
+            <member name="MyString" type="string" />
+            <member name="MyStructWithPrimitives" type="nonBasic" nonBasicTypeName="MyStructWithPrimitives"/>
+            <member name="MyDeviceId" type="nonBasic" nonBasicTypeName="org::qeo::DeviceId"/>          
+            </struct>
+
+    </module>
+</types>

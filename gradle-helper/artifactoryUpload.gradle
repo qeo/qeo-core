@@ -1,0 +1,20 @@
+/**
+* This file configures gradle to upload artifacts directly to artifactory.
+* Use this file only if the artifactoryPlugin for gradle does not work in your situation!
+*/
+if (rootProject.hasProperty("artifactoryPublishRepo")) {
+    //jenkins-artifactory plugin is active
+    apply plugin: 'maven'
+    uploadArchives {
+        repositories {
+            mavenDeployer {
+                repository(url: rootProject.artifactoryPublishRepo) {
+                    if (rootProject.hasProperty("artifactoryPublishUsername") && rootProject.hasProperty("artifactoryPublishPassword")) {
+                        authentication(userName: rootProject.artifactoryPublishUsername, password: rootProject.artifactoryPublishPassword)
+                    }
+                }
+            }
+        }
+    }
+}
+

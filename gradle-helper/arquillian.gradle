@@ -1,0 +1,96 @@
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'jacoco'
+
+ext.jbossName = 'jboss-as-dist-BC' // including BouncyCastle as a module
+ext.jbossVersion = '7.1.1.Final'
+ext.jbossExt = 'tar.gz'
+
+ext.arquillianVersion = '1.1.2.Final'
+ext.jacocoName = 'org.jacoco.agent'
+ext.jacocoVersion = '0.6.2.201302030002'
+
+project.ext.jacocoDestFile = "${buildDir}/jacoco/test.exec"
+project.ext.jacocoDefaultParams = 'append=true,dumponexit=true,output=file,jmx=false'
+
+/**
+ * make sure to extract jboss before running arquillian tests
+ */
+test { 
+  doFirst {
+    copy {
+      configurations.testRuntimeNoJarConfig.findAll{it.name == "$jbossName-$jbossVersion.$jbossExt"}.each{ from tarTree(it) }
+      into buildDir
+    }
+  }
+}
+
+/**
+ * make sure to extract the 'jacocoagent.jar' from 'org.jacoco.agent.jar'
+ * we need this one for running arquillian test wrt Code Coverage (jacococ)
+ */
+afterEvaluate {
+    def jacocoArtifact = configurations.jacocoAgent.resolvedConfiguration.resolvedArtifacts.find {it.name == jacocoName}.getFile()
+    def dir = buildDir
+    def name = 'jacocoagent.jar'
+    def agent = new File(dir, name)
+    // make sure the agent.jar is there before running actual tests..
+    test {
+        doFirst {
+            copy {
+                from zipTree(jacocoArtifact)
+                include name
+                into dir
+            }
+            assert agent.exists()
+        }
+    }
+    // configure the test task
+    test {
+        // used in 'arquillian.xml' for starting the container with the given JVM_args
+        systemProperty 'JVM_ARGS', "-javaagent:${agent}=destfile=${jacocoDestFile},${jacocoDefaultParams}"
+    }
+    // configure the jacoco test report task, to include all dependent projects (compile dependency)
+    jacocoTestReport {
+        // get all projects we have a (compile) dependency on
+        def projs = configurations.compile.getAllDependencies().withType(ProjectDependency).collect{it.getDependencyProject()}
+        projs.each {
+            additionalSourceDirs files(it.sourceSets.main.java.srcDirs)
+            additionalClassDirs files(it.sourceSets.main.output)
+        }
+    }
+}
+
+jacocoTestReport {
+    executionData "${jacocoDestFile}"
+    reports {
+        xml.enabled true;
+        html.enabled true
+        html.destination "${reporting.baseDir}/jacoco"
+    }
+}
+
+configurations {
+  testRuntimeNoJarConfig
+}
+
+// ensure the (non-jar) dependency is not added to the eclipse classpath
+eclipse {
+  classpath {
+    minusConfigurations += configurations.testRuntimeNoJarConfig
+    minusConfigurations += configurations.jacocoAgent
+  }
+}
+
+dependencies {
+  testCompile group: 'org.jboss.arquillian', name: 'arquillian-bom', version: arquillianVersion
+  testCompile group: 'org.jboss.arquillian.junit', name: 'arquillian-junit-container', version: arquillianVersion
+  testRuntime group: 'org.jboss.as', name: 'jboss-as-arquillian-container-managed', version: '7.1.1.Final'
+  testRuntime group: 'org.jboss.arquillian.protocol', name: 'arquillian-protocol-servlet', version: arquillianVersion
+  testRuntime group: 'org.jboss.as', name: 'jboss-as-arquillian-container-managed', version: '7.1.1.Final'
+  // testRuntime dependency that is no jar
+  testRuntimeNoJarConfig group: 'com.technicolor.3rd.org.jboss.as', name: jbossName, version:jbossVersion, ext:jbossExt
+  // jacoco additions, getting the agent
+  jacocoAgent group: 'org.jacoco', name: jacocoName, version :jacocoVersion
+}
+

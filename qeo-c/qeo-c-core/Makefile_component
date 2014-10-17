@@ -36,7 +36,6 @@ qeo-c-core_TEST_PARTS_INSTALL += \
 	systest_interop_1proc@$$(bindir/)systest/core/interop_1proc:755 \
 	systest_state_open_realm@$$(bindir/)systest/core/state_open_realm:755 \
 	systest_state_open_realm_multiple_factories@$$(bindir/)systest/core/state_open_realm_multiple_factories:755 \
-	systest_open_realm_forbidden_topics@$$(bindir/)systest/core/open_realm_forbidden_topics:755 \
 	systest_state_open_default_realm@$$(bindir/)systest/core/state_open_default_realm:755 \
 	systest_type_reuse@$$(bindir/)systest/core/type_reuse:755 \
 	systest_location_service@$$(bindir/)systest/core/location_service:755 \
@@ -119,7 +118,7 @@ qeo-c-core.libmgmtclient_SRCS          := $(addprefix test/systest/, location_se
 qeo-c-core_SYSTESTS  = event state state_no_writers reg_unreg reg_unreg_random
 qeo-c-core_SYSTESTS += reader_close nested_type security de1764 de1804 de2763 de2760_bigstring de2760_bigstruct
 qeo-c-core_SYSTESTS += state_close sequence_type interop interop_1proc bigdata bigdata_dyn
-qeo-c-core_SYSTESTS += state_open_realm state_open_realm_multiple_factories open_realm_forbidden_topics state_open_default_realm
+qeo-c-core_SYSTESTS += state_open_realm state_open_realm_multiple_factories state_open_default_realm
 qeo-c-core_SYSTESTS += type_reuse location_service de2975 de3420 de2599 encrypt_otc
 qeo-c-core_SYSTESTS += comp_v1-tsm_to_v2-tsm comp_v1-tsm_to_v3-tsm
 qeo-c-core_SYSTESTS += comp_v2-tsm_to_v1-tsm comp_v3-tsm_to_v1-tsm 

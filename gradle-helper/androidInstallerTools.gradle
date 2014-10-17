@@ -1,0 +1,186 @@
+
+if (project.has('androidInstallerToolsIncluded') && project.androidInstallerToolsIncluded) {
+    return
+}
+ext.androidInstallerToolsIncluded = true
+
+task getConnectedDevices << {
+    def devicesOut = ""
+    new ByteArrayOutputStream().withStream { out ->
+        project.exec {
+            executable = adb
+            args = ['devices']
+            standardOutput = out
+            //stderr is printed anyway
+        }
+        devicesOut = out.toString()
+    }
+    project.ext.connectedDevices = []
+    devicesOut.eachLine { line ->
+        def matcher = line =~ /^(\S+)\s+device$/
+        if (matcher.matches()) {
+            logger.info("Found connected device " + matcher[0][1])
+            project.ext.connectedDevices += matcher[0][1]
+        }
+    }
+}
+
+//Install a truststore.p12 and corresponding policy file and url to the Qeo android service to bypass OTC prompting
+task installCertFile(dependsOn: getConnectedDevices) {
+    def qeoServiceName = "org.qeo.android.service"
+    def qeoServicePath = "/data/data/" + qeoServiceName + "/"
+    def qeoServiceFilesPath = qeoServicePath + "files/"
+    ext.jarFile = null
+    def result = 0
+
+    doLast {
+
+        if (jarFile == null) {
+            // Determine path of jar file containing credentials
+            project.configurations.each { cfg ->
+                if (cfg.name.equals("androidTestCompile") || cfg.name.equals("compile")) {
+                    cfg.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+                        if (artifact.classifier.equals("testlib")) {
+                            jarFile = artifact.file
+                        }
+                    }
+                }
+            }
+            if (null == jarFile) {
+                throw new FileNotFoundException("testlib JAR file with credentials not found")
+            }
+        }
+        logger.info("using credentials from $jarFile")
+    
+        // For each device
+        project.connectedDevices.each { device ->
+            // Determine uid/gid of org.qeo.android.service
+            def user = ""
+            def group = ""
+            logger.info("[${device}] get user/group info of ${qeoServiceName}")
+            new ByteArrayOutputStream().withStream { out ->
+                result = project.exec {
+                    executable = adb
+                    args = ['-s', device, 'shell', 'ls', '-ld', qeoServicePath]
+                    standardOutput = out
+                }
+                def tmp = out.toString().split()
+                user = tmp[1]
+                group = tmp[2]
+            }
+            logger.debug("${qeoServiceName} USER: ${user}")
+            logger.debug("${qeoServiceName} GROUP: ${group}")
+            // Make a files directory in org.qeo.android.service
+            logger.info("[${device}] mkdir ${qeoServiceFilesPath} on device")
+            new ByteArrayOutputStream().withStream { out ->
+                result = project.exec {
+                    executable = adb
+                    args = ['-s', device, 'shell', 'mkdir', qeoServiceFilesPath]
+                    standardOutput = out
+                }
+                def tmp = out.toString()
+                if (tmp.contains("Permission denied")) {
+                    throw new GradleException("Can't install certificate to device ${device}, are you connected as root?");
+                }
+            }
+            // Copy security files from JAR file to device
+            zipTree(jarFile).visit { elem ->
+                if (elem.relativePath.pathString.startsWith('home.qeo/')) {
+                    def remoteFile = qeoServiceFilesPath + elem.relativePath.pathString.substring('home.qeo/'.length())
+                    if (elem.file.isFile()) {
+                        logger.info("[${device}] push $remoteFile")
+                        result = project.exec {
+                            executable = adb
+                            args = ['-s', device, 'push', elem.file, remoteFile]
+                        }
+                    }
+                    else if (elem.file.isDirectory()) {
+                        logger.info("[${device}] mkdir $remoteFile")
+                        result = project.exec {
+                            executable = adb
+                            args = ['-s', device, 'shell', 'mkdir', remoteFile]
+                        }
+                    }
+                    logger.info("[${device}] chown $remoteFile");
+                    result = project.exec {
+                        executable = adb
+                        args = ['-s', device, 'shell', 'chown', user + "." + group, remoteFile]
+                    }
+                }
+            }
+    
+            //copy junit preferences
+            File prefsFileJunitLocal = file("preferencesJunit.xml")
+            if (prefsFileJunitLocal.isFile()) {
+                logger.info("Installing JUnit preferences file")
+                def prefsDir = qeoServicePath + "shared_prefs";
+                project.exec {
+                    executable = adb
+                    args = ['-s', device, 'shell', 'mkdir', "-p", prefsDir]
+                }
+                project.exec {
+                    executable = adb
+                    args = ['-s', device, 'shell', 'chown', user + "." + group, prefsDir]
+                }
+                def prefsFile = prefsDir + "/qeoPrefs.xml";
+                project.exec {
+                    executable = adb
+                    args = ['-s', device, 'push', prefsFileJunitLocal.absolutePath, prefsFile]
+                }
+                project.exec {
+                    executable = adb
+                    args = ['-s', device, 'shell', 'chown', user + "." + group, prefsFile]
+                }
+            }
+        }
+    }
+}
+
+//install extra apk's
+//define a files list in a closure
+task installExtraApk(dependsOn: getConnectedDevices) {
+    ext.files = []
+    doLast {
+        project.connectedDevices.each { device ->
+            files.each { File file -> //for each file in the closure list
+                logger.lifecycle("[${device}] Installing APK dependency: " + file)
+                def depInstallStatus = ""
+                new ByteArrayOutputStream().withStream { out ->
+                    project.exec {
+                        executable = adb
+                        args = ['-s', device, 'install', '-r', file.getAbsolutePath()]
+                        standardOutput = out
+                        //stderr is printed anyway
+                    }
+                    depInstallStatus = out.toString()
+                }
+                if(depInstallStatus.contains("Failure")){
+                    throw new GradleException("Dependant APK\'s could not be installed \n" +
+                    "Probably an old install of an apk is present \n" +
+                    "on the emulator/device. Make sure you uninstall \n" +
+                    "all old apk\'s.\n${depInstallStatus}\n")
+                }
+            }
+        }
+    }
+}
+
+//uninstall apk's
+//define a packages list in a closure
+task uninstallApk(dependsOn: getConnectedDevices) {
+    ext.packages = []
+    doLast {
+        project.connectedDevices.each { device ->
+            packages.each { apk -> //for each package in the closure list
+                logger.lifecycle("[${device}] Removing package ${apk}")
+                project.exec {
+                    executable = adb
+                    args = ['-s', device, 'uninstall', apk]
+                }
+            }
+        }
+    }
+}
+
+
+

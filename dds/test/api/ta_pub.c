@@ -63,14 +63,14 @@ static void test_qos (int enabled)
 	r = DDS_DomainParticipantFactory_set_qos (&qos);
 	fail_unless (r == DDS_RETCODE_OK);
 
-	p = DDS_DomainParticipantFactory_create_participant (0, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
+	p = DDS_DomainParticipantFactory_create_participant (1, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
 	fail_unless (p != NULL);
 	r = register_HelloWorldData_type (p);
 	fail_unless (r == DDS_RETCODE_OK);
 
 	/* Create remote participant. */
 	if (!no_rtps) {
-		rem_p = DDS_DomainParticipantFactory_create_participant (0, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
+		rem_p = DDS_DomainParticipantFactory_create_participant (1, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
 		fail_unless (rem_p != NULL);
 		r = register_HelloWorldData_type (rem_p);
 		fail_unless (r == DDS_RETCODE_OK);

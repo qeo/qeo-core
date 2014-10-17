@@ -18,6 +18,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <assert.h>
+#include "md5.h"
 #ifdef _WIN32
 #include "win.h"
 #else
@@ -31,7 +33,6 @@
 #include "nsecplug/nsecplug.h"
 #else
 #include "msecplug/msecplug.h"
-#include "assert.h"
 #include "../../plugins/secplug/xmlparse.h"
 #endif
 #include "../../plugins/security/engine_fs.h"
@@ -44,6 +45,7 @@
 #include "dds/dds_xtypes.h"
 #endif
 
+#define DEBUG_SHELL	/* Define to attach the debug shell. */
 /*#define TRACE_DISC	** Define to trace discovery endpoints. */
 /*#define TRACE_DATA	** Define to trace data endpoints. */
 /*#define NORMAL_TAKE	** Define to take items in reader. */
@@ -53,11 +55,12 @@
 /*#define WRDISPATCH	** Dispatch from extra reader to extra thread. */
 /*#define EXTRA_TAKE	** Define to take items in extra reader. */
 /*#define DO_DISC_LISTEN * Listen on discovery info. */
+/*#define DO_SUSPEND	** Periodic suspend/resume. */
 #define DDL_DELAY 2	/* Delay (seconds) until Discovery Readers started. */
 #define	RELIABLE	/* Use reliable transfer mode. */
 #define TRANSIENT_LOCAL	/* Use TRANSIENT-LOCAL mode. */
 /*#define KEEP_ALL	** Use KEEP_ALL history. */
-#define	HISTORY	1	/* History depth. */
+#define HISTORY 1	/* History depth. */
 /*#define NO_KEY	** Use keyless data. */
 #ifndef NO_KEY
 #define DO_UNREGISTER	/* Define to unregister instances. */
@@ -68,6 +71,8 @@
 #endif
 #define	ADD_PID		/* Define to add the PID to data samples. */
 #define DYNMSG		/* Dynamic message data. */
+/*#define DYNXDATA	** Extra dynamic data field. */
+#define XDSIZE	400000	/* Extra dynamic data field size (at least 128). */
 /*#define LIVELINESS_MODE DDS_AUTOMATIC_LIVELINESS_QOS*/
 /*#define LIVELINESS_MODE DDS_MANUAL_BY_PARTICIPANT_LIVELINESS_QOS*/
 /*#define LIVELINESS_MODE DDS_MANUAL_BY_TOPIC_LIVELINESS_QOS*/
@@ -89,7 +94,7 @@
 #endif
 
 #define	HELLO_WORLD	"Hello DDS world!"
-#define MAX_DSIZE	0x20000		/* 128KB */
+#define MAX_DSIZE	0x2000000		/* 32MB */
 #ifdef DYNMSG
 #define MSG_SIZE	0
 #else
@@ -126,13 +131,15 @@ DDS_DataReader		ldr [3];		/* Local readers. */
 unsigned		data_size;		/* Default: {"hello world", count} */
 unsigned		max_size;		/* Max. data size. */
 unsigned		inc_size = 1;		/* Increment size. */
-unsigned		nsamples;		/* Current # of samples done. */
+unsigned		nsamples;		/* Current # of samples written. */
+unsigned		rsamples;		/* Current # of samples received. */
 unsigned		burst_amount = 1;	/* # of samples per burst. */
 unsigned		nruns = MULTI_RUN;	/* # of runs. */
 size_t			cur_size;		/* Current sample size. */
 unsigned		max_samples = ~0;	/* Max. # of sends/receives before exit. */
 unsigned		max_sends = ~0;		/* Max. # of sends before pause. */
 unsigned		sleep_time = 1000;	/* Sleep time (1000ms = 1s). */
+unsigned		quit_time = 0;		/* Quit time (1000ms = 1s). */
 unsigned		start_delay;
 unsigned char		buf [MAX_DSIZE];	/* Data buffer to use. */
 DDS_Topic		topic;
@@ -156,11 +163,18 @@ typedef struct msg_data_st {
 	uint32_t	key;
 #endif
 #endif
+#ifdef DYNXDATA
+	DDS_OctetSeq	data;
+#endif
 #ifdef DYNMSG
 #define	DYNF		2
 	char		*message;
 #else
+#ifdef DYNXDATA
+#define	DYNF		2
+#else
 #define	DYNF		0
+#endif
 	char		message [MSG_SIZE];
 #endif
 } MsgData_t;
@@ -189,7 +203,9 @@ void usage (void)
 	fprintf (stderr, "   -a <size>      Offset to add for each size increment.\r\n");
 	fprintf (stderr, "   -n <count>     Max. # of times to send/receive data.\r\n");
 	fprintf (stderr, "   -b <count>     # of messages per burst.\r\n");
-	fprintf (stderr, "   -q             Quit when all packets sent/received.\r\n");
+	fprintf (stderr, "   -q <dtime>     Quit when all packets sent/received.\r\n");
+	fprintf (stderr, "                  When sending, dtime is the delay before exit.\r\n");
+	fprintf (stderr, "                  When receiving, dtime is the max. time to wait.\r\n");
 	fprintf (stderr, "   -f             Flood mode (no waiting: as fast as possible).\r\n");
 	fprintf (stderr, "   -d <msec>      Max. delay to wait between bursts (10..10000).\r\n");
 	fprintf (stderr, "   -p             Startup in paused state.\r\n");
@@ -332,6 +348,9 @@ int do_switches (int argc, const char **argv)
 					paused = 1;
 					break;
 				case 'q':
+					INC_ARG()
+					if (!get_num (&cp, &quit_time, 0, 10000, "-q"))
+						usage ();
 					quit_done = 1;
 					break;
 				case 't':
@@ -460,10 +479,18 @@ typedef struct msg_desc_st {
 #define	_KE
 #endif
 #define	_(x,y)	x,
+#ifdef DYNXDATA
+#define	NF	4
+#else
 #define	NF	3
+#endif
 #else
 #define	_(x,y)
+#ifdef DYNXDATA
+#define	NF	3
+#else
 #define	NF	2
+#endif
 #endif
 
 MsgDesc_t messages [NMSGS] = {
@@ -488,6 +515,10 @@ static DDS_TypeSupport_meta msg_data_tsm [] = {
 #else
 	{ CDR_TYPECODE_ULONG,  1, "key", 0, offsetof (struct msg_data_st, key), 0, 0, NULL },
 #endif
+#endif
+#ifdef DYNXDATA
+	{ CDR_TYPECODE_SEQUENCE, 2, "data", 0, offsetof (struct msg_data_st, data), 0, 0, NULL },
+	{ CDR_TYPECODE_OCTET, 0, NULL, 0, 0, 0, 0, NULL },
 #endif
 	{ CDR_TYPECODE_CSTRING, DYNF, "message", MSG_SIZE, offsetof (struct msg_data_st, message), 0, 0, NULL }
 };
@@ -563,6 +594,11 @@ static void do_write (void)
 #ifndef NO_KEY
 	unsigned	inst_delta;
 #endif
+#ifdef DYNXDATA
+	unsigned	n;
+	static unsigned	nddata = 0;
+	MD5_CONTEXT	md5_ctxt;
+#endif
 	int		error;
 	char		*dbuf = NULL;
 	static DDS_InstanceHandle_t h [4];
@@ -611,7 +647,25 @@ static void do_write (void)
 #endif
 #endif
 #endif
-
+#ifdef DYNXDATA
+		DDS_SEQ_INIT (data.data);
+		c = (++nddata /*& 0x3ff*/) + XDSIZE;
+		if (c) {
+			if (!dds_seq_require (&data.data, c)) {
+				if (XDSIZE)
+					memset (&DDS_SEQ_ITEM (data.data, 0), 0xaa, XDSIZE);
+				for (n = XDSIZE; n < c; n++)
+					DDS_SEQ_ITEM (data.data, n) = (n & 63) + ' ';
+				if (c > 16) {
+					md5_init (&md5_ctxt);
+					md5_update (&md5_ctxt, &DDS_SEQ_ITEM (data.data, 16), c - 16);
+					md5_final (&DDS_SEQ_ITEM (data.data, 0), &md5_ctxt);
+				}
+			}
+			else
+				warn_printf ("dds_seq_require: returned error!");
+		}
+#endif
 #ifndef DYNMSG
 		dbuf = data.message;
 #endif
@@ -675,15 +729,23 @@ static void do_write (void)
 #else
 					fprintf (stdout, "%s", buffer);
 #endif
+#ifdef DYNXDATA
+					if (DDS_SEQ_LENGTH (data.data)) {
+						fprintf (stdout, "\tExtra data (%u bytes)", DDS_SEQ_LENGTH (data.data));
+						if (DDS_SEQ_LENGTH (data.data) <= 128) {
+							fprintf (stdout, ": ");
+							for (n = 0; n < DDS_SEQ_LENGTH (data.data); n++)
+								fprintf (stdout, "%c", DDS_SEQ_ITEM (data.data, n));
+						}
+						fprintf (stdout, "\r\n");
+					}
+#endif
 				}
-				do {
-					error = DDS_DataWriter_write (w, &data, h [index]);
-					/*if (error) {
-						printf ("DDS_DataWriter_write() failed! (error=%u)\r\n", error);
-						break;
-					}*/
+				error = DDS_DataWriter_write (w, &data, h [index]);
+				if (error) {
+					printf ("DDS_DataWriter_write() failed! (error=%u)\r\n", error);
+					break;
 				}
-				while (error);
 #ifdef DYNMSG
 				if (cur_size)
 					free (dbuf);
@@ -741,6 +803,9 @@ static void do_write (void)
 			if (cur_size > max_size)
 				cur_size = data_size;
 		}
+#ifdef DYNXDATA
+		dds_seq_cleanup (&data.data);
+#endif
 		if (!--max_sends) {
 			paused = 1;
 			break;
@@ -887,6 +952,11 @@ void lr_data_avail_inst (DDS_DataReaderListener *l,
 	DDS_ReturnCode_t	error;
 	unsigned		key0;
 	char                    buffer [256];
+#ifdef DYNXDATA
+	unsigned		n;
+	MD5_CONTEXT		md5_ctxt;
+	unsigned char		md5_result [16];
+#endif
 	int                     c;
 
 	ARG_NOT_USED (l)
@@ -952,6 +1022,27 @@ void lr_data_avail_inst (DDS_DataReaderListener *l,
 					log_printf (USER_ID, 0, "%s", buffer);
 #else
 					fprintf (stdout, "%s", buffer);
+#endif
+#ifdef DYNXDATA
+					if (DDS_SEQ_LENGTH (sample->data)) {
+						fprintf (stdout, "\tExtra data (%u bytes)", DDS_SEQ_LENGTH (sample->data));
+						if (DDS_SEQ_LENGTH (sample->data) <= 128) {
+							fprintf (stdout, ": ");
+							for (n = 0; n < DDS_SEQ_LENGTH (sample->data); n++)
+								fprintf (stdout, "%c", DDS_SEQ_ITEM (sample->data, n));
+						}
+						else {
+							md5_init (&md5_ctxt);
+							md5_update (&md5_ctxt, &DDS_SEQ_ITEM (sample->data, 16), DDS_SEQ_LENGTH (sample->data) - 16);
+							md5_final (md5_result, &md5_ctxt);
+							assert (!memcmp (md5_result, &DDS_SEQ_ITEM (sample->data, 0), 16));
+							fprintf (stdout, " MD5:");
+							for (n = 0; n < 16; n++)
+								fprintf (stdout, "%02x", md5_result [n]);
+							fprintf (stdout, " is correct!");
+						}
+						fprintf (stdout, "\r\n");
+					}
 #endif
 				}
 				else if (info->instance_state != DDS_ALIVE_INSTANCE_STATE) {
@@ -1368,8 +1459,9 @@ void dcps_do_writer (DDS_DomainParticipant part)
 	cur_size = data_size;
 	nsamples = 0;
 	i = 0;
-	
-	if (tests)
+	if (!tests && quit_done && max_samples != ~0U)
+		start_delay = 1000;
+	if (start_delay)
 		DDS_wait (start_delay);
 	do {
 		do_write ();
@@ -1448,12 +1540,15 @@ void dcps_do_writer (DDS_DomainParticipant part)
 		}
 #endif
 #endif
+		/*printf ("# samples = %u/%u\r\n", nsamples, max_samples);*/
+		if (nsamples >= max_samples)
+			break;
 	}
-	while (nsamples < max_samples && !aborting);
-	if (nsamples >= max_samples)
-		DDS_wait (2);
+	while (!aborting);
+	if (!aborting && nsamples >= max_samples)
+		DDS_wait (quit_time ? quit_time : 2);
 
-	if (tests)
+	if (!aborting && tests)
 		DDS_wait (start_delay);
 
 #ifdef EXTRA_READER
@@ -1511,6 +1606,11 @@ void dcps_do_reader (DDS_DomainParticipant part)
 	DDS_StatusMask		sm;
 	MsgData_t		*sample;
 	unsigned		i, nchanges;
+#ifdef DYNXDATA
+	unsigned		n;
+	MD5_CONTEXT		md5_ctxt;
+	unsigned char		md5_result [16];
+#endif
 	char                    buffer [256];
 #ifdef PART_UPD
 	char			*s0 = "Hi", *s1 = "Folks", *s2 = "cya", *s3 = "bye";
@@ -1609,8 +1709,16 @@ void dcps_do_reader (DDS_DomainParticipant part)
 		printf ("DDS Readcondition created.\r\n");
 
 	DDS_WaitSet_attach_condition (ws, rc);
-	for (i = 0; i < max_samples && !aborting; i++) {
 
+	rsamples = 0;
+	for (i = 0; !aborting; i++) {
+
+#ifdef DO_SUSPEND
+		if ((i & 15) == 8)
+			DDS_Activities_suspend (DDS_ALL_ACTIVITY);
+		if ((i & 15) == 12)
+			DDS_Activities_resume (DDS_ALL_ACTIVITY);
+#endif
 #ifdef PART_UPD
 		if (i == 18) {
 			if (verbose)
@@ -1658,6 +1766,8 @@ void dcps_do_reader (DDS_DomainParticipant part)
 		}
 		if ((error = DDS_WaitSet_wait (ws, &conds, &to)) == DDS_RETCODE_TIMEOUT) {
 			/*printf ("WaitSet - Time-out!\r\n");*/
+/*			if (quit_done && quit_time && i > quit_time)
+				DDS_Debug_command ("spro 22");*/
 			continue;
 		}
 
@@ -1711,6 +1821,28 @@ void dcps_do_reader (DDS_DomainParticipant part)
 #else
 					fprintf (stdout, "%s", buffer);
 #endif
+#ifdef DYNXDATA
+					if (DDS_SEQ_LENGTH (sample->data)) {
+						fprintf (stdout, "\tExtra data (%u bytes)", DDS_SEQ_LENGTH (sample->data));
+						if (DDS_SEQ_LENGTH (sample->data) <= 128) {
+							fprintf (stdout, ": ");
+							for (n = 0; n < DDS_SEQ_LENGTH (sample->data); n++)
+								fprintf (stdout, "%c", DDS_SEQ_ITEM (sample->data, n));
+						}
+						else {
+							md5_init (&md5_ctxt);
+							md5_update (&md5_ctxt, &DDS_SEQ_ITEM (sample->data, 16), DDS_SEQ_LENGTH (sample->data) - 16);
+							md5_final (md5_result, &md5_ctxt);
+							assert (!memcmp (md5_result, &DDS_SEQ_ITEM (sample->data, 0), 16));
+							fprintf (stdout, " MD5:");
+							for (n = 0; n < 16; n++)
+								fprintf (stdout, "%02x", md5_result [n]);
+							fprintf (stdout, " is correct!");
+						}
+						fprintf (stdout, "\r\n");
+					}
+#endif
+					rsamples++;
 				}
 				else if (info->instance_state != DDS_ALIVE_INSTANCE_STATE) {
 					snprintf (buffer, 255, "DDS-R: [%2u] %s\r\n",
@@ -1734,6 +1866,12 @@ void dcps_do_reader (DDS_DomainParticipant part)
 		else
 			printf ("WaitSet:read/take() - no info!\r\n");
 		dds_seq_reset (&conds);
+
+		if (quit_done) {
+			if (rsamples >= max_samples)
+				break;
+
+		}
 	}
 	if (tests) 
 		DDS_wait (start_delay);
@@ -2459,7 +2597,9 @@ static void cleanup_security (void)
 int main (int argc, const char *argv [])
 {
 	DDS_DomainParticipant		part, part2;
+#ifdef POOL_CONSTRAINED
 	DDS_PoolConstraints		reqs;
+#endif
 	DDS_StatusMask			sm;
 	DDS_DomainParticipantFactoryQos	dfqos;
 	DDS_DomainParticipantQos	dpqos;
@@ -2473,22 +2613,21 @@ int main (int argc, const char *argv [])
 
 	do_switches (argc, argv);
 
+#ifdef POOL_CONSTRAINED
+	DDS_get_default_pool_constraints (&reqs, ~0, 100);
+	DDS_set_pool_constraints (&reqs);
+#endif
+	DDS_entity_name ("Technicolor DCPS Tester");
+
 	if (verbose > 1)
 		DDS_Log_stdio (1);
 
-	DDS_get_default_pool_constraints (&reqs, ~0, 100);
-	reqs.max_rx_buffers = 16;
-	reqs.min_local_readers = 10;
-	reqs.min_local_writers = 8;
-	reqs.min_changes = 64;
-	reqs.min_instances = 48;
-	DDS_set_pool_constraints (&reqs);
-	DDS_entity_name ("Technicolor DCPS Tester");
-
 #ifdef DDS_DEBUG
+#ifdef DEBUG_SHELL
 	DDS_Debug_start ();
 	DDS_Debug_abort_enable (&aborting);
 	DDS_Debug_control_enable (&paused, &max_sends, &sleep_time);
+#endif
 	if (dbg_server)
 		DDS_Debug_server_start (2, dbg_port);
 #endif

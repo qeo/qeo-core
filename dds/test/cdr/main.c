@@ -65,8 +65,10 @@ const Test_t tests [] = {
 	{ "dstruct", test_dyn_structs,   "Dynamic Structure types." },
 	{ "darray", test_dyn_arrays, "Dynamic Array types." },
 	{ "mutable", test_dyn_mutable, "Mutable types." },
+#if 0
 	{ "holder", test_holder, "DataHolder type." },
-//	{ "map", test_dyn_maps, "Map types." },
+	{ "map", test_dyn_maps, "Map types." },
+#endif
 };
 
 void list_tests (void)
@@ -787,7 +789,7 @@ void marshallUnmarshall (const void *sample, void **sample_out,
 #endif
 	}
 #endif
-	err = DDS_MarshallData (out.data, sample, 0, ts);
+	err = DDS_MarshallData ((unsigned char *) out.data, sample, 0, ts);
 	fail_unless (0 == err);
 #ifdef DUMP_DATA
 	if (dump_data) {
@@ -832,7 +834,7 @@ void marshallUnmarshall (const void *sample, void **sample_out,
 #ifdef PARSE_DATA
 			if (parse_data) {
 				dbg_printf ("Native key fields:\r\n\t");
-				DDS_TypeSupport_dump_key (1, ts, sample, 1, 0, 1);
+				DDS_TypeSupport_dump_key (1, ts, sample, 1, 0, 0, 1);
 				dbg_printf ("\r\n");
 			}
 #endif
@@ -842,7 +844,7 @@ void marshallUnmarshall (const void *sample, void **sample_out,
 		fail_unless (klen != 0 && err == DDS_RETCODE_OK);
 		key = malloc ((klen + 3) & ~3);
 		fail_unless (key != NULL);
-		err = DDS_KeyFromNativeData (key, sample, 0, ts);
+		err = DDS_KeyFromNativeData (key, sample, 0, 0, ts);
 		fail_unless (err == DDS_RETCODE_OK);
 #ifdef DUMP_DATA
 		if (dump_data) {
@@ -851,7 +853,7 @@ void marshallUnmarshall (const void *sample, void **sample_out,
 #ifdef PARSE_DATA
 			if (parse_data) {
 				dbg_printf ("\t");
-				DDS_TypeSupport_dump_key (1, ts, key, 0, 0, 1);
+				DDS_TypeSupport_dump_key (1, ts, key, 0, 0, 0, 1);
 				dbg_printf ("\r\n");
 			}
 #endif
@@ -865,7 +867,7 @@ void marshallUnmarshall (const void *sample, void **sample_out,
 		fail_unless (klen2 != 0 && err == DDS_RETCODE_OK);
 		key2 = malloc ((klen2 + 3) & ~3);
 		fail_unless (key2 != NULL);
-		err = DDS_KeyFromMarshalled (key2, out, ts, 0);
+		err = DDS_KeyFromMarshalled (key2, out, ts, 0, 0);
 		fail_unless (err == DDS_RETCODE_OK);
 #ifdef DUMP_DATA
 		if (dump_data) {
@@ -874,7 +876,7 @@ void marshallUnmarshall (const void *sample, void **sample_out,
 #ifdef PARSE_DATA
 			if (parse_data) {
 				dbg_printf ("\t");
-				DDS_TypeSupport_dump_key (1, ts, key2, 0, 0, 1);
+				DDS_TypeSupport_dump_key (1, ts, key2, 0, 0, 0, 1);
 				dbg_printf ("\r\n");
 			}
 #endif
@@ -883,7 +885,7 @@ void marshallUnmarshall (const void *sample, void **sample_out,
 		if (verify)
 			verify_key (key, klen, key2, klen2);
 
-		err = DDS_HashFromKey (h, key, klen, ts);
+		err = DDS_HashFromKey (h, key, klen, 0, ts);
 		fail_unless (err == DDS_RETCODE_OK);
 #ifdef DUMP_DATA
 		if (dump_data) {
@@ -891,7 +893,7 @@ void marshallUnmarshall (const void *sample, void **sample_out,
 			dump_region (h, 16);
 		}
 #endif
-		err = DDS_HashFromKey (h2, key2, klen2, ts);
+		err = DDS_HashFromKey (h2, key2, klen2, 0, ts);
 		fail_unless (err == DDS_RETCODE_OK);
 
 		fail_unless (!memcmp (h, h2, 16));
@@ -976,11 +978,11 @@ void marshallDynamic (const DDS_DynamicData dd, DDS_DynamicData *dd_out,
 	len = cdr_marshalled_size (4, ddr->ddata, tp, 1, 0, 0, NULL) + 4;
 	fail_unless (len != 0);
 
-	out = malloc (((len + 3) & ~3) + 4);
+	out = malloc ((len + 3) & ~3);
 	fail_unless (out != NULL);
 
 #ifdef INIT_DATA
-	memset (out, 0xdf, ((len + 3) & ~3) + 4);
+	memset (out, 0xdf, (len + 3) & ~3);
 #endif
 	for (swap = 0; swap <= 1; swap++) {
 		len = cdr_marshall (out + 4, 4, ddr->ddata, tp, 1, 0, 0, swap, &rc);
@@ -988,6 +990,7 @@ void marshallDynamic (const DDS_DynamicData dd, DDS_DynamicData *dd_out,
 
 		out [0] = out [2] = out [3] = 0;
 		out [1] = (nts->ts_prefer << 1) | (ENDIAN_CPU ^ swap);
+		len += 4;
 #ifdef DUMP_DATA
 		if (dump_data) {
 			dbg_printf ("\r\nMarshalled(swap=%d):\r\n", swap);
@@ -1028,7 +1031,7 @@ void marshallDynamic (const DDS_DynamicData dd, DDS_DynamicData *dd_out,
 #ifdef PARSE_DATA
 			if (dump_data && parse_data) {
 				dbg_printf ("Native key fields:\r\n\t");
-				DDS_TypeSupport_dump_key (1, nts, ddr->ddata, 1, 1, 1);
+				DDS_TypeSupport_dump_key (1, nts, ddr->ddata, 1, 1, 0, 1);
 				dbg_printf ("\r\n");
 			}
 #endif
@@ -1037,7 +1040,7 @@ void marshallDynamic (const DDS_DynamicData dd, DDS_DynamicData *dd_out,
 			fail_unless (klen != 0 && rc == DDS_RETCODE_OK);
 			key = malloc ((klen + 3) & ~3);
 			fail_unless (key != NULL);
-			rc = DDS_KeyFromNativeData (key, ddr->ddata, 1, nts);
+			rc = DDS_KeyFromNativeData (key, ddr->ddata, 1, 0, nts);
 			fail_unless (rc == DDS_RETCODE_OK);
 #ifdef DUMP_DATA
 			if (dump_data) {
@@ -1046,7 +1049,7 @@ void marshallDynamic (const DDS_DynamicData dd, DDS_DynamicData *dd_out,
 #ifdef PARSE_DATA
 				if (parse_data) {
 					dbg_printf ("\t");
-					DDS_TypeSupport_dump_key (1, nts, key, 0, 0, 1);
+					DDS_TypeSupport_dump_key (1, nts, key, 0, 0, 0, 1);
 					dbg_printf ("\r\n");
 				}
 #endif
@@ -1059,7 +1062,7 @@ void marshallDynamic (const DDS_DynamicData dd, DDS_DynamicData *dd_out,
 			fail_unless (klen2 != 0 && rc == DDS_RETCODE_OK);
 			key2 = malloc ((klen2 + 3) & ~3);
 			fail_unless (key2 != NULL);
-			rc = DDS_KeyFromMarshalled (key2, ow, nts, 0);
+			rc = DDS_KeyFromMarshalled (key2, ow, nts, 0, 0);
 			fail_unless (rc == DDS_RETCODE_OK);
 #ifdef DUMP_DATA
 			if (dump_data) {
@@ -1068,7 +1071,7 @@ void marshallDynamic (const DDS_DynamicData dd, DDS_DynamicData *dd_out,
 #ifdef PARSE_DATA
 				if (parse_data) {
 					dbg_printf ("\t");
-					DDS_TypeSupport_dump_key (1, nts, key2, 0, 0, 1);
+					DDS_TypeSupport_dump_key (1, nts, key2, 0, 0, 0, 1);
 					dbg_printf ("\r\n");
 				}
 #endif
@@ -1076,7 +1079,7 @@ void marshallDynamic (const DDS_DynamicData dd, DDS_DynamicData *dd_out,
 #endif
 			verify_key (key, klen, key2, klen2);
 
-			rc = DDS_HashFromKey (h, key, klen, nts);
+			rc = DDS_HashFromKey (h, key, klen, 0, nts);
 			fail_unless (rc == DDS_RETCODE_OK);
 #ifdef DUMP_DATA
 			if (dump_data) {
@@ -1084,7 +1087,7 @@ void marshallDynamic (const DDS_DynamicData dd, DDS_DynamicData *dd_out,
 				dump_region (h, 16);
 			}
 #endif
-			rc = DDS_HashFromKey (h2, key2, klen2, nts);
+			rc = DDS_HashFromKey (h2, key2, klen2, 0, nts);
 			fail_unless (rc == DDS_RETCODE_OK);
 
 			fail_unless (!memcmp (h, h2, 16));

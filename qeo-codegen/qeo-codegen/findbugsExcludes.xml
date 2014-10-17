@@ -1,0 +1,12 @@
+
+<FindBugsFilter>
+
+	<!-- ignore default encoding for writing to stdout. You can't specify an encoding here -->
+	<Match>
+		<Class name="com.technicolor.qeo.codegen.Main"/>
+		<Method returns="void" name="usageExit" />
+		<Bug pattern="DM_DEFAULT_ENCODING"/>
+	</Match>
+	
+</FindBugsFilter>
+

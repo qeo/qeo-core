@@ -50,5 +50,17 @@ Type *tsm_create_typedef (TypeLib                    *lp,
 
 /* Create a type that is a Typedef to an existing Structure or Union type. */
 
+Type *tsm_create_sequence (TypeLib                    *lp,
+			   const DDS_TypeSupport_meta **tsm,
+			   unsigned                   *info_flags);
+
+/* Create a type that is a sequence of another type. */
+
+Type *tsm_create_array (TypeLib                    *lp,
+			const DDS_TypeSupport_meta **tsm,
+			unsigned                   *iflags);
+
+/* Create a type that is an array of another type. */
+
 #endif /* !__tsm_h_ */
 

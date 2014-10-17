@@ -1,0 +1,9 @@
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/klocwork.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/mwbuild.gradle'
+
+def target = "HOSTLINUX"
+if (System.properties.target) {
+    target = System.properties.target
+}
+
+

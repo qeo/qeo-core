@@ -256,6 +256,8 @@ void sfr_process_samples (RemWriter_t *rwp)
 
 #ifdef RTPS_FRAGMENTS
 
+#define	frtrc_printf(s)	log_printf (RTPS_ID, 0, "%s\r\n", s)
+
 /* sfr_fragment -- A DATAFRAG submessage was received. */
 
 static void sfr_fragment (RemWriter_t     *rwp,
@@ -291,6 +293,7 @@ static void sfr_fragment (RemWriter_t     *rwp,
 			ncp = hc_change_new ();
 			if (!ncp) {
 				refp->state = CS_MISSING;
+				frtrc_printf ("sfr_fragment: can't allocate change!");
 				return;
 			}
 			xcp = refp->u.c.change;
@@ -321,18 +324,22 @@ static void sfr_fragment (RemWriter_t     *rwp,
 				refp->state = CS_MISSING;
 				if (refp->u.c.change)
 					hc_change_free (refp->u.c.change);
+				frtrc_printf ("sfr_fragment: no_frag_mem!");
 				return;
 			}
 
 			*finfo = fip = rfraginfo_create (refp, fragp, max_frags);
-			if (!fip)
+			if (!fip) {
+				frtrc_printf ("sfr_fragment: no fip!");
 				goto no_frag_mem;
+			}
 		}
 	}
 
 	/* If this is the first fragment and we already have a fragmentation
 	   context, and the data needs to be ignored, we abort reception. */
 	else if (refp->relevant && fragp->frag_start == 1 && ignore) {
+		frtrc_printf ("sfr_fragment: new & ignore!");
 		xcp = refp->u.c.change;
 		refp->state = CS_RECEIVED;
 		refp->relevant = 0;
@@ -377,7 +384,9 @@ static void sfr_fragment (RemWriter_t     *rwp,
 			SET_REM (fip->bitmap, fip->first_na);
 			return;
 		}
-		else
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+		if (!rwp->rw_crypto || !fip->length)
+#endif
 			goto no_keys;
 	}
 
@@ -399,6 +408,8 @@ static void sfr_fragment (RemWriter_t     *rwp,
 			goto cleanup;
 
 		fip->data = dbp;
+		if (!refp->relevant || !ts->ts_keys)
+			goto no_keys;
 	}
 #endif
 
@@ -415,8 +426,10 @@ static void sfr_fragment (RemWriter_t     *rwp,
 		if (!size || !ts->ts_fksize) {
 			size = DDS_KeySizeFromMarshalled (walk, ts,
 							all_key, NULL);
-			if (!size)
+			if (!size) {
+				frtrc_printf ("sfr_fragment: incorrect size!");
 				goto cleanup;
+			}
 		}
 		fip->keylen = size;
 		if (ts->ts_mkeysize &&
@@ -425,6 +438,7 @@ static void sfr_fragment (RemWriter_t     *rwp,
 		    !ENC_DATA (&rp->r_lep)) {
 			if (fip->hp) {
 				fip->key = fip->hash.hash;
+				frtrc_printf ("sfr_fragment: got keys!");
 				goto got_keys;
 			}
 			if (size < sizeof (KeyHash_t))
@@ -433,8 +447,10 @@ static void sfr_fragment (RemWriter_t     *rwp,
 		}
 		else {
 			fip->key = xmalloc (size);
-			if (!fip->key)
+			if (!fip->key) {
+				frtrc_printf ("sfr_fragment: no memory for key!");
 				goto ignore_last_fragment;
+			}
 		}
 		error = DDS_KeyFromMarshalled (fip->key, walk, ts, all_key,
 							ENC_DATA (&rp->r_lep));
@@ -443,6 +459,7 @@ static void sfr_fragment (RemWriter_t     *rwp,
 				xfree (fip->key);
 
 			fip->key = NULL;
+			frtrc_printf ("sfr_fragment: key unmarshall error!");
 			goto cleanup;
 		}
 		if (!fip->hp) {
@@ -453,6 +470,7 @@ static void sfr_fragment (RemWriter_t     *rwp,
 					xfree (fip->key);
 
 				fip->key = NULL;
+				frtrc_printf ("sfr_fragment: hash from key error!");
 				goto cleanup;
 			}
 			fip->hp = &fip->hash;
@@ -475,6 +493,7 @@ static void sfr_fragment (RemWriter_t     *rwp,
 				      h);*/
 		if (!ooo)
 			rwp->rw_blocked = 1;
+		frtrc_printf ("sfr_fragment: ignore last fragment!");
 		goto ignore_last_fragment;
 	}
 	refp->u.c.hci = hci;
@@ -1037,8 +1056,16 @@ static void sfr_rel_gap_range (RemWriter_t      *rwp,
 
 					/* Ignore this sequence number since
 					   it was already received! */
-					if (!SEQNR_GT (*first, rp->u.c.change->c_seqnr))
+					if (!SEQNR_GT (*first, rp->u.c.change->c_seqnr)) {
+#ifdef RTPS_FRAGMENTS
+						if (rp->fragments &&
+						    SEQNR_EQ (*first, rp->u.c.change->c_seqnr)) {
+							rfraginfo_delete (rp);
+							rp->state = CS_LOST;
+						}
+#endif
 						SEQNR_INC (*first);
+					}
 				}
 				else {
 					if (SEQNR_GT (*first, rp->u.range.last))
@@ -1149,18 +1176,21 @@ static void sfr_rel_do_ack_nl (RemWriter_t *rwp)
 	bitmaps [0] = 0;
 	LIST_FOREACH (rwp->rw_changes, rp) {
 		if (rp->relevant) {
-			if (rp->state == CS_RECEIVED) {
-				if (rwp->rw_reader->endpoint.cache_acks
+			if (rp->state == CS_RECEIVED &&
 #ifdef RTPS_FRAGMENTS
-				        || rp->fragments
+			    !rp->fragments &&
 #endif
-				                        )
+			    rwp->rw_reader->endpoint.cache_acks)
 					break;
-			}
+
 			if (rwp->rw_blocked)
 				break;
 
-			if (rp->state == CS_MISSING)
+			if (rp->state == CS_MISSING
+#ifdef RTPS_FRAGMENTS
+			    || rp->fragments
+#endif
+			                     )
 				SET_ADD (bitmaps, n);
 			n++;
 			if (n >= 8 * 32)	/* Max. set size reached! */
@@ -1558,7 +1588,7 @@ static void sfr_rel_hbfrag (RemWriter_t *rwp, HeartbeatFragSMsg *hp)
 
 	RW_SIGNAL (rwp, "REL_HeartbeatFrag");
 
-	/* Ignore duplicate heartbeats. */
+	/* Ignore duplicate heartbeat fragments. */
 	if (hp->count == rwp->rw_last_hbfrag)
 		return;
 
@@ -1586,18 +1616,50 @@ static void sfr_rel_hbfrag (RemWriter_t *rwp, HeartbeatFragSMsg *hp)
 		    !rp->relevant ||
 		    rp->state != CS_RECEIVED ||
 		    !rp->fragments)
-			return;
+			rp = NULL;
 	}
 	else
-		return;
+		rp = NULL;
 
-	/* Indicate which fragments are still missing in the NACKFRAG bitmap
-	   as bits that are set. */
-	fip = rp->fragments;
-	missing = 0;
-	n = ofs = last = 0;
-	for (i = fip->first_na; i < fip->total; i++) {
-		if (!SET_CONTAINS (fip->bitmap, i)) {
+	if (rp) {
+
+		/* Indicate which fragments are still missing in the NACKFRAG bitmap
+		   as bits that are set. */
+		fip = rp->fragments;
+		missing = 0;
+		n = ofs = last = 0;
+		for (i = fip->first_na; i < fip->total; i++) {
+			if (!SET_CONTAINS (fip->bitmap, i)) {
+				if (!missing) {
+					missing = 1;
+					ofs = i;
+					bitmaps [0] = 0;
+					n = 0;
+				}
+				SET_ADD (bitmaps, n);
+				last = n;
+			}
+			if (missing) {
+				n++;
+				if (n >= 8 * 32) {	/* Max. set size reached! */
+					rtps_msg_add_nack_frag (rwp,
+							        (DiscoveredWriter_t *) rwp->rw_endpoint,
+				        			&hp->writer_sn,
+							        ofs,
+						        	last,
+							        bitmaps);
+					missing = 0;
+				}
+				else if ((n & 0x1f) == 0)
+					bitmaps [n >> 5] = 0;
+			}
+		}
+	}
+	else {
+		/* Indicate that all fragments are still missing. */
+		missing = 0;
+		n = ofs = last = 0;
+		for (i = 0; i < hp->last_frag; i++) {
 			if (!missing) {
 				missing = 1;
 				ofs = i;
@@ -1605,14 +1667,11 @@ static void sfr_rel_hbfrag (RemWriter_t *rwp, HeartbeatFragSMsg *hp)
 				n = 0;
 			}
 			SET_ADD (bitmaps, n);
-			last = n;
-		}
-		if (missing) {
-			n++;
+			last = n++;
 			if (n >= 8 * 32) {	/* Max. set size reached! */
 				rtps_msg_add_nack_frag (rwp,
 						        (DiscoveredWriter_t *) rwp->rw_endpoint,
-			        			&rp->u.c.change->c_seqnr,
+			        			&hp->writer_sn,
 						        ofs,
 					        	last,
 						        bitmaps);
@@ -1625,7 +1684,7 @@ static void sfr_rel_hbfrag (RemWriter_t *rwp, HeartbeatFragSMsg *hp)
 	if (missing)
 		rtps_msg_add_nack_frag (rwp,
 				        (DiscoveredWriter_t *) rwp->rw_endpoint,
-				        &rp->u.c.change->c_seqnr,
+				        &hp->writer_sn,
 				        ofs + 1,
 			        	last + 1,
 				        bitmaps);

@@ -1,0 +1,25 @@
+/**************************************************************
+ ********          THIS IS A GENERATED FILE         ***********
+ **************************************************************/
+
+\#define XTYPES_USED
+#foreach ($include in $source.externalIncludes)
+#import <$include>
+#end
+#foreach ($include in $source.localIncludes)
+#import "$include"
+#end
+
+#parse( "tsm.vm" )
+
+#foreach ($struct in $source.structs)
+@implementation ${struct.fullName}
+{
+}
+
++ (const DDS_TypeSupport_meta *)getMetaType {
+    return _${struct.type};
+}
+@end
+
+#end

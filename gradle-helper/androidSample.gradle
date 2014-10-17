@@ -1,0 +1,78 @@
+import org.gradle.api.GradleException
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidInstallerTools.gradle'
+
+
+//
+// Include extra functionality in order to run tests on android.
+//
+
+//Add an extra configuration on order to be able to download dependencies.
+configurations {
+	testApkDependencies {
+		description = 'download and install apk\'s to which we have dependencies'
+	}
+}
+
+afterEvaluate{
+
+	//define which apk's need to be installed
+    installExtraApk {
+		ext.files = project.configurations.testApkDependencies
+	}
+
+	//define which apk's need to be uninstalled
+	uninstallApk {
+		doFirst {
+			println("-------------------------------------------------------------------------")
+			println("In order to remove incompatible or lingering apk\'s we will uninstall all")
+			println("\"org.qeo\"-packages that are still present on the android filesystem.")
+			println("-------------------------------------------------------------------------")
+			def orgQeoInstallations = ""
+			//Search for the org.qeo installations on the android filesystem
+			new ByteArrayOutputStream().withStream { out ->	
+				def result = project.exec {
+					executable = adb
+					args = ['shell', 'pm', 'list', 'packages', 'org.qeo']
+					standardOutput = out
+				}
+				orgQeoInstallations = out.toString()
+			}
+			//Use the results from the previous exec to make sure there are no more installations of org.qeo packages on the emulator
+			ext.packages = []
+			orgQeoInstallations.eachLine {
+				ext.packages += it.split(":")[1] //define list to be used in the task
+			}
+		}
+		doLast {
+			println("-----------")
+			println("Removed all \"org.qeo\"-packages from filesystem")
+			println("-----------")
+		}
+	}
+
+	project.tasks.connectedAndroidTest << {
+		//for reporting purposes we have to be able to make a difference between the tests that have run
+		//on java and the ones that have run on android. For this reason we do some processing on the android
+	        //testrusults.
+		FileTree tree = fileTree(dir: "$buildDir/instrumentTest-results/connected")
+		tree.each { File file ->
+	        	def testResult = new XmlSlurper().parse(file)
+			testResult.testcase.each{it.@name = "${it.@name}_OnAndroid".toString();}
+			new FileWriter(file) << new groovy.xml.StreamingMarkupBuilder().bindNode(testResult)
+		}
+	}
+	
+	project.tasks.installExtraApk.dependsOn(uninstallApk)
+	project.tasks.installCertFile.dependsOn(installExtraApk)
+	if (!System.properties['qeo.noServiceInstall']) {
+		//don't uninstall/reinstall service if this property is set
+		project.tasks.connectedAndroidTest.dependsOn(installCertFile)
+	}
+}
+
+dependencies {
+	//To be able to run android tests on android the qeo service is required on the device
+	testApkDependencies group:'org.qeo', name:'qeo-android-service', version: project.qeoVersion, classifier: 'debug', ext: 'apk'
+}
+

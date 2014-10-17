@@ -29,6 +29,7 @@
 #include "Mockforwarder.h"
 #include "Mockentity_store.h"
 #include "Mockuser_data.h"
+#include "Mockdeviceinfo_writer.h"
 
 #define QEO_SEC_HNDL (qeo_security_hndl)0xcafebabe
 #define QEO_SEC_POL_HNDL (qeo_security_policy_hndl)0xdeadbabe
@@ -151,6 +152,8 @@ START_TEST(test_factory_open_new_close_success)
     fwd_destroy_Ignore();
 
     ck_assert_int_ne(NULL, _f =  qeocore_factory_new(QEO_IDENTITY_OPEN));
+    qeo_deviceinfo_publish_Expect(_f);
+    qeo_deviceinfo_destruct_Expect(_f);
     qeocore_factory_close(_f);
 }
 END_TEST
@@ -164,7 +167,9 @@ START_TEST(test_factory_open_new_init_close_success)
     fwd_destroy_Ignore();
 
     ck_assert_int_ne(NULL, _f =  qeocore_factory_new(QEO_IDENTITY_OPEN));
+    qeo_deviceinfo_publish_Expect(_f);
     fail_unless(QEO_OK == qeocore_factory_init(_f, &_listener));
+    qeo_deviceinfo_destruct_Expect(_f);
     qeocore_factory_close(_f);
 }
 END_TEST
@@ -176,6 +181,8 @@ START_TEST(test_factory_internal_open_new_init_close_success)
     qeo_security_policy_destroy_ExpectAndReturn(QEO_OK);
     qeo_security_destroy_ExpectAndReturn(QEO_OK);
     fwd_destroy_Ignore();
+    qeo_deviceinfo_destruct_Ignore();
+    qeo_deviceinfo_publish_Ignore();
 
     ck_assert_int_ne(NULL, _f =  qeocore_factory_new(QEO_IDENTITY_OPEN));
     fail_unless(QEO_OK == qeocore_factory_init(_f, &_listener));
@@ -197,6 +204,7 @@ START_TEST(test_factory_new_close_success)
     fwd_destroy_Ignore();
 
     ck_assert_int_ne(NULL, _f =  qeocore_factory_new(QEO_IDENTITY_DEFAULT));
+    qeo_deviceinfo_destruct_Expect(_f);
     qeocore_factory_close(_f);
 }
 END_TEST
@@ -220,6 +228,7 @@ START_TEST(test_factory_new_init_close_security_construct_failure)
 
     ck_assert_int_ne(NULL, _f =  qeocore_factory_new(QEO_IDENTITY_DEFAULT));
     fail_unless(QEO_EBADSTATE == qeocore_factory_init(_f, &_listener));
+    qeo_deviceinfo_destruct_Expect(_f);
     qeocore_factory_close(_f);
 }
 END_TEST
@@ -247,6 +256,7 @@ START_TEST(test_factory_new_init_close_security_authenticate_failure)
 
     ck_assert_int_ne(NULL, _f =  qeocore_factory_new(QEO_IDENTITY_DEFAULT));
     fail_unless(QEO_EFAIL == qeocore_factory_init(_f, &_listener));
+    qeo_deviceinfo_destruct_Expect(_f);
     qeocore_factory_close(_f);
 }
 END_TEST
@@ -279,6 +289,7 @@ START_TEST(test_factory_new_init_close_security_status_authentication_failure)
 
     _sec_cfg.security_status_cb(QEO_SEC_HNDL, QEO_SECURITY_AUTHENTICATION_FAILURE);
 
+    qeo_deviceinfo_destruct_Expect(_f);
     qeocore_factory_close(_f);
 }
 END_TEST
@@ -320,6 +331,7 @@ START_TEST(test_factory_new_init_close_policy_construct_failure)
 
     _sec_cfg.security_status_cb(QEO_SEC_HNDL, QEO_SECURITY_AUTHENTICATED);
 
+    qeo_deviceinfo_destruct_Expect(_f);
     qeocore_factory_close(_f);
 }
 END_TEST

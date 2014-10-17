@@ -181,8 +181,12 @@ static DB *db_alloc_db (size_t size, int linear)
 			if (pp->md_pool)
 				xpp = pp;
 			else {
-				bfpp = pp;
-				bfp = p;
+				if (!bfpp) {
+					bfpp = pp;
+					bfp = p;
+					if (linear && pp->md_xcount >= pp->md_xmax)
+						continue; /* Try next size! */
+				}
 			}
 			break;
 		}

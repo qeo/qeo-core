@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+    <include file="StructWithPrimitives.xml"/>
+    <module name="org::qeo::test">
+
+        <!-- struct representing an event containing an unbound array (sequence) of a struct -->
+        <struct name="EventWithUnbArrayOfStruct" behavior="event">       
+            <doc>struct representing an event containing 
+                 an unbound array (sequence) of a struct
+            </doc> 
+            <member name="MyUnbArrayOfStructWithPrimitives" type="nonBasic" nonBasicTypeName="MyStructWithPrimitives" sequenceMaxLength="-1"/>
+        </struct>
+
+    </module>
+</types>

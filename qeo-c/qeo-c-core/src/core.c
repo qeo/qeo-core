@@ -65,7 +65,6 @@ const qeocore_domain_id_t QEOCORE_OPEN_DOMAIN = 0x01;
 /*#######################################################################
 #                       STATIC VARIABLE SECTION                         #
 ########################################################################*/
-static qeocore_writer_t *_deviceinfo_writer = NULL;
 static int                _factory_allocs;
 static bool               _init_security_done = false;
 static qeo_factory_t     *_open_domain_factory = NULL;
@@ -85,9 +84,6 @@ static const pthread_mutex_t _def_mutex = PTHREAD_MUTEX_INITIALIZER;
 /* dds domainparticipant lock */
 static pthread_mutex_t _dds_dp_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static const char* _open_domain_types[] =
-    {"org.qeo.system.RegistrationRequest", "org.qeo.system.RegistrationCredentials", "org.qeo.system.DeviceId"};
-
 /* ===[ private function declarations ]==================== */
 static void factory_lock(qeo_factory_t *factory);
 static void factory_unlock(qeo_factory_t *factory);
@@ -95,8 +91,7 @@ static void factory_unlock(qeo_factory_t *factory);
 static bool is_valid_factory(qeo_factory_t *factory);
 #endif
 static qeocore_domain_id_t get_domain_id_closed(void);
-static qeocore_domain_id_t get_domain_id_open(void);
-#define FACTORY_IS_SECURE(f) (f->domain_id != get_domain_id_open())
+#define FACTORY_IS_SECURE(f) (f->domain_id != core_get_domain_id_open())
 static void qeo_security_status(qeo_security_hndl   qeo_sec,
                                 qeo_security_state  status);
 static void on_qeo_security_authenticated(qeo_security_hndl qeo_sec,
@@ -113,8 +108,6 @@ static void free_identity(qeo_identity_t *id);
 static void free_identities(qeo_identity_t  **identities,
                             unsigned int  length);
 static void policy_update_cb(qeo_security_policy_hndl qeoSecPol);
-
-static bool is_type_allowed(const qeo_factory_t *factory, const char* name);
 
 /* ===[ private function implementations ]==================== */
 
@@ -183,7 +176,7 @@ static qeocore_domain_id_t get_domain_id_closed(void)
     return id;
 }
 
-static qeocore_domain_id_t get_domain_id_open(void)
+qeocore_domain_id_t core_get_domain_id_open(void)
 {
     qeocore_domain_id_t id = QEOCORE_OPEN_DOMAIN;
 #if defined(DEBUG) || defined(qeo_c_core_COVERAGE)
@@ -249,7 +242,7 @@ static qeo_factory_t *create_factory(const qeo_identity_t *id)
         if (id == QEO_IDENTITY_DEFAULT) {
             factory->domain_id = get_domain_id_closed();
         } else if (id == QEO_IDENTITY_OPEN ) {
-            factory->domain_id = get_domain_id_open();
+            factory->domain_id = core_get_domain_id_open();
             if (factory->domain_id != QEOCORE_OPEN_DOMAIN) {
                 qeo_log_w("Using non-default domainId for open domain: %d", factory->domain_id);
             }
@@ -301,14 +294,7 @@ static void destroy_factory(qeo_factory_t *factory)
     }
     factory_unlock(factory);
 
-    /* Remove the device info writer */
-    /* Question : why is this removed upon factory close while this is a static variable ?
-     * Should be kept on factory level, no ?
-     */
-    if (NULL != _deviceinfo_writer) {
-        qeo_deviceinfo_destruct(_deviceinfo_writer);
-        _deviceinfo_writer = NULL;
-    }
+    qeo_deviceinfo_destruct(factory);
 
     factory_lock(factory);
 
@@ -367,6 +353,10 @@ static qeo_retcode_t init_factory(qeo_factory_t *factory, const qeocore_factory_
         cb = factory->listener.on_factory_init_done;
         if (NULL != cb) {
             factory_unlock(factory);
+            /* Publish the device info */
+            if (success) {
+                qeo_deviceinfo_publish(factory);
+            }
             cb(factory, success);
             factory_lock(factory);
         }
@@ -585,12 +575,11 @@ static void on_qeo_security_authenticated(qeo_security_hndl qeo_sec, qeo_factory
         qeo_security_free_identity(&id);
     }
 
-    /* Publish the device info */
-    if ((success == true) && (NULL == _deviceinfo_writer)) {
-        _deviceinfo_writer = qeo_deviceinfo_publish(factory);
-    }
-
     if (NULL != cb) {
+        /* Publish the device info */
+        if (success) {
+            qeo_deviceinfo_publish(factory);
+        }
         cb(factory, success);
     }
 }
@@ -606,23 +595,6 @@ static void policy_update_cb(qeo_security_policy_hndl secpol)
     else if (QEO_OK != entity_store_update_user_data(cfg.factory)) {
         qeo_log_e("Failed to update userdata");
     }
-}
-
-static bool is_type_allowed(const qeo_factory_t *factory, const char* name)
-{
-    if (FACTORY_IS_SECURE(factory) == true) {
-        return true;
-    }
-
-    for (unsigned int i = 0; i < sizeof(_open_domain_types) / sizeof(_open_domain_types[0]); i++) {
-        if (0 == strcmp(name, _open_domain_types[i])) {
-            return true;
-        }
-    }
-
-    qeo_log_e("Type %s not allowed for this factory", name);
-
-    return false;
 }
 
 /* ===[ public API ]==================== */
@@ -1139,10 +1111,6 @@ qeo_retcode_t core_register_type(const qeo_factory_t    *factory,
 
     factory_lock((qeo_factory_t*)factory);
     do {
-        if (false == is_type_allowed(factory, name)) {
-            rc = QEO_EINVAL;
-            break;
-        }
         if (NULL != dts) {
             ddsrc = DDS_DynamicTypeSupport_register_type(dts, factory->dp, (const DDS_ObjectName)name);
             qeo_log_dds_rc("DDS_DynamicTypeSupport_register_type", ddsrc);

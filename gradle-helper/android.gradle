@@ -1,0 +1,527 @@
+/**
+* Android helper file.
+* This file will apply our default android setup.
+* @param project.androidLibrary if this parameter is set to true, the project will be seen as an android library.
+**/
+
+//android-gradle does not together with artifactory plugin for publishing pom files, force it.
+ext.artifactoryGenerateUploadPom = true
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidInstallerTools.gradle'
+
+//latest version of the supportV4 library
+ext.latestSupportV4 = [group: "com.android.support", name: "support-v4", version: "20.0.0"]
+//define adb executable
+ext.adb = new File(System.env.ANDROID_HOME ?: "/ANDROID_HOME/NOT/DEFINED/", "platform-tools${File.separator}adb");
+if (!adb.isFile()) {
+    throw new GradleException("ANDROID_HOME is not correct, can't find ${adb}")
+}
+def androidBuildToolsVersion = "20.0.0"
+
+//
+// Include the android gradle plugin
+//
+
+buildscript {
+    repositories {
+        maven {
+            url rootProject.artifactoryResolveRepo
+        }
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:0.12.+'
+    }
+}
+
+logger.info("Using android SDK ${System.env.ANDROID_HOME}")
+
+
+if (project.ext.has('androidLibrary') && project.ext.androidLibrary) {
+    apply plugin: com.android.build.gradle.LibraryPlugin
+}
+else {
+    apply plugin: com.android.build.gradle.AppPlugin
+}
+
+boolean enableUITests = false
+if (project.ext.has('enableUITests') && project.ext.enableUITests) {
+    enableUITests = true
+}
+
+if (enableUITests) {
+    configurations {
+        uiTestCompile.extendsFrom(instrumentTestCompile)
+    }
+}
+
+
+// Map gradle project layout to the one from eclipse
+android {
+    compileSdkVersion 19
+    buildToolsVersion = androidBuildToolsVersion
+    defaultConfig {
+        targetSdkVersion 19
+    }
+    /*compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_7
+        targetCompatibility JavaVersion.VERSION_1_7
+    }*/
+    
+    sourceSets {
+        main {
+            manifest {
+                srcFile 'AndroidManifest.xml'
+            }
+            java {
+                srcDirs = ['src']
+            }
+            aidl {
+                srcDirs = ['aidl']
+            }
+            res {
+                srcDirs = ['res']
+            }
+            assets {
+                srcDirs = ['assets']
+            }
+            resources {
+                srcDirs = ['src']
+            }
+        }
+        androidTest.setRoot('instrumentTest') //This moves src/instrumentTest/* to instrumentTest/*
+
+        if (enableUITests) {
+            uiTest {
+                java {
+                    srcDirs = ['uiTest/java']
+                }
+            }
+        }
+
+        defaultConfig {
+            versionName version
+
+        }
+    }
+
+    if (System.env.JENKINS_URL) {
+        //jenkins is active
+        //disable predexing as it's only useful for incremental builds:
+        //https://sites.google.com/a/android.com/tools/tech-docs/new-build-system/tips
+        dexOptions.preDexLibraries = false
+    }
+
+
+    if (!(project.ext.has('androidLibrary') && project.ext.androidLibrary)) {
+        buildTypes {
+            release {
+                // Release build is signed with debug keys. Proper signing is done by the HSM later on.
+                signingConfig = android.signingConfigs.debug
+            }
+        }
+        defaultConfig {
+            afterEvaluate {
+                //parse version number into versioncode
+                def matcher = version =~ /^(\d\d*)\.(\d\d*)\.(\d\d*)-.*$/
+                if (matcher.matches()) {
+                    versionCode = Integer.parseInt(matcher[0][1]) * 10000 + Integer.parseInt(matcher[0][2]) * 100 + Integer.parseInt(matcher[0][3])
+                }
+                else {
+                    throw new GradleException("Can't parse this version number. It must be in the format \"x.x.x-y\" where x is a number < 100")
+                }
+            }
+        }
+    }
+
+    lintOptions {
+        // set to true to turn off analysis progress reporting by lint
+        quiet true
+        // if true, stop the gradle build if errors are found
+        abortOnError true
+        // if true, only report errors
+        ignoreWarnings true //don't enable warnings by default for now, let projects enable it
+        // if true, emit full/absolute paths to files with errors (true by default)
+        //absolutePaths true
+        // if true, check all issues, including those that are off by default
+        checkAllWarnings true
+        // if true, treat all warnings as errors
+        warningsAsErrors false
+        // turn off checking the given issue id's
+        //disable 'TypographyFractions','TypographyQuotes'
+        // turn on the given issue id's
+        //enable 'RtlHardcoded','RtlCompat', 'RtlEnabled'
+        // check *only* the given issue id's
+        //check 'NewApi', 'InlinedApi'
+        // if true, don't include source code lines in the error output
+        //noLines true
+        // if true, show all locations for an error, do not truncate lists, etc.
+        showAll true
+        // Fallback lint configuration (default severities, etc.)
+        //lintConfig file("default-lint.xml")
+        // if true, generate a text report of issues (false by default)
+        textReport true
+        // location to write the output; can be a file or 'stdout'
+        textOutput 'stdout'
+        // if true, generate an XML report for use by for example Jenkins
+        xmlReport true
+        // file to write report to (if not specified, defaults to lint-results.xml)
+        xmlOutput file("${buildDir}/reports/lint/lint-report.xml")
+        // if true, generate an HTML report (with issue explanations, sourcecode, etc)
+        htmlReport true
+        // optional path to report (default will be lint-results.html in the builddir)
+        htmlOutput file("${buildDir}/reports/lint/lint-report.html")
+    }
+}
+
+File jarAndroid = file("${System.env.ANDROID_HOME}/platforms/${android.compileSdkVersion}/android.jar");
+File jarAndroidUI = file("${System.env.ANDROID_HOME}/platforms/${android.compileSdkVersion}/uiautomator.jar");
+assert(jarAndroid.isFile())
+assert(jarAndroidUI.isFile())
+
+if (project.ext.has('androidPublishJar') && project.ext.androidPublishJar) {
+    // sources
+    task jarAndroidSources(type: Jar) {
+        classifier = 'sources'
+        from "src"
+        from "aidl"
+    }
+    
+    task jarAndroidClasses(type: Jar) {
+        afterEvaluate {
+            dependsOn compileReleaseJava, compileReleaseAidl
+        }
+        File dir = file("${buildDir}/intermediates/classes/release")
+        from dir
+        exclude "**/BuildConfig.class" //don't include the BuildConfig file
+        doFirst {
+            assert(dir.exists())
+        }
+    }
+    afterEvaluate {
+        tasks.bundleRelease.dependsOn(jarAndroidClasses)
+        tasks.bundleRelease.dependsOn(jarAndroidSources)
+    }
+    
+    artifacts {
+        archives jarAndroidSources //publish sources
+        archives jarAndroidClasses //publish classes
+    }
+}
+
+//Clean eclipse specific build directories
+clean.doLast {
+    project.delete "bin"
+    project.delete "gen"
+}
+
+// Only do this for android libraries. Javadoc works out of the box for java
+if (project.hasProperty('android') && project.ext.has('androidLibrary') && project.ext.androidLibrary) {
+    task javadoc(type: Javadoc, dependsOn: assembleRelease) {
+        source = android.sourceSets.main.java.srcDirs
+        classpath += configurations.compile //add all dependecies to classpath
+        doFirst { //do something special for android dependencies. .aar files can't be added just as-is
+            FileTree tree = fileTree("${buildDir}/intermediates/exploded-aar/") {
+                //include all aar clases.jar. This may potentially be too much, but should not be a problem
+                include "*/*/*/classes.jar"
+            }
+            classpath += tree
+        }
+
+        classpath += files(jarAndroid)
+        classpath += files("${buildDir}/intermediates/classes/release")
+        if (project.hasProperty("javadocExclude")) {
+            exclude project.javadocExclude
+        }
+    }
+
+    task jarAndroidJavaDoc(type: Jar, dependsOn:javadoc) {
+        classifier = 'javadoc'
+        from javadoc.destinationDir
+    }
+    artifacts {
+        archives jarAndroidJavaDoc //publish javadoc
+    }
+}
+else {
+    //android projects
+
+    task installDebugAll() {
+        description "Install debug apk to all connected devices"
+        dependsOn getConnectedDevices, assembleDebug
+        ext.apk = null
+        doLast {
+            if (apk == null) {
+                logger.info("Not executing since apk is not specified")
+                return
+            }
+            def apkPath = file(apk).absolutePath
+            project.connectedDevices.each { device ->
+                logger.lifecycle("[${device}] Installing APK: " + apkPath)
+                project.exec {
+                    executable = adb
+                    args = ['-s', device, 'install', "-r", apkPath]
+                }
+            }
+        }
+    }
+}
+
+
+//task to execute a single unit test
+task singleTest(type: Exec) {
+    dependsOn 'installDebugTest'
+    if (project.hasProperty('android') && (!(project.ext.has('androidLibrary') && project.ext.androidLibrary))) {
+        //not a library, so regular android project
+        dependsOn "installDebug"
+    }
+    description "Execute a single unit test. Specify the unit class with \"-Dtest.single=my.class.to.test\""
+    group "Verification"
+    doFirst {
+        if (!System.properties['test.single']) {
+            throw new GradleException("Please add -Dtest.single=my.class.to.test")
+        }
+        def manifestFile = android.sourceSets.main.manifest
+        def manifestData = new XmlSlurper().parse(manifestFile.srcFile)
+        def testPackage = manifestData."@package".text()
+        def runner = manifestData.instrumentation."@android:name".text()
+        if (runner == null || runner == ""){
+            runner = "android.test.InstrumentationTestRunner"
+        }
+        logger.debug "Manifest package: ${testPackage}"
+        logger.debug "Manifest runner: ${runner}"
+
+        commandLine adb, "shell", "am", "instrument", "-e", "class", System.properties['test.single'], "-w", "${testPackage}.test/${runner}"
+    }
+}
+
+task takeBugReportOnFailure() {
+    dependsOn getConnectedDevices
+    enabled = false
+    if (System.env.JENKINS_URL) {
+        //only enable this task if running on jenkins
+        enabled = true
+    }
+    doLast {
+        if (connectedAndroidTest.success) {
+            logger.info("connectedCheck succeeded, no need to take bugreport")
+        }
+        else {
+            project.connectedDevices.each { device ->
+                File outfile = file("${buildDir}/bugreport-${device}.txt")
+                logger.info("[${device}] take bugreport to ${outfile}")
+                outfile.newOutputStream().withStream { out ->
+                    exec {
+                        executable = adb
+                        args = ['-s', device, 'bugreport']
+                        standardOutput = out
+                    }
+                }
+            }
+        }
+    }
+}
+
+afterEvaluate {
+    connectedAndroidTest {
+        ext.success = false
+        doLast {
+            success = true
+        }
+        finalizedBy takeBugReportOnFailure
+    }
+}
+
+if (enableUITests) {
+    
+    task uiTestCompile(type:JavaCompile) {
+    
+        afterEvaluate {
+            classpath = files(jarAndroid)
+            configurations.uiTestCompile.each {
+                classpath += files(it)
+            }
+        }
+        source file("uiTest/java")
+        destinationDir file("${buildDir}/uiTestClasses")
+    }
+    
+    task uiTestJar(type:Jar) {
+        dependsOn uiTestCompile
+        from uiTestCompile.destinationDir
+        classifier "uitests"
+    }
+    
+    task uiTestDex(type:Exec) {
+        dependsOn uiTestJar
+        def inputPath = uiTestJar.archivePath.absolutePath
+        ext.archivePath = file(inputPath.replaceAll("jar", "dex"))
+        doFirst {
+            logger.info("Dexing ${inputPath} to ${archivePath}")
+        }
+        def dx = "${System.env.ANDROID_HOME}/build-tools/${androidBuildToolsVersion}/dx"
+        commandLine dx, '--dex', '--no-strict', "--output=${archivePath.absolutePath}", inputPath
+    }
+
+    task installUITest() {
+        dependsOn uiTestDex, getConnectedDevices
+        doLast {
+            project.connectedDevices.each { device ->
+                logger.info("[${device}] install ${uiTestDex.archivePath}")
+                exec {
+                    executable = adb
+                    args = ['-s', device, 'push', uiTestDex.archivePath, "/data/local/tmp"]
+                }
+            }
+        }
+    }
+
+    task connectedUITest() {
+        ext.params = [:]
+        ext.tests = []
+        ext.minSdk = 18
+        ext.clearPackages = []
+        ext.dependsOnFlavor = "Debug"
+        description "Execute UIAutomator tests. (Run with -PserviceClassifier=debug to use debug version)"
+        group "verification"
+        afterEvaluate {
+            dependsOn "install${dependsOnFlavor}"
+            if (!(project.hasProperty("noWipe") && project.noWipe)) {
+                tasks.findByPath("install${dependsOnFlavor}").dependsOn("uninstall${dependsOnFlavor}")
+            }
+            dependsOn installUITest
+        }
+        doLast {
+            project.connectedDevices.each { device ->
+                logger.info("[${device}] run UITests")
+                
+                //check api version
+                logger.info("[${device}] Check api version")
+                new ByteArrayOutputStream().withStream { out ->
+                    exec {
+                        executable = adb
+                        args = ['-s', device, 'shell', "getprop", "ro.build.version.sdk"]
+                        standardOutput = out
+                    }
+                    int sdkVersion = Integer.parseInt(out.toString().replaceAll("\n", "").replaceAll("\r", ""))
+                    if (sdkVersion < minSdk) {
+                        throw new GradleException("Can't use device ${device}, api version is too old. (need ${minSdk}, found ${sdkVersion})")
+                    }
+                }
+                
+//                //start logcat fetcher -> not yet working, to be fixed
+//                def logcatFile = "${buildDir}/logcat_${device}"
+//                logger.info("writing logcat to ${logcatFile}")
+//                def command = """${adb} -s ${device} logcat -d -v time"""
+//                def proc = command.execute()
+//                proc.waitFor()
+//                println "stderr: ${proc.err.text}"
+//                println "stdout: ${proc.in.text}"
+
+                boolean result = true
+                tests.each { test ->
+                    if (!result) {
+                        return //don't continue if test failed
+                    }
+                    logger.lifecycle("[${device}] run UITest ${test}")
+                    clearPackages.each { pkg ->
+                        logger.info("Clearing package ${pkg}")
+                        exec {
+                            executable = adb
+                            args = ['-s', device, 'shell', "pm", "clear", pkg]
+                        }
+                    }
+                    new ByteArrayOutputStream().withStream { out ->
+                        exec {
+                            executable = adb
+                            args = ['-s', device, 'shell', "uiautomator", "runtest", "/data/local/tmp/${uiTestDex.archivePath.name}", "-c", test]
+                            params.each {k,v ->
+                                args += ['-e', k, v]
+                            }
+                            ignoreExitValue true //ignore exitvalue in order to be able to take screenshot
+                            standardOutput = out
+                        }
+
+                        //command does not give proper exitcode, parse output
+                        def found = false
+                        def outString = out.toString()
+                        outString.eachLine{ line ->
+                            if (line.startsWith("FAILURES!!!")) {
+                                found = true
+                                result = false
+                            }
+                            if (line.startsWith("OK (")) {
+                                found = true
+                                result = true
+                            }
+                        }
+                        outString.eachLine{ line ->
+                            (result ? logger.info(line) : logger.warn(line))
+                        }
+                        if (!found) {
+                            throw new GradleException("No exitcode found")
+                        }
+                    }
+
+                }
+
+                //stop logcat
+//                proc.destroy()
+
+                //take screenshot: adb shell screencap -p | perl -pe 's/\x0D\x0A/\x0A/g' > screen.png 
+                File screenshot = file("${buildDir}/screenshot-uitest-${device}.png")
+                new ByteArrayOutputStream().withStream { out ->
+                    exec {
+                        //take screenshot of result, send to stdout
+                        executable = adb
+                        args = ['-s', device, 'shell', "screencap", "-p"]
+                        standardOutput = out
+                    }
+                    //unfotunately adb shell uses \r\n. strip out \r symbols
+                    Byte b1 = null;
+                    def stream= screenshot.newOutputStream()
+                    for (byte b : out.toByteArray()) {
+                        if (b1 != null && !(b1 == 0x0d && b == 0x0a)) {
+                            stream.write(b1)
+                        }
+                        b1 = b;
+                    }
+                    stream.write(b1)
+                    stream.close()
+                }
+
+                //check result
+                if (!result) {
+                    //get logcat dump
+                    File logcat = file("${buildDir}/logcat-uitest-${device}.log")
+                    logcat.newOutputStream().withStream { out ->
+                        exec {
+                            //take screenshot of result, send to stdout
+                            executable = adb
+                            args = ['-s', device, "logcat", "-v", "time", "-d"]
+                            standardOutput = out
+                        }
+                        out.close()
+                    }
+
+                    throw new GradleException("UITest failed. Screenshot of last state in ${screenshot} and logcat in ${logcat}")
+                }
+            }
+        }
+        
+    }
+
+}
+
+// Include the eclipse specific generation files.
+apply from: (System.properties['qeoGradleHelper'] ? System.properties['qeoGradleHelper'] : '') + '/androidEclipse.gradle'
+
+dependencies {
+    if (enableUITests) { 
+        //add junit and uiautomator dependencies
+        uiTestCompile files(jarAndroidUI)
+        uiTestCompile 'junit:junit:3.+'
+        //add uiautomator again, this dependency is used by eclipse, previous isn't
+        androidTestCompile files(jarAndroidUI)
+    }
+}
+

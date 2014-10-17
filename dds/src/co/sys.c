@@ -104,7 +104,12 @@ char *sys_username (char *buf, size_t length)
 	memcpy (buf, ts, len);
 	buf [len] = '\0';
 #else
-	char	*cp = getlogin ();
+	const char	*cp = getlogin ();
+
+	if (!cp)
+		cp = sys_getenv ("LOGNAME");
+	if (!cp)
+		return (NULL);
 
 	if (strlen (cp) >= length) {
 		memcpy (buf, cp, length - 1);

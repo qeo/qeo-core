@@ -27,6 +27,7 @@
 #include "sec_c_std.h"
 
 /*#define CSTD_T_AES_TRACE	** Trace token AES encrypt/decrypt functions. */
+/*#define CRYPTO_DUMP_PLAIN	** Dump plain data before encrypt/after decrypt. */
 #define	MAX_BPSESSION		2000
 
 typedef enum {
@@ -1533,6 +1534,22 @@ static DDS_ReturnCode_t cps_remember_disc_reader_tokens (const SEC_CRYPTO    *cp
 /*   3. Crypto encoding functions.   */
 /*************************************/
 
+#ifdef CRYPTO_DUMP_PLAIN
+
+static void dump_data_hex (const char *name, unsigned char *data, size_t len, size_t max)
+{
+	unsigned	i;
+
+	log_printf (RTPS_ID, 0, "%s: {%u} ", name, len);
+	for (i = 0; i < max; i++)
+		log_printf (RTPS_ID, 0, "%02x ", data [i]);
+	if (len > max)
+		log_printf (RTPS_ID, 0, "...");
+	log_printf (RTPS_ID, 0, "\r\n");
+}
+
+#endif
+
 /* cps_encrypt_payload -- Encode payload data and return the encrypted data. */
 
 static DB *cps_encrypt_payload (const SEC_CRYPTO *cp,
@@ -1558,6 +1575,11 @@ static DB *cps_encrypt_payload (const SEC_CRYPTO *cp,
 		len += 20;
 	else
 		len += 32;
+
+#ifdef CRYPTO_DUMP_PLAIN
+	if (len > 1000)
+		dump_data_hex ("Encrypt", data->data, data->length, 128);
+#endif
 	dbp = db_alloc_data (len, 1);
 	if (!dbp) {
 		*error = DDS_RETCODE_OUT_OF_RESOURCES;
@@ -2021,6 +2043,11 @@ static DB *cps_decrypt_payload (const SEC_CRYPTO *cp,
 	}
 
 	dlen = (dlen + 3) & ~3;	/* Align up. */
+
+#ifdef CRYPTO_DUMP_PLAIN
+	if (dlen > 1000)
+		dump_data_hex ("Decrypt", ndb->data, dlen, 128);
+#endif
 	DBW_INC (*encoded, dlen);
 
 	/* Verify authenticity of message via HMAC. */

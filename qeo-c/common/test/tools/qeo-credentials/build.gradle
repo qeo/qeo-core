@@ -1,0 +1,14 @@
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+
+task assembleTools(type: Tar) {    
+  archiveName "${project.name}.tar.gz"
+  compression Compression.GZIP
+  into (project.name) {
+	exclude 'build/**'
+    from './'
+  }
+}
+
+artifacts {
+    archives assembleTools
+}

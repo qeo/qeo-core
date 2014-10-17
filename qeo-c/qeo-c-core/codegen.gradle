@@ -8,8 +8,8 @@
 project.buildDir = "output/gradle"
 
 
-apply from: (System.properties['qeoGradleHelper'] ?: '/home/users/cpeqeo/gradle-helper') + '/artifactory.gradle'
-apply from: (System.properties['qeoGradleHelper'] ?: '/home/users/cpeqeo/gradle-helper') + '/codegen.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
 
 version = project.qeoVersion
 

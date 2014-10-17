@@ -24,7 +24,6 @@
 typedef struct _CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE
 {
   UNITY_LINE_TYPE LineNumber;
-  qeocore_writer_t* ReturnVal;
   qeo_factory_t* Expected_factory;
 
 } CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE;
@@ -32,14 +31,13 @@ typedef struct _CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE
 typedef struct _CMOCK_qeo_deviceinfo_destruct_CALL_INSTANCE
 {
   UNITY_LINE_TYPE LineNumber;
-  qeocore_writer_t* Expected_devinfo_writer;
+  qeo_factory_t* Expected_factory;
 
 } CMOCK_qeo_deviceinfo_destruct_CALL_INSTANCE;
 
 static struct Mockdeviceinfo_writerInstance
 {
   int qeo_deviceinfo_publish_IgnoreBool;
-  qeocore_writer_t* qeo_deviceinfo_publish_FinalReturn;
   CMOCK_qeo_deviceinfo_publish_CALLBACK qeo_deviceinfo_publish_CallbackFunctionPointer;
   int qeo_deviceinfo_publish_CallbackCalls;
   CMOCK_MEM_INDEX_TYPE qeo_deviceinfo_publish_CallInstance;
@@ -81,26 +79,23 @@ void Mockdeviceinfo_writer_Destroy(void)
   Mock.qeo_deviceinfo_destruct_CallbackCalls = 0;
 }
 
-qeocore_writer_t* qeo_deviceinfo_publish(qeo_factory_t* factory)
+void qeo_deviceinfo_publish(qeo_factory_t* factory)
 {
   UNITY_LINE_TYPE cmock_line = TEST_LINE_NUM;
   CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE*)CMock_Guts_GetAddressFor(Mock.qeo_deviceinfo_publish_CallInstance);
   Mock.qeo_deviceinfo_publish_CallInstance = CMock_Guts_MemNext(Mock.qeo_deviceinfo_publish_CallInstance);
   if (Mock.qeo_deviceinfo_publish_IgnoreBool)
   {
-    if (cmock_call_instance == NULL)
-      return Mock.qeo_deviceinfo_publish_FinalReturn;
-    Mock.qeo_deviceinfo_publish_FinalReturn = cmock_call_instance->ReturnVal;
-    return cmock_call_instance->ReturnVal;
+    return;
   }
   if (Mock.qeo_deviceinfo_publish_CallbackFunctionPointer != NULL)
   {
-    return Mock.qeo_deviceinfo_publish_CallbackFunctionPointer(factory, Mock.qeo_deviceinfo_publish_CallbackCalls++);
+    Mock.qeo_deviceinfo_publish_CallbackFunctionPointer(factory, Mock.qeo_deviceinfo_publish_CallbackCalls++);
+    return;
   }
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeo_deviceinfo_publish' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'qeo_deviceinfo_publish' called with unexpected value for argument 'factory'.");
-  return cmock_call_instance->ReturnVal;
 }
 
 void CMockExpectParameters_qeo_deviceinfo_publish(CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE* cmock_call_instance, qeo_factory_t* factory)
@@ -108,18 +103,12 @@ void CMockExpectParameters_qeo_deviceinfo_publish(CMOCK_qeo_deviceinfo_publish_C
   cmock_call_instance->Expected_factory = factory;
 }
 
-void qeo_deviceinfo_publish_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_writer_t* cmock_to_return)
+void qeo_deviceinfo_publish_CMockIgnore(UNITY_LINE_TYPE cmock_line)
 {
-  CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE));
-  CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
-  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
-  Mock.qeo_deviceinfo_publish_CallInstance = CMock_Guts_MemChain(Mock.qeo_deviceinfo_publish_CallInstance, cmock_guts_index);
-  cmock_call_instance->LineNumber = cmock_line;
-  cmock_call_instance->ReturnVal = cmock_to_return;
   Mock.qeo_deviceinfo_publish_IgnoreBool = (int)1;
 }
 
-void qeo_deviceinfo_publish_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory, qeocore_writer_t* cmock_to_return)
+void qeo_deviceinfo_publish_CMockExpect(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory)
 {
   CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE));
   CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeo_deviceinfo_publish_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
@@ -127,7 +116,6 @@ void qeo_deviceinfo_publish_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo
   Mock.qeo_deviceinfo_publish_CallInstance = CMock_Guts_MemChain(Mock.qeo_deviceinfo_publish_CallInstance, cmock_guts_index);
   cmock_call_instance->LineNumber = cmock_line;
   CMockExpectParameters_qeo_deviceinfo_publish(cmock_call_instance, factory);
-  cmock_call_instance->ReturnVal = cmock_to_return;
 }
 
 void qeo_deviceinfo_publish_StubWithCallback(CMOCK_qeo_deviceinfo_publish_CALLBACK Callback)
@@ -135,7 +123,7 @@ void qeo_deviceinfo_publish_StubWithCallback(CMOCK_qeo_deviceinfo_publish_CALLBA
   Mock.qeo_deviceinfo_publish_CallbackFunctionPointer = Callback;
 }
 
-void qeo_deviceinfo_destruct(qeocore_writer_t* devinfo_writer)
+void qeo_deviceinfo_destruct(qeo_factory_t* factory)
 {
   UNITY_LINE_TYPE cmock_line = TEST_LINE_NUM;
   CMOCK_qeo_deviceinfo_destruct_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeo_deviceinfo_destruct_CALL_INSTANCE*)CMock_Guts_GetAddressFor(Mock.qeo_deviceinfo_destruct_CallInstance);
@@ -146,17 +134,17 @@ void qeo_deviceinfo_destruct(qeocore_writer_t* devinfo_writer)
   }
   if (Mock.qeo_deviceinfo_destruct_CallbackFunctionPointer != NULL)
   {
-    Mock.qeo_deviceinfo_destruct_CallbackFunctionPointer(devinfo_writer, Mock.qeo_deviceinfo_destruct_CallbackCalls++);
+    Mock.qeo_deviceinfo_destruct_CallbackFunctionPointer(factory, Mock.qeo_deviceinfo_destruct_CallbackCalls++);
     return;
   }
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeo_deviceinfo_destruct' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
-  UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_devinfo_writer), (void*)(devinfo_writer), sizeof(qeocore_writer_t), cmock_line, "Function 'qeo_deviceinfo_destruct' called with unexpected value for argument 'devinfo_writer'.");
+  UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'qeo_deviceinfo_destruct' called with unexpected value for argument 'factory'.");
 }
 
-void CMockExpectParameters_qeo_deviceinfo_destruct(CMOCK_qeo_deviceinfo_destruct_CALL_INSTANCE* cmock_call_instance, qeocore_writer_t* devinfo_writer)
+void CMockExpectParameters_qeo_deviceinfo_destruct(CMOCK_qeo_deviceinfo_destruct_CALL_INSTANCE* cmock_call_instance, qeo_factory_t* factory)
 {
-  cmock_call_instance->Expected_devinfo_writer = devinfo_writer;
+  cmock_call_instance->Expected_factory = factory;
 }
 
 void qeo_deviceinfo_destruct_CMockIgnore(UNITY_LINE_TYPE cmock_line)
@@ -164,14 +152,14 @@ void qeo_deviceinfo_destruct_CMockIgnore(UNITY_LINE_TYPE cmock_line)
   Mock.qeo_deviceinfo_destruct_IgnoreBool = (int)1;
 }
 
-void qeo_deviceinfo_destruct_CMockExpect(UNITY_LINE_TYPE cmock_line, qeocore_writer_t* devinfo_writer)
+void qeo_deviceinfo_destruct_CMockExpect(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory)
 {
   CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_qeo_deviceinfo_destruct_CALL_INSTANCE));
   CMOCK_qeo_deviceinfo_destruct_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeo_deviceinfo_destruct_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
   Mock.qeo_deviceinfo_destruct_CallInstance = CMock_Guts_MemChain(Mock.qeo_deviceinfo_destruct_CallInstance, cmock_guts_index);
   cmock_call_instance->LineNumber = cmock_line;
-  CMockExpectParameters_qeo_deviceinfo_destruct(cmock_call_instance, devinfo_writer);
+  CMockExpectParameters_qeo_deviceinfo_destruct(cmock_call_instance, factory);
 }
 
 void qeo_deviceinfo_destruct_StubWithCallback(CMOCK_qeo_deviceinfo_destruct_CALLBACK Callback)

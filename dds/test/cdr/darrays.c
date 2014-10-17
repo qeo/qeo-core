@@ -272,8 +272,106 @@ void test_dyn_array2 (void)
 	v_printf ("success!\r\n");
 }
 
+/** Sequence of Octer type ::
+struct dstruct3 {
+	uint32_t anuint;
+	DDS_OctetSeq oseq;
+	char ch;
+};
+*/
+
+void test_dyn_oseq (void)
+{
+	DDS_DynamicTypeSupport ts;
+	DDS_DynamicTypeBuilder sb, oseqb;
+	DDS_TypeDescriptor *desc;
+	DDS_MemberDescriptor *md;
+	DDS_DynamicType s, oseq;
+	DDS_DynamicData dd, dda, dd2;
+	DDS_ReturnCode_t rc;
+	DDS_ByteSeq values;
+	unsigned i;
+
+	v_printf ("test_dyn_oseq - ");
+
+	/* 1. Create the type. */
+	desc = DDS_TypeDescriptor__alloc ();
+	fail_unless (desc != NULL);
+
+	desc->kind = DDS_STRUCTURE_TYPE;
+	desc->name = "dstruct3";
+	sb = DDS_DynamicTypeBuilderFactory_create_type (desc);
+	fail_unless (sb != NULL);
+
+	md = DDS_MemberDescriptor__alloc ();
+	fail_unless (md != NULL);
+
+	ADD_FIELD (sb, md, "anuint", 0, 0, DDS_UINT_32_TYPE);
+
+	oseqb = DDS_DynamicTypeBuilderFactory_create_sequence_type (
+		DDS_DynamicTypeBuilderFactory_get_primitive_type (DDS_BYTE_TYPE),
+		0);
+	fail_unless (oseqb != NULL);
+
+	oseq = DDS_DynamicTypeBuilder_build (oseqb);
+	fail_unless (oseq != NULL);
+
+	DDS_DynamicTypeBuilderFactory_delete_type (oseqb);
+
+	md->name = "oseq";
+	md->index = md->id = 1;
+	md->type = oseq;
+
+	rc = DDS_DynamicTypeBuilder_add_member (sb, md);
+	fail_unless (rc == DDS_RETCODE_OK);
+
+	ADD_FIELD (sb, md, "ch", 2, 2, DDS_CHAR_8_TYPE);
+
+	s = DDS_DynamicTypeBuilder_build (sb);
+	fail_unless (s != NULL);
+
+	DDS_DynamicTypeBuilderFactory_delete_type (sb);
+	ts = DDS_DynamicTypeSupport_create_type_support (s);
+	fail_unless (ts != NULL);
+
+	DDS_TypeDescriptor__free (desc);
+	DDS_MemberDescriptor__free (md);
+
+	/* 2. Create a Dynamic Data item for this type. */
+	dd = DDS_DynamicDataFactory_create_data (s);
+	fail_unless (dd != NULL);
+
+	dda = DDS_DynamicDataFactory_create_data (oseq);
+	fail_unless (dda != NULL);
+
+	SET_FIELD (dd, 0, uint32, 1000);
+	DDS_SEQ_INIT (values);
+	rc = dds_seq_require (&values, 21);
+	fail_unless (rc == DDS_RETCODE_OK);
+
+	for (i = 0; i < 21; i++)
+		DDS_SEQ_ITEM (values, i) = i + '0';
+
+	rc = DDS_DynamicData_set_byte_values (dda, 0, &values);
+	fail_unless (rc == DDS_RETCODE_OK);
+
+	SET_FIELD (dd, 1, complex, dda);
+	SET_FIELD (dd, 2, char8, 'X');
+
+	marshallDynamic (dd, &dd2, ts);
+
+	DDS_DynamicDataFactory_delete_data (dd);
+	DDS_DynamicDataFactory_delete_data (dda);
+
+	DDS_DynamicTypeBuilderFactory_delete_type (oseq);
+	DDS_DynamicTypeBuilderFactory_delete_type (s);
+	DDS_DynamicTypeSupport_delete_type_support (ts);
+	v_printf ("success!\r\n");
+}
+
 void test_dyn_arrays (void)
 {
 	test_dyn_array1 ();
 	test_dyn_array2 ();
+	test_dyn_oseq ();
 }

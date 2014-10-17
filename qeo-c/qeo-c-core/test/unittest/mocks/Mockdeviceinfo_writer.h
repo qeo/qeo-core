@@ -26,17 +26,17 @@ void Mockdeviceinfo_writer_Verify(void);
 
 
 
-#define qeo_deviceinfo_publish_IgnoreAndReturn(cmock_retval) qeo_deviceinfo_publish_CMockIgnoreAndReturn(__LINE__, cmock_retval)
-void qeo_deviceinfo_publish_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_writer_t* cmock_to_return);
-#define qeo_deviceinfo_publish_ExpectAndReturn(factory, cmock_retval) qeo_deviceinfo_publish_CMockExpectAndReturn(__LINE__, factory, cmock_retval)
-void qeo_deviceinfo_publish_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory, qeocore_writer_t* cmock_to_return);
-typedef qeocore_writer_t* (* CMOCK_qeo_deviceinfo_publish_CALLBACK)(qeo_factory_t* factory, int cmock_num_calls);
+#define qeo_deviceinfo_publish_Ignore() qeo_deviceinfo_publish_CMockIgnore(__LINE__)
+void qeo_deviceinfo_publish_CMockIgnore(UNITY_LINE_TYPE cmock_line);
+#define qeo_deviceinfo_publish_Expect(factory) qeo_deviceinfo_publish_CMockExpect(__LINE__, factory)
+void qeo_deviceinfo_publish_CMockExpect(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory);
+typedef void (* CMOCK_qeo_deviceinfo_publish_CALLBACK)(qeo_factory_t* factory, int cmock_num_calls);
 void qeo_deviceinfo_publish_StubWithCallback(CMOCK_qeo_deviceinfo_publish_CALLBACK Callback);
 #define qeo_deviceinfo_destruct_Ignore() qeo_deviceinfo_destruct_CMockIgnore(__LINE__)
 void qeo_deviceinfo_destruct_CMockIgnore(UNITY_LINE_TYPE cmock_line);
-#define qeo_deviceinfo_destruct_Expect(devinfo_writer) qeo_deviceinfo_destruct_CMockExpect(__LINE__, devinfo_writer)
-void qeo_deviceinfo_destruct_CMockExpect(UNITY_LINE_TYPE cmock_line, qeocore_writer_t* devinfo_writer);
-typedef void (* CMOCK_qeo_deviceinfo_destruct_CALLBACK)(qeocore_writer_t* devinfo_writer, int cmock_num_calls);
+#define qeo_deviceinfo_destruct_Expect(factory) qeo_deviceinfo_destruct_CMockExpect(__LINE__, factory)
+void qeo_deviceinfo_destruct_CMockExpect(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory);
+typedef void (* CMOCK_qeo_deviceinfo_destruct_CALLBACK)(qeo_factory_t* factory, int cmock_num_calls);
 void qeo_deviceinfo_destruct_StubWithCallback(CMOCK_qeo_deviceinfo_destruct_CALLBACK Callback);
 
 #endif

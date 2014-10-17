@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model">
+    <module name="org::qeo::test">
+
+        <typedef name="MyAliasToUnbArrayOfBoolean" type="boolean" sequenceMaxLength="-1"/>
+        <typedef name="MyAliasToUnbArrayOfByte" type="byte" sequenceMaxLength="-1"/>
+        <typedef name="MyAliasToUnbArrayOfInt16" type="int16" sequenceMaxLength="-1"/>
+        <typedef name="MyAliasToUnbArrayOfInt32" type="int32" sequenceMaxLength="-1"/>
+        <typedef name="MyAliasToUnbArrayOfInt64" type="int64" sequenceMaxLength="-1"/>
+        <typedef name="MyAliasToUnbArrayOfFloat32" type="float32" sequenceMaxLength="-1"/>
+        <typedef name="MyAliasToUnbArrayOfString" type="string" sequenceMaxLength="-1"/>
+                                                       
+        <!-- struct representing a state containing unbound arrays (sequences) of unbound arrays -->
+        <struct name="StateWithUnbArraysOfUnbArraysKeyInt16" behavior="event">       
+            <doc>struct representing an event containing 
+                 unbound arrays (sequences) of unbound arrays
+            </doc> 
+            <member name="MyUnbArrayOfUnbArrayOfBoolean" type="nonBasic" nonBasicTypeName="MyAliasToUnbArrayOfBoolean" sequenceMaxLength="-1"/>
+            <member name="MyUnbArrayOfUnbArrayOfByte" type="nonBasic" nonBasicTypeName="MyAliasToUnbArrayOfByte" sequenceMaxLength="-1"/>
+            <member name="MyUnbArrayOfUnbArrayOfInt16" type="nonBasic" nonBasicTypeName="MyAliasToUnbArrayOfInt16" sequenceMaxLength="-1" key="true"/>
+            <member name="MyUnbArrayOfUnbArrayOfInt32" type="nonBasic" nonBasicTypeName="MyAliasToUnbArrayOfInt32" sequenceMaxLength="-1"/>
+            <member name="MyUnbArrayOfUnbArrayOfInt64" type="nonBasic" nonBasicTypeName="MyAliasToUnbArrayOfInt64" sequenceMaxLength="-1"/> 
+            <member name="MyUnbArrayOfUnbArrayOfFloat32" type="nonBasic" nonBasicTypeName="MyAliasToUnbArrayOfFloat32" sequenceMaxLength="-1"/>
+            <member name="MyUnbArrayOfUnbArrayOfString" type="nonBasic" nonBasicTypeName="MyAliasToUnbArrayOfString" sequenceMaxLength="-1"/>
+        </struct>
+
+    </module>
+</types>

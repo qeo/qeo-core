@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+    <include file="StructWithPrimitives.xml"/>
+    <module name="org::qeo::test">
+
+        <!-- struct representing a state containing an unbound array (sequence) of a struct -->
+        <struct name="StateWithUnbArrayOfStructKeyIsUnbArray" behavior="state">       
+            <doc>struct representing a state containing 
+                 an unbound array (sequence) of a struct
+            </doc> 
+            <member name="MyBoolean" type="boolean" />
+            <member name="MyByte" type="byte"/>
+            <member name="MyInt16" type="int16" />
+            <member name="MyInt32" type="int32"/>
+            <member name="MyInt64" type="int64"/> 
+            <member name="MyFloat32" type="float32"/>
+            <member name="MyString" type="string" />
+            <member name="MyUnbArrayOfStructWithPrimitives" type="nonBasic" nonBasicTypeName="MyStructWithPrimitives" sequenceMaxLength="-1" key="true"/>
+        </struct>
+
+    </module>
+</types>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model">
+    <module name="org::qeo::test">
+
+		<!-- typedef is not supported -->
+        <typedef name="deviceIdAlias" type="byte"/>
+                                                       
+        <struct name="RefsToStruct" behavior="event">       
+            <member name="MyUnbArrayOfDeviceId1" type="nonBasic" nonBasicTypeName="deviceIdAlias"/>
+        </struct>
+
+    </module>
+</types>

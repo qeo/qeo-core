@@ -1,0 +1,278 @@
+// The stupid artifactory plugin seems to assume that everyone just applies this plugin!!!
+allprojects {
+    apply plugin: 'maven'
+/* Does not work on every project. */
+//  apply from: '/licenseSummary.gradle'
+    ext.qeoReleaseVersion = "1.0.0-SNAPSHOT" //NOTE: left on 1.0.0 for this release as 1.0.1 only had the forwarder released and nothing else. To be corrected in next full release
+    ext.qeoLatestVersion = "1.0.2-SNAPSHOT"
+    ext.qeoVersion = System.getProperty('qeoVersion') ?: ext.qeoLatestVersion
+    ext.qeoGroup = System.getProperty('qeoGroup') ?: "org.qeo"
+    ext.qeoGroupDefault = qeoGroup
+    ext.gradleHelperDir = file(System.properties['qeoGradleHelper'] ?: '')
+}
+
+if (project.hasProperty("BRANCH") && BRANCH != "" && BRANCH != "master") {
+    qeoGroup += ".branch.${BRANCH}"
+    logger.warn("**********************************************************")
+    logger.warn("WARNING: Using a custom group, don't merge this to master: " + qeoGroup)
+    logger.warn("**********************************************************")
+}
+
+
+/**
+ * When the system property artifactory overlay or the environment variable ARTIFACTORY_OVERLAY is defined,
+ * this directory will be used to override the main artifactory repository.
+ * Also a task is created to upload the artifacts for a taks to this overlay.
+ **/
+def artiOverlay = System.getProperty('artifactory-overlay') ?: System.env.ARTIFACTORY_OVERLAY
+if (artiOverlay && tasks.findByPath("uploadOverlay") == null) { //make sure to add this logic only once
+  def artiURL = "file:///${artiOverlay}"
+
+  project.fileTree(artiOverlay).include('**/*.pom').files.collect{it.parentFile.parentFile.name}.unique().each {
+    logger.warn("Warning: ${it} will be fetched from $artiOverlay")
+  }
+
+    allprojects {
+        if (project.hasProperty("artifactoryDeferLoading") && project.artifactoryDeferLoading) {
+            //some projects (eg android) also define maven repositories which you want to be added before the generic artifactory repo. Hence this option.
+            afterEvaluate {
+                repositories {
+    	            maven {
+                        url artiURL
+                    }
+                }
+            }
+        }
+        else {
+            repositories {
+    	        maven {
+                    url artiURL
+                }
+            }
+        }
+
+        task (uploadOverlay, type:Upload) {
+            description "Uploads archives to the overlay at '$artiOverlay'"
+            configuration = project.configurations.archives
+            repositories {
+                mavenDeployer {
+                    repository(url:artiURL)
+                }
+            }
+        }
+    }
+}
+
+            logger.debug("Applying Artifactory maven repo")
+allprojects {
+    if (System.env.ARTIFACTORY_URL == null) {
+		rootProject.ext.artifactoryResolveRepo = 'http://artifactory.edegem.eu.thmulti.com/artifactory'
+	}
+	else {
+		rootProject.ext.artifactoryResolveRepo = System.env.ARTIFACTORY_URL
+	}
+    rootProject.ext.artifactoryResolveRepo += '/qeo-libs-snapshot'
+    if (System.env.BUILDINFO_PROPFILE != null) {
+        //artifactory-jenkins plugin is active
+        def props = new Properties();
+        new File(System.env.BUILDINFO_PROPFILE).withInputStream {
+            props.load(it)
+        }
+        rootProject.ext.artifactoryResolveRepo = props.getProperty("artifactory.resolve.contextUrl") + "/" + props.getProperty("artifactory.resolve.repoKey")
+        logger.info("Artifactory resolve url set by jenkins to: ${rootProject.artifactoryResolveRepo}")
+        rootProject.ext.artifactoryPublishRepo = props.getProperty("artifactory.publish.contextUrl") + "/" + props.getProperty("artifactory.publish.repoKey")
+        if (props.getProperty("artifactory.publish.username") != null) {
+            rootProject.ext.artifactoryPublishUsername = props.getProperty("artifactory.publish.username")
+    		logger.debug("Artifcatory publish user: ${rootProject.artifactoryPublishUsername}")
+        }
+        if (props.getProperty("artifactory.publish.password") != null) {
+            rootProject.ext.artifactoryPublishPassword = props.getProperty("artifactory.publish.password")
+        }
+    }
+    def releaseRepo = null
+    if (rootProject.artifactoryResolveRepo.endsWith("qeo-libs-snapshot")) {
+        releaseRepo = rootProject.artifactoryResolveRepo.replaceAll("qeo-libs-snapshot", "qeo-libs-release")
+    }
+    
+    /** Define where we should resolve our dependencies. **/
+    if (project.hasProperty("artifactoryDeferLoading") && project.artifactoryDeferLoading) {
+        logger.debug("${project.name}: Defer applying of Artifactory maven repo on request")
+        //some projects (eg android) also define maven repositories which you want to be added before the generic artifactory repo. Hence this option.
+        afterEvaluate {
+            logger.debug("${project.name}: Applying Artifactory maven repo")
+            repositories {
+                if (releaseRepo != null) {
+                    maven {
+                        url releaseRepo
+                    }
+                }
+                maven {
+		            url rootProject.artifactoryResolveRepo
+                }
+	        }
+        }
+    }
+    else {
+        logger.debug("${project.name}: Applying Artifactory maven repo")
+        repositories {
+            if (releaseRepo != null) {
+	            maven {
+                    url releaseRepo
+                }
+            }
+            maven {
+		        url rootProject.artifactoryResolveRepo
+            }
+	    }
+    }
+
+}
+
+//extract git info from a repo
+project.ext.nbGit = 0;
+Map getGitDetails(File workspace, File path)
+{
+    def repo = path.getPath().replaceFirst(workspace.getPath(), '')
+    def hash = ""
+    new ByteArrayOutputStream().withStream { out ->
+      project.exec {
+        workingDir = path
+        executable = new File("git")
+        args = ['rev-parse', '--verify', 'HEAD']
+        standardOutput = out
+      }
+      hash = out.toString().trim()
+    }
+
+    def remote = ""
+    new ByteArrayOutputStream().withStream { out ->
+      project.exec {
+        workingDir = path
+        executable = new File("git")
+        args = ['remote', '-v']
+        standardOutput = out
+      }
+      remote = out.toString()
+    }
+    //fiter out a line like this:
+    //origin    git@gitolite.edegem:/pub/billiett/repo1.git (fetch)
+    def m = remote =~ /(.*)\s+(\S+)\s+\(fetch\)(.*)/
+    remote = m[0][2]
+
+    logger.info("Git repo: .${repo}")
+    logger.info("Git commit hash: ${hash}")
+    logger.info("Git remote: ${remote}")
+    Map map = [:]
+    map.put('vcs.git.' + nbGit + '.path', '.' + repo);
+    map.put('vcs.git.' + nbGit + '.commit', hash);
+    map.put('vcs.git.' + nbGit + '.remote', remote);
+    nbGit++;
+    return map;
+}
+
+// Collect git details of all repos
+Map getGitInfo()
+{
+  Map map = [:]
+
+  // Treat the whole workspace
+  map.putAll(getGitInfoRec(new File(System.env.WORKSPACE)))
+
+  // Treat gradle-helper seperatly
+  map.putAll(getGitInfoRec(ext.gradleHelperDir))
+
+  return map;
+}
+
+// Recursively find git repos in root, and collect their details
+Map getGitInfoRec(File root, File dir = null, int level = 0)
+{
+    Map map = [:]
+
+    if (level > 2) {
+        //only recurse 2 levels deep
+        return map;
+    }
+    if (dir == null) {
+        dir = root;
+    }
+
+    File gitDir = new File(dir, ".git");
+    if (gitDir.isDirectory()) {
+      // This is a git repo!
+      if (root.absolutePath == ext.gradleHelperDir.absolutePath) {
+        // Treat gradle-helper explicitly!
+        if (ext.has('ignoreGradleHelperGitInfo') && ext.ignoreGradleHelperGitInfo) {
+            /* We will not track the gradle-helper version being used.  
+               This way, different modules can use different gradle-helper versions,
+               and still the Jenkins' dependencycheck job will not fail.
+             */
+            logger.debug("getGitInfo: Do not remember gradle-helper git info!")
+        }
+        else {
+            logger.info("getGitInfo: Found git repo (gradle-helper): ${dir}")
+            map.putAll(getGitDetails(root, dir))
+        }
+      }
+      else if (dir.absolutePath == ext.gradleHelperDir.absolutePath) {
+        // Gradle-helper found during a walk in the tree --> ignore
+        logger.debug("getGitInfo: Gradle-helper found during a walk in the tree --> ignore")
+      }
+      else {
+        // different from gradleHelper (normal case)
+        logger.info("getGitInfo: Found git repo: ${dir}")
+        map.putAll(getGitDetails(root, dir))
+      }
+    }
+    else {
+        // This is not a git repo
+        if (dir.absolutePath == ext.gradleHelperDir.absolutePath) {
+            logger.warn("getGitInfo: Found a gradle-helper that is not a git repo!")
+        }
+        // Recurse
+        logger.debug("getGitInfo: Recurse ${dir}")
+        for (File f : dir.listFiles()) {
+            if (f.isDirectory()) {
+                map.putAll(getGitInfoRec(root, f, level + 1))
+            }
+        }
+    }
+
+    return map;
+}
+
+allprojects {
+	if (System.env.WORKSPACE != null) {
+	    //jenkins workspace defined
+	    if (tasks.findByPath("artifactoryPublish") != null) {
+	        //gradle-artifactory plugin active
+	        artifactoryPublish {
+	            
+				if (!rootProject.hasProperty("gitProperties")) {
+					//avoid fetching the info multiple times in subprojects
+					rootProject.ext.gitProperties = getGitInfo();
+					rootProject.ext.gitPropertiesSet = []
+				}
+
+				if (!rootProject.gitPropertiesSet.contains(project.getName())) {
+					//avoid setting properties twice if the artifactory file is included multiple times
+					rootProject.gitPropertiesSet.add(project.getName())
+		            
+					//add git repository information to the buildinfo
+					properties = rootProject.gitProperties
+				}
+	        }
+	    }
+	}
+}
+
+
+//make sure every dependency is verified on every gradle execution
+configurations.all {
+    resolutionStrategy {
+        //don't cache snapshots
+        cacheChangingModulesFor 0, 'seconds'
+    }
+}
+
+ 

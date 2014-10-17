@@ -1,0 +1,240 @@
+
+/**
+ * We deliberately set the group here to enforce that all SDK samples belong to the same group.
+ */
+group = "org.qeo.sample"
+
+ext.cSdkSample = true
+
+def enableHost = true
+def enableMips = true
+def enableRpi = true
+if (hasProperty("disableHost") && getProperty("disableHost")) {
+    enableHost = false
+}
+if (hasProperty("disableMips") && getProperty("disableMips")) {
+    enableMips = false
+}
+if (hasProperty("disableRpi") && getProperty("disableRpi")) {
+    enableRpi = false
+}
+
+//enable pom pushing to artifactory
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+
+def srcDir = files("src")
+File srcFileHost = new File("${buildDir}/qeo-sdk/c/sdk.makefile")
+File srcFileCross = new File("${buildDir}/qeo-sdk/c/sdk.makefile.crosscompile")
+
+configurations {
+    compile
+    downloadQeoTypes
+}
+
+//download and extract qeo-c headers/libraries
+task getQeoC() {
+    doLast {
+        project.configurations.getByName("compile").resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            if (artifact.file.name.endsWith(".zip")) {
+                copy {
+                    from zipTree(artifact.file)
+                    into "${buildDir}/qeo-sdk/c"
+                }
+            } else {
+                mkdir "${buildDir}/qeo-sdk/c"
+                exec {
+                    workingDir "${buildDir}/qeo-sdk/c"
+                    commandLine = ['tar', '-xzf', artifact.file]
+                }
+            }
+        }
+    }
+}
+
+task getQeoTypes() {
+    doLast {
+        project.configurations.getByName("downloadQeoTypes").resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            copy {
+                from tarTree(resources.gzip(artifact.file))
+                into "${buildDir}/qeo-sdk/qdms"
+            }
+        }
+    }
+}
+
+//copy sources and put Makefile into build directory
+task prepareSources() {
+    dependsOn getQeoC, getQeoTypes
+    ext.force32bit = true
+    if (project.hasProperty("force32bit")) {
+        force32bit = Boolean.parseBoolean(project.force32bit)
+    }
+
+    doLast {
+
+        //copy source files
+        copy {
+            from srcDir
+            into "${buildDir}/sdk-src"
+        }
+
+        if(tasks.findByPath("generateTypes")?.outputDir != null) {
+          //copy generated sources
+              copy {
+                from tasks.generateTypes.outputDir
+                  into "${buildDir}/sdk-src"
+              }
+        }
+
+        //process makefile
+        def content
+
+        if (enableHost) {
+            //HOST
+            File destinationFile = new File("${buildDir}/sdk-src/Makefile")
+            content = "QEO_HOME=../qeo-sdk\n" + srcFileHost.text
+                .replaceAll("__TARGET__", project.name + "-HOSTLINUX")
+                .replaceAll("__CFLAGS__", "-Werror") //add -Werror flag for testing
+            if (!force32bit) {
+                content = content.replaceAll("-m32", "")
+            }
+            destinationFile.text = content
+        }
+    
+        if (enableRpi) {
+            //RASPBERRY PI
+            File destinationFile2 = new File("${buildDir}/sdk-src/Makefile.rpi")
+            content = "QEO_HOME=../qeo-sdk\nPLATFORM=arm-linux-gnueabihf\nCROSSCOMPILER=~cpeqeo/tools/gcc-linaro-arm-linux-gnueabihf-raspbian/bin/arm-linux-gnueabihf-\n" + srcFileCross.text
+                .replaceAll("__TARGET__", project.name + "-RPI")
+                .replaceAll("__CFLAGS__", "-Werror") //add -Werror flag for testing
+            if (!force32bit) {
+                content = content.replaceAll("-m32", "")
+            }
+            destinationFile2.text = content
+        }
+    
+        if (enableMips) {
+            //MIPS
+            File destinationFile3 = new File("${buildDir}/sdk-src/Makefile.mips")
+            content = "QEO_HOME=../qeo-sdk\nPLATFORM=mips-linux-uclibc\nCROSSCOMPILER=~cpeqeo/tools/mips-linux-3.4.6-uclibc/bin/mips-linux-\n" + srcFileCross.text
+                .replaceAll("__TARGET__", project.name + "-MIPS")
+                .replaceAll("__CFLAGS__", "-Werror") //add -Werror flag for testing
+            if (!force32bit) {
+                content = content.replaceAll("-m32", "")
+            }
+            destinationFile3.text = content
+        }
+    }
+}
+
+//compile against sdk
+task compileSdkSampleHost(type: Exec) {
+    dependsOn prepareSources, getQeoC
+    description "Compile the sample as if it was done with the sdk (disable with -PdisableHost=true)"
+    group "build"
+    workingDir "${buildDir}/sdk-src"
+    commandLine = ["make", "clean", "default"]
+}
+task compileSdkSampleMips(type: Exec) {
+    dependsOn prepareSources, getQeoC
+    description "Compile the sample as if it was done with the sdk (disable with -PdisableMips=true)"
+    group "build"
+    workingDir "${buildDir}/sdk-src"
+    commandLine = ["make", "-f", "Makefile.mips", "clean", "default"]
+}
+task compileSdkSampleRpi(type: Exec) {
+    dependsOn prepareSources, getQeoC
+    description "Compile the sample as if it was done with the sdk (disable with -PdisableRpi=true)"
+    group "build"
+    workingDir "${buildDir}/sdk-src"
+    commandLine = ["make", "-f", "Makefile.rpi", "clean", "default"]
+}
+task compileSdkSample() {
+    if (enableHost) {
+        dependsOn compileSdkSampleHost
+    }
+    if (enableMips) {
+        dependsOn compileSdkSampleMips
+    }
+    if (enableRpi) {
+        dependsOn compileSdkSampleRpi
+    }
+}
+
+//process Makefile template to be packaged with the SDK
+task createSdkArchiveMakefile() {
+    dependsOn(getQeoC)
+
+    doLast {
+        //process makefile
+        mkdir("${buildDir}/topackage")
+        File destinationFile = new File("${buildDir}/topackage/Makefile")
+        destinationFile.text = srcFileHost.text
+            .replaceAll("__TARGET__", project.name)
+            .replaceAll("__CFLAGS__", "")
+        File destinationFile2 = new File("${buildDir}/topackage/Makefile.crosscompile")
+        destinationFile2.text = srcFileCross.text
+            .replaceAll("__TARGET__", project.name)
+            .replaceAll("__CFLAGS__", "")
+    }
+}
+
+//create zipfile to be used in the SDK
+task sdkArchive(type: Zip) {
+    dependsOn createSdkArchiveMakefile, getQeoC
+    description "Create archive to be used in the SDK"
+    from srcDir
+    from files("${buildDir}/topackage")
+}
+
+task sdk() {
+    dependsOn compileSdkSample, sdkArchive
+    group "Build"
+    description "Create and test files for SDK packaging"
+}
+tasks.assemble.dependsOn(sdk)
+
+//change some behavior that is set by mwbuild.gradle
+if (project.tasks.findByPath("build_tarball")) {
+    logger.info("\"assemble\" does not depend on \"build_tarball\" anymore. Execute it directly if you want to build with middleware build")
+    tasks.assemble.dependsOn = tasks.assemble.taskDependencies.values - tasks.build_tarball
+    logger.info("\"clean\" does not depend on \"cleanup\" anymore. Execute it directly if you want to clean with middleware build")
+    tasks.clean.dependsOn = tasks.clean.taskDependencies.values - tasks.cleanup
+    logger.info("\"gcovr_test_run\" disabled as it does not work on a C sdk sample project")
+    tasks.gcovr_test_run.enabled = false
+}
+
+dependencies {
+    compile "${qeoGroup}:qeo-native:${version}:@tgz" //headers
+    compile "${qeoGroup}:qeo-native:${version}:extras@zip" //makefile
+    if (project.hasProperty("cSdkSampleDebug") && Boolean.parseBoolean(cSdkSampleDebug)) {
+        if (enableHost) {
+            compile "${qeoGroup}:qeo-native:${version}:HOSTLINUX-debug@tgz" //hostlinux so files
+        }
+        if (enableMips) {
+            compile "${qeoGroup}:qeo-native:${version}:REVG_MIPSLINUX-debug@tgz" //mips so files
+        }
+        if (enableRpi) {
+            compile "${qeoGroup}:qeo-native:${version}:RPI_ARMHFLINUX-debug@tgz" //raspberry pi so files
+        }
+    }
+    else {
+        if (enableHost) {
+            compile "${qeoGroup}:qeo-native:${version}:HOSTLINUX@tgz" //hostlinux so files
+        }
+        if (enableMips) {
+            compile "${qeoGroup}:qeo-native:${version}:REVG_MIPSLINUX@tgz" //mips so files
+        }
+        if (enableRpi) {
+            compile "${qeoGroup}:qeo-native:${version}:RPI_ARMHFLINUX@tgz" //raspberry pi so files
+        }
+    }
+    //qeo types
+    downloadQeoTypes "org.qeo:qeo-qdm-c:${project.qeoVersion}:headers@tgz"
+}
+
+artifacts {
+    archives sdkArchive
+}
+
+

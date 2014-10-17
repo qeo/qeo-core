@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+    <module name="org::qeo::test">
+        <enum name="EnumName">
+            <doc>Enumeration doc</doc>
+            <enumerator name="enum1">
+                <doc>Enumeration value doc</doc>
+            </enumerator>
+            <enumerator name="enum2"/>
+        </enum>
+        <struct name="MyStructWithEnums" >       
+            <doc>Struct containing enums. </doc> 
+            <member name="MyBoolean" type="boolean"/>
+            <member name="MyByte" type="byte"/>
+            <member name="MyInt16" type="int16"/>
+            <member name="MyEnum" type="nonBasic" nonBasicTypeName="EnumName"/>
+        </struct>
+        
+        <enum name="EnumNameBis">
+            <enumerator name="enum1Bis"/>
+            <enumerator name="enum2Bis"/>
+        </enum>
+        <struct name="MyStructWithEnumsBis" >       
+            <doc>Struct containing enums. </doc> 
+            <member name="MyFloat32" type="float32"/>
+            <member name="MyString" type="string"/>
+            <member name="MyEnumBis" type="nonBasic" nonBasicTypeName="EnumNameBis"/>
+        </struct>
+    </module>
+</types>

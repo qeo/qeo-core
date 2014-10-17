@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model">
+    <include file="qeo.xml"/>
+    <module name="org::qeo::test">
+
+        <!--<typedef name="deviceIdArray" type="nonBasic" nonBasicTypeName="org::qeo::DeviceId" sequenceMaxLength="-1"/>-->
+        <typedef name="deviceIdAlias" type="nonBasic" nonBasicTypeName="org::qeo::DeviceId"/>
+        <typedef name="deviceIdAlias2" type="nonBasic" nonBasicTypeName="org::qeo::DeviceId"/>
+                                                       
+        <!-- struct representing an event containing unbound arrays (sequences) of unbound arrays -->
+        <struct name="RefsToStruct" behavior="event">       
+            <member name="MyUnbArrayOfDeviceId1" type="nonBasic" nonBasicTypeName="org::qeo::DeviceId">
+            	<doc>Regular reference to DeviceId</doc>
+	       	</member>
+            <member name="MyUnbArrayOfDeviceId2" type="nonBasic" nonBasicTypeName="org::qeo::DeviceId" sequenceMaxLength="-1">
+            	<doc>Reference to sequence DeviceId</doc>
+	       	</member>
+            <member name="MyUnbArrayOfDeviceId3" type="nonBasic" nonBasicTypeName="deviceIdAlias" sequenceMaxLength="-1">
+            	<doc>Reference to sequence DeviceId, but trough typedef</doc>
+	       	</member>
+            <member name="MyUnbArrayOfDeviceId4" type="nonBasic" nonBasicTypeName="deviceIdAlias2" sequenceMaxLength="-1">
+            	<doc>Reference to sequence DeviceId, but trough typedef -- reference to a different alias</doc>
+	       	</member>
+            <!--
+                 <member name="MyUnbArrayOfDeviceId4" type="nonBasic" nonBasicTypeName="deviceIdArray">
+            	<doc>Reference to sequence DeviceId, but trough typedef. However array is set on typedef</doc>
+	       	</member>
+	       	-->
+        </struct>
+
+    </module>
+</types>

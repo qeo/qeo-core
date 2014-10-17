@@ -48,6 +48,7 @@
 
 #define PARTICIPANT_BITSETS ((MAX_PARTICIPANTS + 31) >> 5)
 
+#ifndef CDR_ONLY
 
 typedef struct dds_shm_st {
 	unsigned	version;			/* DDS Shared memory version. */ 
@@ -363,6 +364,8 @@ int guid_needs_marshalling (GuidPrefix_t *gp)
 			guid_prefix_local.prefix [GUID_EE_OFS]);
 }
 
+#endif
+
 #define	HEXCHAR(n)	((n) > 9) ? (n) - 10 + 'a' : (n) + '0'
 
 /* Return a GUID prefix string. */
@@ -415,6 +418,7 @@ char *entity_id_str (const EntityId_t *ep, char buffer [])
 	return (buffer);
 }
 
+#ifndef CDR_ONLY
 
 /* guid_local_component -- Return a non-0 result if the GUID prefix is from a
 			   local component. */
@@ -425,4 +429,5 @@ int guid_local_component (GuidPrefix_t *gp)
 	        gp->prefix [GUID_EE_OFS] != 0xcd);
 }
 
+#endif
 

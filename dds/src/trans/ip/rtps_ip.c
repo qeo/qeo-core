@@ -342,10 +342,10 @@ static void rtps_udp_mode_change (Config_t c)
 #endif
 
 	act_printf ("UDP mode change");
-/*	if (!ip_attached) {
+	/* if (!ip_attached) {
 		act_printf (" -- not attached!\r\n");
 		return;
-	}*/
+	} */
 	old_v4_mode = ipv4_proto.udp_mode;
 #ifdef DDS_IPV6
 	old_v6_mode = ipv6_proto.udp_mode;
@@ -354,7 +354,7 @@ static void rtps_udp_mode_change (Config_t c)
 		ipv4_proto.udp_mode = MODE_DISABLED;
 	else
 		ipv4_proto.udp_mode = config_get_mode (c, MODE_ENABLED);
-	act_print1 (": UDP mode=%d", ipv4_proto.udp_mode);
+	act_print1 (": UDP mode=%d, ", ipv4_proto.udp_mode);
 	if (old_v4_mode == ipv4_proto.udp_mode)
 #ifdef DDS_IPV6
 		if (old_v6_mode == ipv6_proto.udp_mode)
@@ -367,7 +367,7 @@ static void rtps_udp_mode_change (Config_t c)
 	ipv6_proto.udp_mode = ipv4_proto.udp_mode;
 	rtps_update_mux_mode ();
 #endif
-	act_print1 (", Mux mode=%d\r\n", rtps_mux_mode);
+	act_print1 ("Mux mode=%d\r\n", rtps_mux_mode);
 	if (ipv4_proto.mode != MODE_DISABLED) {
 		if (old_v4_mode == MODE_DISABLED && ipv4_proto.udp_mode != MODE_DISABLED) {
 			act_printf ("UDP attach\r\n");
@@ -406,9 +406,9 @@ void rtps_udp_suspend (void)
 		return;
 	}
 	rtps_udp_suspended = 1;
-	config_notify (DC_UDP_Mode, NULL);
 	act_printf (" -- trigger config change!\r\n");
-	rtps_udp_mode_change (DC_UDP_Mode);
+	config_notify (DC_UDP_Mode, rtps_udp_mode_change);
+	config_notify (DC_UDP_Mode, NULL);
 }
 
 void rtps_udp_resume (void)
@@ -432,7 +432,7 @@ static void rtps_tcp_mode_change (Config_t c)
 	IP_MODE	old_v6_mode;
 #endif
 	act_printf ("TCP mode change");
-/*	if (!ip_attached) {
+	/* if (!ip_attached) {
 		act_printf (RTPS_ID, 0, " -- not attached!\r\n");
 		return;
 	}*/
@@ -496,9 +496,9 @@ void rtps_tcp_suspend (void)
 		return;
 	}
 	rtps_tcp_suspended = 1;
-	config_notify (DC_TCP_Mode, NULL);
 	act_printf (" -- trigger config change!\r\n");
-	rtps_tcp_mode_change (DC_TCP_Mode);
+	config_notify (DC_TCP_Mode, rtps_tcp_mode_change);
+	config_notify (DC_TCP_Mode, NULL);
 }
 
 void rtps_tcp_resume (void)

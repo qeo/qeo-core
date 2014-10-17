@@ -159,7 +159,9 @@ DDS_TypeSupport DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 	if (!tc ||
 	    (tc->tc != CDR_TYPECODE_STRUCT &&
 	     tc->tc != CDR_TYPECODE_UNION && 
-	     tc->tc != CDR_TYPECODE_TYPE)) {
+	     tc->tc != CDR_TYPECODE_TYPE &&
+	     tc->tc != CDR_TYPECODE_SEQUENCE &&
+	     tc->tc != CDR_TYPECODE_ARRAY)) {
 		lock_release (type_lock);
 		return (NULL);
 	}
@@ -232,7 +234,13 @@ DDS_TypeSupport DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 			utp->dkeys = dkeys;
 			utp->dynamic = dynamic;
 		}
+		if (dynamic)
+			iflags |= IF_DYNAMIC;
 	}
+	else if (tc->tc == CDR_TYPECODE_SEQUENCE)
+		tp = tsm_create_sequence (lp, &tc, &iflags);
+	else if (tc->tc == CDR_TYPECODE_ARRAY)
+		tp = tsm_create_array (lp, &tc, &iflags);
 	else
 		tp = tsm_create_typedef (lp, tc, &iflags);
 
@@ -1418,15 +1426,16 @@ size_t DDS_KeySizeFromMarshalled (DBW                 data,
 		else if (error)
 			*error = DDS_RETCODE_UNSUPPORTED;
 	}
-	else if ((type >> 1) == MODE_RAW)
+	else if ((type >> 1) == MODE_RAW) {
 		if (ts->ts_cdr) {
 			l = cdr_marshalled_size (4, data.data, ts->ts_cdr, 0,
 								  1, 0, error);
 			prof_stop (tc_k_s_marsh, 1);
 			return (l);
 		}
-		else
+		else if (error)
 			*error = DDS_RETCODE_UNSUPPORTED;
+	}
 	else if (error)
 		*error = DDS_RETCODE_UNSUPPORTED;
 

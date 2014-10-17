@@ -672,10 +672,7 @@ qeo_retcode_t qeo_security_policy_get_fine_grained_rules(qeo_security_policy_hnd
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_qeoSecPol), (void*)(&qeoSecPol), sizeof(qeo_security_policy_hndl), cmock_line, "Function 'qeo_security_policy_get_fine_grained_rules' called with unexpected value for argument 'qeoSecPol'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_cookie), (void*)(&cookie), sizeof(uintptr_t), cmock_line, "Function 'qeo_security_policy_get_fine_grained_rules' called with unexpected value for argument 'cookie'.");
-  if (cmock_call_instance->Expected_topic_name == NULL)
-    { UNITY_TEST_ASSERT_NULL(topic_name, cmock_line, "Expected NULL. Function 'qeo_security_policy_get_fine_grained_rules' called with unexpected value for argument 'topic_name'."); }
-  else
-    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_topic_name, topic_name, 1, cmock_line, "Function 'qeo_security_policy_get_fine_grained_rules' called with unexpected value for argument 'topic_name'."); }
+  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_topic_name, topic_name, cmock_line, "Function 'qeo_security_policy_get_fine_grained_rules' called with unexpected value for argument 'topic_name'.");
   UNITY_TEST_ASSERT_EQUAL_HEX32(cmock_call_instance->Expected_selector_mask, selector_mask, cmock_line, "Function 'qeo_security_policy_get_fine_grained_rules' called with unexpected value for argument 'selector_mask'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_update_cb), (void*)(&update_cb), sizeof(qeo_security_policy_update_fine_grained_rules_cb), cmock_line, "Function 'qeo_security_policy_get_fine_grained_rules' called with unexpected value for argument 'update_cb'.");
   return cmock_call_instance->ReturnVal;

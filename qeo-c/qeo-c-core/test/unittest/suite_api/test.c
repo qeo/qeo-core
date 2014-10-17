@@ -30,6 +30,7 @@
 #include "Mockentity_store.h"
 #include "Mockuser_data.h"
 #include "Mockforwarder.h"
+#include "Mockdeviceinfo_writer.h"
 
 static void dummy_fn(){
 
@@ -242,6 +243,8 @@ START_TEST(test_enum_api_inargs)
     fwd_destroy_Ignore();
     qeo_security_policy_destroy_IgnoreAndReturn(QEO_OK);
     qeo_security_destroy_IgnoreAndReturn(QEO_OK);
+    qeo_deviceinfo_destruct_Ignore();
+    qeo_deviceinfo_publish_Ignore();
     /* create dynamic types */
     fail_unless(NULL != (factory = qeo_factory_create_by_id(QEO_IDENTITY_OPEN)));
     fail_unless(DDS_RETCODE_OK == dds_seq_require(&ec, 3));

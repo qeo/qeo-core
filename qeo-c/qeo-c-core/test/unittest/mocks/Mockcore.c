@@ -406,10 +406,7 @@ qeo_retcode_t core_register_type(const qeo_factory_t* factory, DDS_DynamicTypeSu
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'core_register_type' called with unexpected value for argument 'factory'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_dts), (void*)(&dts), sizeof(DDS_DynamicTypeSupport), cmock_line, "Function 'core_register_type' called with unexpected value for argument 'dts'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_ts), (void*)(&ts), sizeof(DDS_TypeSupport), cmock_line, "Function 'core_register_type' called with unexpected value for argument 'ts'.");
-  if (cmock_call_instance->Expected_name == NULL)
-    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'core_register_type' called with unexpected value for argument 'name'."); }
-  else
-    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'core_register_type' called with unexpected value for argument 'name'."); }
+  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'core_register_type' called with unexpected value for argument 'name'.");
   return cmock_call_instance->ReturnVal;
 }
 
@@ -469,10 +466,7 @@ qeo_retcode_t core_unregister_type(const qeo_factory_t* factory, DDS_DynamicType
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'core_unregister_type' called with unexpected value for argument 'factory'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_dts), (void*)(&dts), sizeof(DDS_DynamicTypeSupport), cmock_line, "Function 'core_unregister_type' called with unexpected value for argument 'dts'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_ts), (void*)(&ts), sizeof(DDS_TypeSupport), cmock_line, "Function 'core_unregister_type' called with unexpected value for argument 'ts'.");
-  if (cmock_call_instance->Expected_name == NULL)
-    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'core_unregister_type' called with unexpected value for argument 'name'."); }
-  else
-    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'core_unregister_type' called with unexpected value for argument 'name'."); }
+  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'core_unregister_type' called with unexpected value for argument 'name'.");
   return cmock_call_instance->ReturnVal;
 }
 
@@ -689,10 +683,7 @@ qeocore_reader_t* core_create_reader(const qeo_factory_t* factory, qeocore_type_
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'core_create_reader' called with unexpected value for argument 'factory'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_type), (void*)(type), sizeof(qeocore_type_t), cmock_line, "Function 'core_create_reader' called with unexpected value for argument 'type'.");
-  if (cmock_call_instance->Expected_topic_name == NULL)
-    { UNITY_TEST_ASSERT_NULL(topic_name, cmock_line, "Expected NULL. Function 'core_create_reader' called with unexpected value for argument 'topic_name'."); }
-  else
-    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_topic_name, topic_name, 1, cmock_line, "Function 'core_create_reader' called with unexpected value for argument 'topic_name'."); }
+  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_topic_name, topic_name, cmock_line, "Function 'core_create_reader' called with unexpected value for argument 'topic_name'.");
   UNITY_TEST_ASSERT_EQUAL_INT(cmock_call_instance->Expected_flags, flags, cmock_line, "Function 'core_create_reader' called with unexpected value for argument 'flags'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_listener), (void*)(listener), sizeof(qeocore_reader_listener_t), cmock_line, "Function 'core_create_reader' called with unexpected value for argument 'listener'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_prc), (void*)(prc), sizeof(qeo_retcode_t), cmock_line, "Function 'core_create_reader' called with unexpected value for argument 'prc'.");
@@ -916,10 +907,7 @@ qeocore_writer_t* core_create_writer(const qeo_factory_t* factory, qeocore_type_
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'core_create_writer' called with unexpected value for argument 'factory'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_type), (void*)(type), sizeof(qeocore_type_t), cmock_line, "Function 'core_create_writer' called with unexpected value for argument 'type'.");
-  if (cmock_call_instance->Expected_topic_name == NULL)
-    { UNITY_TEST_ASSERT_NULL(topic_name, cmock_line, "Expected NULL. Function 'core_create_writer' called with unexpected value for argument 'topic_name'."); }
-  else
-    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_topic_name, topic_name, 1, cmock_line, "Function 'core_create_writer' called with unexpected value for argument 'topic_name'."); }
+  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_topic_name, topic_name, cmock_line, "Function 'core_create_writer' called with unexpected value for argument 'topic_name'.");
   UNITY_TEST_ASSERT_EQUAL_INT(cmock_call_instance->Expected_flags, flags, cmock_line, "Function 'core_create_writer' called with unexpected value for argument 'flags'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_listener), (void*)(listener), sizeof(qeocore_writer_listener_t), cmock_line, "Function 'core_create_writer' called with unexpected value for argument 'listener'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_prc), (void*)(prc), sizeof(qeo_retcode_t), cmock_line, "Function 'core_create_writer' called with unexpected value for argument 'prc'.");
@@ -1245,10 +1233,7 @@ qeo_retcode_t core_factory_set_tcp_server_no_lock(qeo_factory_t* factory, const 
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'core_factory_set_tcp_server_no_lock' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'core_factory_set_tcp_server_no_lock' called with unexpected value for argument 'factory'.");
-  if (cmock_call_instance->Expected_tcp_server == NULL)
-    { UNITY_TEST_ASSERT_NULL(tcp_server, cmock_line, "Expected NULL. Function 'core_factory_set_tcp_server_no_lock' called with unexpected value for argument 'tcp_server'."); }
-  else
-    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_tcp_server, tcp_server, 1, cmock_line, "Function 'core_factory_set_tcp_server_no_lock' called with unexpected value for argument 'tcp_server'."); }
+  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_tcp_server, tcp_server, cmock_line, "Function 'core_factory_set_tcp_server_no_lock' called with unexpected value for argument 'tcp_server'.");
   return cmock_call_instance->ReturnVal;
 }
 

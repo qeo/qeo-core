@@ -1,0 +1,248 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <include file="qeo.xml"/>
+  <module name="com::technicolor::wifidoctor::accesspoint">
+    <struct name="StationStats">
+      <member name="MACAddress" type="string">
+        <doc>MAC address associated with station</doc>
+      </member>
+      <member name="maxPhyRate" type="int32">
+        <doc>expressed in Mbps</doc>
+      </member>
+      <member name="RSSIuplink" type="int32">
+        <doc>expressed in dBm</doc>
+      </member>
+      <member name="avgSpatialStreamsUplink" type="float32"/>
+      <member name="avgSpatialStreamsDownlink" type="float32"/>
+      <member name="trainedPhyRateUplink" type="int32"/>
+      <member name="trainedPhyRateDownlink" type="int32"/>
+      <member name="dataRateUplink" type="int32"/>
+      <member name="dataRateDownlink" type="int32"/>
+      <member name="pctPowerSave" type="int32"/>
+    </struct>
+    <struct name="BSSID" behavior="state">
+      <member name="testId" type="int32" key="true">
+        <doc>
+          ID of the TestRequest for which these stats are published.
+          A value of 0 indicates these are passive monitoring stats,
+          not associated with a specific test request
+      </doc>
+      </member>
+      <member name="MACAddress" type="string" key="true">
+        <doc>MAC address associated with BSSID</doc>
+      </member>
+      <member name="radio" type="int32">
+        <doc>Reference to the Radio object this BSSID belongs to.</doc>
+      </member>
+      <member name="mediumBusyIBSS" type="byte">
+        <doc>Integer percentage</doc>
+      </member>
+      <member name="mediumBusyOBSS" type="byte">
+        <doc>Integer percentage</doc>
+      </member>
+      <member name="stationStats" type="nonBasic" nonBasicTypeName="StationStats" sequenceMaxLength="-1">
+        <doc>statistics per associated station</doc>
+      </member>
+    </struct>
+  </module>
+  <module name="com::technicolor::wifidoctor::station">
+    <struct name="Statistics" behavior="state">
+      <member name="testId" type="int32" key="true">
+        <doc>
+          ID of the TestRequest for which these stats are published.
+          A value of 0 indicates these are passive monitoring stats,
+          not associated with a specific test request
+      </doc>
+      </member>
+      <member name="MACAddress" type="string" key="true"/>
+      <member name="radio" type="int32">
+        <doc>Reference to the Radio object representing the station.</doc>
+      </member>
+      <member name="RSSIdownlink" type="int32">
+        <doc>expressed in dBm</doc>
+      </member>
+    </struct>
+  </module>
+  <module name="com::technicolor::wifidoctor">
+    <struct name="Radio" behavior="state">
+      <member name="testId" type="int32" key="true">
+        <doc>
+          ID of the TestRequest for which these stats are published.
+          A value of 0 indicates these are passive monitoring stats,
+          not associated with a specific test request
+      </doc>
+      </member>
+      <member name="id" type="int32" key="true">
+        <doc>
+	  ID of the wifi radio. Basically a random number, assumed to be unique over the whole Qeo realm.
+	  In the future, we'd probably use a UUID here but for the POC that's a bit overkill.
+	</doc>
+      </member>
+      <member name="device" type="nonBasic" nonBasicTypeName="org::qeo::DeviceId">
+        <doc>
+	  Qeo Device ID of the device this radio belongs to.
+	  Useful in the case of multiple devices that play the Access Point role within one realm.
+	  Qeo provides a built-in function to retrieve this DeviceID.
+	</doc>
+      </member>
+      <member name="frequency" type="int32">
+        <doc>in MHz</doc>
+      </member>
+      <member name="mediumBusy" type="byte">
+        <doc>Integer percentage. For Station radios, this value is probably meaningless and would be 0.</doc>
+      </member>
+    </struct>
+    <struct name="ScanListEntry">
+      <member name="BSSID" type="string"/>
+      <member name="SSID" type="string"/>
+      <member name="capabilities" type="string"/>
+      <member name="frequency" type="int32">
+        <doc>in MHz</doc>
+      </member>
+      <member name="level" type="int32">
+        <doc>in dBm</doc>
+      </member>
+    </struct>
+    <struct name="ScanList" behavior="state">
+      <member name="radio" type="int32" key="true">
+        <doc>the radio that published this scan list (can be either AP or STA)</doc>
+      </member>
+      <member name="list" type="nonBasic" nonBasicTypeName="ScanListEntry" sequenceMaxLength="-1">
+        <doc>the scan list entries</doc>
+      </member>
+      <member name="timestamp" type="int64">
+        <doc>seconds since Jan 1, 1970</doc>
+      </member>
+    </struct>
+    <struct name="ScanListRequest" behavior="event">
+      <doc>
+        Trigger a new scan and publication of the new scan list.
+        ScanList entries from a previous scan for this radio will be disposed as 
+        the new list is published.
+      </doc>
+      <member name="radio" type="int32"/>
+    </struct>
+    <struct name="TestRequest" behavior="state">
+      <doc>A coordinator (typically the WifiDr Android app on the STA, but not 
+         necessarily) publishes a TestRequest to trigger a test between an AP
+         and a STA. As long as the TestRequest instance lives, the test is 
+	 relevant and will be (eventually) carried out, or the results will
+	 remain available. When the TestRequest is removed, all other traces
+	 of the test (test states, results) will be removed as well.
+    </doc>
+      <member name="id" type="int32" key="true"/>
+      <member name="tx" type="string">
+        <doc>MAC address of the transmitting node for this test</doc>
+      </member>
+      <member name="rx" type="string">
+        <doc>MAC address of the receiving node for this test</doc>
+      </member>
+      <member name="type" type="int32">
+        <doc>The test type. This is a poor man's substitute for an enumeration.
+         Possible values are:
+            0: PING test
+            1: TX test
+        </doc>
+      </member>
+      <!-- since we don't support union types yet in Qeo, we need to make do 
+         with more primitive solutions: below I list all setup parameters
+         for both the ping and TX tests. Assume only the ones relevant
+         to the indicated test type are relevant and filled in. -->
+      <!-- ping parameters -->
+      <member name="count" type="int32">
+        <doc>Ping parameter (1 &lt;= x &lt;= 15)</doc>
+      </member>
+      <member name="size" type="int32">
+        <doc>Ping parameter (0 &lt;= x &lt;= 20000)</doc>
+      </member>
+      <member name="interval" type="int32">
+        <doc>Ping parameter (100 &lt;= x &lt;= 1000000)</doc>
+      </member>
+      <member name="timeout" type="int32">
+        <doc>Ping parameter (1 &lt;= x)</doc>
+      </member>
+      <!-- txtest parameters -->
+      <member name="duration" type="int32">
+        <doc>TX test parameter (0 &lt;= x &lt;= 86400)</doc>
+      </member>
+      <member name="packetSize" type="int32">
+        <doc>TX test parameter (64 &lt;= x &lt;= 2346)</doc>
+      </member>
+      <member name="modulation" type="int32">
+        <doc>
+          TX test parameter. Enum with possible values:
+            0 = AUTO
+            1 = CCK
+            2 = OFDMLEGACY
+            3 = OFDMMCS
+        </doc>
+      </member>
+      <member name="rateIndex" type="int32">
+        <doc>TX test parameter (-1 &lt;= x &lt;= 32)</doc>
+      </member>
+      <member name="priority" type="byte">
+        <doc>TX test parameter (0 &lt;= x &lt;= 15)</doc>
+      </member>
+      <member name="AMPDU" type="boolean">
+        <doc>TX test parameter</doc>
+      </member>
+    </struct>
+    <struct name="TestState" behavior="state">
+      <member name="id" type="int32" key="true">
+        <doc>id of the corresponding TestRequest</doc>
+      </member>
+      <member name="participant" type="string" key="true">
+        <doc>MAC address of the test participant publishing this test state</doc>
+      </member>
+      <member name="state" type="int32">
+        <doc>
+          This should be an enum really. Possible values:
+            0 = QUEUED: acknowledge we've seen the test request, but it is not yet
+                        ready for execution
+            1 = WILLING: RX node indicates it is ready to participate in the test,
+                         waits for a COMMIT from the TX node before starting
+            2 = COMMIT: TX node indicates it is committed to starting the test,
+                        waits for RX node to go to TESTING before actually starting
+            3 = TESTING: test ongoing (for both RX and TX node)
+            4 = DONE: test is finished, results will be published
+            5 = REJECTED: node is unwilling to perform this test for some reason
+          For tests where both TX and RX node are WifiDr-capable, we assume the
+          following sequence of states:
+            Coordinator               TX node                 RX node
+            ---------------------------------------------------------
+            publish TestRequest       QUEUED                  QUEUED
+                                                                 v  
+                                        v                     WILLING
+                                      COMMIT                     v
+                                        v                     TESTING
+                                      TESTING
+                                        v
+                     v                DONE                       v
+            read TX node results                               DONE
+            read RX node results
+            remove TestRequest          v                        v
+                                     remove TestState         remove TestState
+      
+          For "blind" tests (where the RX node is not WifiDr-capable), we assume
+          the following sequence of states:
+            Coordinator               TX node        
+            -----------------------------------------
+            publish TestRequest       QUEUED         
+                                        v            
+                                      TESTING
+                                        v
+                     v                DONE           
+            read TX node results                     
+            remove TestRequest          v            
+                                     remove TestState
+          </doc>
+      </member>
+    </struct>
+  </module>
+  <!-- TODO alles hierboven is gespecifieerd voor "passive monitoring state".
+            Nog datamodel toevoegen voor het initieren en tracken van een active test.
+	    Apart topic voor de resultaten, met als key een verwijzing naar de test ID
+	    en als member een substruct van het type ap::Station of station::Statistics
+       TODO gebruik van deze QDM beter documenteren (wie publiceert wat op welke basis)
+    -->
+</types>

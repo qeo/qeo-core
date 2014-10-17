@@ -66,6 +66,8 @@ void sfx_dump_ccref (CCREF *rp, int show_state)
 						           rp->u.range.last.low);
 		log_printf (RTPS_ID, 0, ")");
 	}
+	if (rp->fragments)
+		log_printf (RTPS_ID, 0, "*");
 	if (show_state)
 		log_printf (RTPS_ID, 0, "=%s ", state_str [rp->state]);
 }
@@ -367,9 +369,7 @@ static void sfw_rel_send_alive (RemReader_t *rrp)
 	WRITER		*wp = rrp->rr_writer;
 	Writer_t	*w = (Writer_t *) (wp->endpoint.endpoint);
 	SequenceNumber_t snr_min, snr_max;
-#ifdef RTPS_HB_WAIT
 	unsigned	n;
-#endif
 
 	hc_seqnr_info (w->w_cache, &snr_min, &snr_max);
 	if (SEQNR_GT (snr_min, snr_max)) {
@@ -380,7 +380,19 @@ static void sfw_rel_send_alive (RemReader_t *rrp)
 					&snr_min, &snr_max);
 		return;
 	}
-#ifdef RTPS_HB_WAIT
+
+#ifndef RTPS_HB_WAIT
+	if (rrp->rr_unsent_changes) {
+		if (wp->endpoint.push_mode) {
+			NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
+			if (!rrp->rr_active)
+				proxy_activate (&rrp->proxy);
+		}
+		else
+			sfw_announce (rrp, 1);
+		return;
+	}
+#endif
 	rtps_msg_add_heartbeat (rrp,
 				(DiscoveredReader_t *) rrp->rr_endpoint, 
 				0, &snr_min, &snr_max);
@@ -404,17 +416,6 @@ static void sfw_rel_send_alive (RemReader_t *rrp)
 				     sfw_heartbeat_to,
 				     &w->w_lock);
 	}
-#else
-	if (rrp->rr_unsent_changes) {
-		if (wp->endpoint.push_mode) {
-			NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
-			if (!rrp->rr_active)
-				proxy_activate (&rrp->proxy);
-		}
-		else
-			sfw_announce (rrp, 1);
-	}
-#endif
 }
 
 #ifdef RTPS_W_WAIT_ALIVE
@@ -466,6 +467,12 @@ static void sfw_rel_zero_ack (RemReader_t *rrp)
 
 #endif
 
+/* durable_reader -- Check if the {Writer, DiscoveredReader} has non-volatile
+		     Durability. */
+
+#define	durable_reader(w,ep)	(w->w_qos->qos.durability_kind && \
+				 ep->qos->qos.durability_kind)
+
 /* sfw_rel_start -- Start a Reader proxy in reliable stateful mode. */
 
 static void sfw_rel_start (RemReader_t *rrp)
@@ -502,7 +509,7 @@ static void sfw_rel_start (RemReader_t *rrp)
 
 	/* Add existing cache entries to reader locator/proxy queue. */
 	hc_seqnr_info (rrp->rr_writer->endpoint.endpoint->cache, &snr_min, &snr_max);
-	if (rrp->rr_endpoint->qos->qos.durability_kind) {
+	if (durable_reader (w, rrp->rr_endpoint)) {
 		SEQNR_INC (rrp->rr_new_snr);
 		hc_replay (rrp->rr_writer->endpoint.endpoint->cache,
 					proxy_add_change, (uintptr_t) rrp);
@@ -624,7 +631,7 @@ static int sfw_rel_new_change (RemReader_t      *rrp,
 		if (!rrp->rr_active)
 			proxy_activate (&rrp->proxy);
 	}
-	else if (rrp->rr_peer_alive)
+	else if (!wp->rh_timer)
 		sfw_announce (rrp, 0);
 
 	prof_stop (rtps_rw_new, 1);
@@ -733,9 +740,18 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 		else if (rrp->rr_astate == RRAS_REPAIRING) {
 			if (!rrp->rr_requested_changes)
 				for (rp = LIST_HEAD (rrp->rr_changes);
-				     rp && rp->state != CS_REQUESTED;
-				     rp = LIST_NEXT (rrp->rr_changes, *rp))
-					;
+				     rp;
+				     rp = LIST_NEXT (rrp->rr_changes, *rp)) {
+					if (rp->state != CS_REQUESTED)
+						continue;
+#ifdef RTPS_FRAGMENTS
+					if (rp->relevant && rp->fragments) {
+						rp->state = CS_UNDERWAY;
+						continue;
+					}
+#endif
+					break;
+				}
 			else
 				rp = rrp->rr_requested_changes;
 			if (!rp) {
@@ -762,8 +778,16 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 				break;
 
 			else if (rrp->rr_astate == RRAS_REPAIRING) {
-				if (next_rp->state == CS_REQUESTED)
-					break;
+				if (next_rp->state != CS_REQUESTED)
+					continue;
+
+#ifdef RTPS_FRAGMENTS
+				if (next_rp->relevant && next_rp->fragments) {
+					rp->state = CS_UNDERWAY;
+					continue;
+				}
+#endif
+				break;
 			}
 			else {	/* Unexpected situation! */
 				log_printf (RTPS_ID, 0, "sfw_rel_send_data: unexpected state!\r\n");
@@ -1082,18 +1106,32 @@ static void sfw_rel_reset (RemReader_t *rrp)
 #endif
 	rrp->rr_unsent_changes = rrp->rr_requested_changes = NULL;
 
-	/* Mark all unacked cache entries as unsent. */
-	LIST_FOREACH (rrp->rr_changes, rp)
-		if (rp->state == CS_REQUESTED ||
-		    rp->state == CS_UNDERWAY ||
-		    rp->state == CS_UNACKED) {
-			rp->state = CS_UNSENT;
-			if (!rrp->rr_unsent_changes)
-				rrp->rr_unsent_changes = rp;
-			rrp->rr_unacked++;
-		}
-
 	/* Add existing cache entries to reader locator/proxy queue. */
+	if (durable_reader (w, rrp->rr_endpoint)) {
+
+		/* Block until reader proxy is no longer active. */
+		proxy_wait_inactive (&rrp->proxy);
+
+		/* Cleanup all currently queued samples. */
+		change_delete_enqueued (rrp);
+
+		/* Add existing cache entries. */
+		SEQNR_INC (rrp->rr_new_snr);
+		hc_replay (rrp->rr_writer->endpoint.endpoint->cache,
+					proxy_add_change, (uintptr_t) rrp);
+	}
+	else {
+		/* Mark all unacked cache entries as unsent. */
+		LIST_FOREACH (rrp->rr_changes, rp)
+			if (rp->state == CS_REQUESTED ||
+			    rp->state == CS_UNDERWAY ||
+			    rp->state == CS_UNACKED) {
+				rp->state = CS_UNSENT;
+				if (!rrp->rr_unsent_changes)
+					rrp->rr_unsent_changes = rp;
+				rrp->rr_unacked++;
+			}
+	}
 	
 #ifdef RTPS_INIT_HEARTBEAT
 	if (!rrp->rr_unsent_changes) {
@@ -1167,25 +1205,32 @@ static void sfw_rel_acknack (RemReader_t *rrp, AckNackSMsg *ap, int final)
 	if (rrp->rr_writer->endpoint.mark_acknack)
 		rtps_marker_notify (rrp->rr_writer->endpoint.endpoint, EM_NACKRSP_TO, "sfw_rel_nack_resp_tmr_to");
 #endif
-	/* Reset backoff. */
-	rrp->rr_writer->backoff = 0;
-
 	/* Get count value. */
 	n_words = (ap->reader_sn_state.numbits + 31) >> 5;
 	i = ap->reader_sn_state.bitmap [n_words];
+
+	/* Ignore duplicate acks. */
+	if (i == rrp->rr_last_ack) {
+		RR_SIGNAL (rrp, "Ignore (count == rr_last_ack)");
+		return;
+	}
+
+	/* Reset backoff. */
+	rrp->rr_writer->backoff = 0;
+
 #ifdef RTPS_PROXY_INST_TX
 	rem_proxy_inst = ap->reader_sn_state.bitmap [n_words + 1];
 	if (rem_proxy_inst) {
 		if (rrp->rr_rem_inst && rrp->rr_rem_inst != rem_proxy_inst) {
 
 			/* Remote reader has restarted! Reset the proxy. */
-			RR_SIGNAL (rrp, "REL-Peer-restart!");
-			sfw_rel_reset (rrp);
+			RR_SIGNAL (rrp, "REL-Peer-restart (inst-id)!");
+			sfw_restart (rrp);
+			rrp->rr_rem_inst = rem_proxy_inst;
+			return;
 		}
 		rrp->rr_rem_inst = rem_proxy_inst;
 	}
-/*#if defined (RTPS_PROXY_INST) && !defined (RTPS_PROXY_INST_TX)
-#endif*/
 #endif
 
 #ifdef RTPS_W_WAIT_ALIVE
@@ -1214,18 +1259,14 @@ static void sfw_rel_acknack (RemReader_t *rrp, AckNackSMsg *ap, int final)
 	}
 #endif
 
-	/* Ignore duplicate acks. */
-	if (i == rrp->rr_last_ack) {
-		RR_SIGNAL (rrp, "Ignore (count == rr_last_ack)");
-		return;
-	}
-
 	/* If peer indicates it became alive, reply with a Heartbeat message. */
 	rrp->rr_last_ack = i;
 	if (SEQNR_ZERO (ap->reader_sn_state.base) && 
 	    !ap->reader_sn_state.numbits) {
-		if (!final && rrp->rr_tstate == RRTS_IDLE)
+		if (!final && rrp->rr_tstate == RRTS_IDLE) {
+			RR_SIGNAL (rrp, "REL-Peer-Alive in Idle!");
 			sfw_rel_send_alive (rrp);
+		}
 		return;
 	}
 
@@ -1234,40 +1275,55 @@ static void sfw_rel_acknack (RemReader_t *rrp, AckNackSMsg *ap, int final)
 	max = ap->reader_sn_state.base;
 
 	/* Requested samples that are located between snr_min and the samples
-	   list invoke an immediate GAP, since they must be cleaned up gaps or
-	   already acknowledged samples.  If we don't send this GAP, the reader
-	   will be trapped in a blocked state forever. */
-	if (ap->reader_sn_state.numbits) {
-		if (LIST_EMPTY (rrp->rr_changes)) {
-			snr = rrp->rr_new_snr;
+	   list can be caused by reader proxy restarts.
+	   For Volatile readers, this invokes an immediate GAP, since they might
+	   be cleaned up gaps or already acknowledged samples.  If we don't send
+	   this GAP, the reader will be trapped in a blocked state forever.
+	   For durability > Volatile, we need to restart the cache changes from
+	   the cache contents to make sure nothing is lost. */
+	if (LIST_EMPTY (rrp->rr_changes)) {
+		snr = rrp->rr_new_snr;
+		if (ap->reader_sn_state.numbits)
 			n_gap_bits = ap->reader_sn_state.numbits;
-		}
-		else if (rrp->rr_changes.head->relevant &&
-		         SEQNR_LT (max, rrp->rr_changes.head->u.c.change->c_seqnr)) {
-			n_gap_bits = SEQNR_DELTA (max, rrp->rr_changes.head->u.c.change->c_seqnr);
-			if (n_gap_bits > ap->reader_sn_state.numbits)
-				n_gap_bits = ap->reader_sn_state.numbits;
-		}
-		else if (!rrp->rr_changes.head->relevant &&
-		         SEQNR_LT (max, rrp->rr_changes.head->u.range.first)) {
-			n_gap_bits = SEQNR_DELTA (max, rrp->rr_changes.head->u.range.first);
-			if (n_gap_bits > ap->reader_sn_state.numbits)
-				n_gap_bits = ap->reader_sn_state.numbits;
-		}
+		else if (SEQNR_LT (max, rrp->rr_new_snr))
+			n_gap_bits = SEQNR_DELTA (max, rrp->rr_new_snr);
 		else
 			n_gap_bits = 0;
-
-		if (n_gap_bits) {
-			RR_SIGNAL (rrp, "Immediate GAP");
-			n_words = (n_gap_bits + 31) >> 5;
-			memcpy (gap_bits, ap->reader_sn_state.bitmap, n_words << 2);
-			rtps_msg_add_gap (rrp,
-					  (DiscoveredReader_t *) rrp->rr_endpoint,
-					  &max, &max, n_gap_bits, gap_bits, 1);
-		}
 	}
+	else if (rrp->rr_changes.head->relevant &&
+	         SEQNR_LT (max, rrp->rr_changes.head->u.c.change->c_seqnr))
+		n_gap_bits = SEQNR_DELTA (max, rrp->rr_changes.head->u.c.change->c_seqnr);
+	else if (!rrp->rr_changes.head->relevant &&
+	         SEQNR_LT (max, rrp->rr_changes.head->u.range.first))
+		n_gap_bits = SEQNR_DELTA (max, rrp->rr_changes.head->u.range.first);
 	else
 		n_gap_bits = 0;
+
+	if (n_gap_bits &&
+	    (durable_reader (w, rrp->rr_endpoint))) {
+
+		/* Restart writer since durability > Volatile. */
+		RR_SIGNAL (rrp, "REL-Peer-restart (req-snr < changes list)!");
+		sfw_restart (rrp);
+		return;
+	}
+	else if (n_gap_bits) {
+		if (ap->reader_sn_state.numbits &&
+		    n_gap_bits > ap->reader_sn_state.numbits)
+			n_gap_bits = ap->reader_sn_state.numbits;
+		else if (n_gap_bits > 256)
+			n_gap_bits = 256;
+		RR_SIGNAL (rrp, "Immediate GAP");
+		n_words = (n_gap_bits + 31) >> 5;
+		if (ap->reader_sn_state.numbits)
+			memcpy (gap_bits, ap->reader_sn_state.bitmap, n_words << 2);
+		else
+			for (i = 0; i < n_gap_bits; i++)
+				SET_ADD (gap_bits, i);
+		rtps_msg_add_gap (rrp,
+				  (DiscoveredReader_t *) rrp->rr_endpoint,
+				  &max, &max, n_gap_bits, gap_bits, 1);
+	}
 
 	/* Set min. sequence number for implicitly requested samples. */
 	SEQNR_ADD (max, ap->reader_sn_state.numbits);

@@ -1,0 +1,82 @@
+
+apply plugin: 'findbugs'
+
+if (project.hasProperty('android')) {
+    //android plugin does not generate findbugs tasks, so define them here
+    
+    task findbugsMain(type: FindBugs) {
+        dependsOn("compileDebugJava")
+    }
+    
+    findbugsMain {
+        android.sourceSets.main.java.srcDirs.each { srcdir ->
+            source srcdir
+        }
+        FileTree tree = fileTree(dir: "${buildDir}/intermediates/classes/debug")
+        if (project.hasProperty("findbugsExclude")) {
+            project.findbugsExclude.each {
+                tree.exclude it
+            }
+        }
+        tree.exclude '**/R.class' //exclude generated R.java
+        tree.exclude '**/R$*.class' //exclude generated R.java inner classes
+        classes = tree
+
+        classpath = files("${System.env.ANDROID_HOME}/platforms/${android.compileSdkVersion}/android.jar")
+        afterEvaluate {
+            for  (i in configurations.compile) {
+                if (i.getName().endsWith(".jar")) {
+                    //regular jar files
+                    logger.debug("added ${i} to findbugsMain classpath")
+                    classpath += files(i)
+                }
+            }
+
+            //find all classes.jar coming from aar bundles
+            FileTree treeAar = fileTree(dir: "${buildDir}/intermediates/exploded-aar")
+            treeAar.include '*/*/*/classes.jar'
+            treeAar.each {
+                classpath += files(it)
+                logger.debug("added ${it} to findbugsMain classpath")
+            }
+
+        }
+    }
+    tasks.check.dependsOn(findbugsMain)
+}
+
+if (project.hasProperty("findbugsHtml") && project.findbugsHtml) {
+    //enable readable findbugs reports, you can't do both
+    logger.warn("Creating findbugs HTML instead of XML")
+    findbugsMain.reports.html.enabled = true
+    findbugsMain.reports.xml.enabled = false  
+    if (tasks.findByPath("findbugsTest") != null) {
+        findbugsTest.reports.html.enabled = true
+        findbugsTest.reports.xml.enabled = false  
+    }
+}
+
+//valid for both android and java
+findbugsMain {
+    File excludeFile = project.file("findbugsExcludes.xml")
+    if (excludeFile.exists()) {
+        logger.info("Using findbugs excludeFilter ${excludeFile}")
+        new XmlSlurper().parse(excludeFile) //just parse the xml. Don't do anything with it. Done because findbugs will silently ignore the file if there's a syntax error in there.
+        excludeFilter excludeFile
+    }
+}
+if (tasks.findByPath("findbugsTest") != null) {
+    findbugsTest {
+        File excludeFile = project.file("findbugsExcludesTest.xml")
+        if (excludeFile.exists()) {
+            logger.info("Using findbugs excludeFilter for tests ${excludeFile}")
+            new XmlSlurper().parse(excludeFile) //just parse the xml. Don't do anything with it. Done because findbugs will silently ignore the file if there's a syntax error in there.
+            excludeFilter excludeFile
+        }
+    }
+}
+
+project.findbugs.ignoreFailures = false
+project.findbugs.reportLevel = "medium"
+
+

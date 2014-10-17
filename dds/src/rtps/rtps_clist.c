@@ -16,6 +16,7 @@
 
 #include "error.h"
 #include "prof.h"
+#include "log.h"
 #include "list.h"
 #include "rtps_data.h"
 #include "rtps_priv.h"

@@ -18,6 +18,8 @@
 #include "ta_type.h"
 #include "ta_disc.h"
 
+/*#define INTERACTIVE*/
+
 #define	DOMAIN_ID		7	/* Domain Id to use. */
 #define	MAX_PARTICIPANTS	3	/* # of participants. */
 #define	NDR			2	/* # of DataReaders. */
@@ -328,6 +330,27 @@ static DDS_DataWriterListener dw_listener = {
 	NULL
 };
 
+#ifdef INTERACTIVE
+#define	WAIT_OK()	wait_ok ()
+static void wait_ok (void)
+{
+	char	buf [128];
+
+	do {
+		printf ("\r\nType any key to continue: ");
+		fflush (stdout);
+		gets (buf);
+		if (buf [0] == '\0')
+			break;
+
+		DDS_Debug_command (buf);
+	}
+	while (1);
+}
+#else
+#define	WAIT_OK()
+#endif
+
 DDS_DomainParticipant data_prologue (void)
 {
 	DDS_PoolConstraints	c;
@@ -421,6 +444,7 @@ DDS_DomainParticipant data_prologue (void)
 		}
 	}
 	sleep (1);
+	WAIT_OK ();
 	return (d [0]->p);
 }
 
@@ -440,6 +464,7 @@ static void data_w_op (DDS_DataWriter        w,
 		       unsigned              i,
 		       DDS_InstanceHandleSeq *dests,
 		       WriterOp_t            op,
+		       unsigned              n,
 		       unsigned              c)
 {
 	DDS_Time_t		time;
@@ -465,7 +490,8 @@ static void data_w_op (DDS_DataWriter        w,
 		case WO_WRITE:
 		case WO_WRITE_DIRECTED:
 			data->counter++;
-			strcpy (data->message, (char *) str [c]);
+			sprintf (data->message,  "{(%u) W%u [%u]} - ", n, c, i);
+			strcat (data->message, (char *) str [c]);
 			v_printf ("'%s'%s\r\n", data->message, (op != WO_WRITE) ? " Directed" : "");
 			if (op == WO_WRITE)
 				if (!c)
@@ -571,7 +597,7 @@ static void test_data_w (WriterOp_t op, unsigned c)
 						sp = NULL;
 					data_w_op (dp->d_w [i].dw, &md,
 						   dp->d_w [i].h, x, sp,
-						   op, i);
+						   op, n, i);
 					lock_release (plock);
 					if (sp)
 						DDS_InstanceHandleSeq__clear (sp);
@@ -806,6 +832,8 @@ void test_data (void)
 	sleep (1);
 
 	v_printf (" - Test WaitSet\r\n");
+	WAIT_OK ();
+
 	conds = DDS_ConditionSeq__alloc ();
 	fail_unless (conds != NULL);
 
@@ -853,6 +881,7 @@ void test_data (void)
 	test_data_w (WO_DISPOSE_DIRECTED, 1);
 
 	v_printf (" - Test instance data\r\n");
+
 	r = DDS_DataWriter_get_key_value (d [0]->d_w [1].dw, &mdata, d [0]->d_w [1].h [0]);
 	fail_unless (r == DDS_RETCODE_OK &&
 		     mdata.key [0] == 0 && mdata.key [1] == 1 &&
@@ -863,6 +892,10 @@ void test_data (void)
 	test_data_w (WO_UNREGISTER, 1);
 	test_data_w (WO_WRITE, 2);
 	test_data_w (WO_UNREGISTER_DIRECTED, 1);
+
+	sleep (1);
+	WAIT_OK ();
+
 	readers = DDS_DataReaderSeq__alloc ();
 	fail_unless (readers != NULL);
 	to.sec = 1;

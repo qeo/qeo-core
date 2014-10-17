@@ -411,22 +411,26 @@ static bool update_locator(igd_t *igd)
         qeo_log_e("failed to get public address using UPnP IGD");
     }
     else if (igd->wan_updated) {
-        /* create the port map */
-        if (0 != add_portmap(igd)) {
-            qeo_log_e("failed to configure port map using UPnP IGD");
-        }
-        /* configure factory with public address */
-        else {
-            int port = atoi(igd->wan_port);
-
-            if (QEO_OK != qeocore_fwdfactory_set_public_locator(_factory, igd->wan_ip, port)) {
-                qeo_log_e("failed to configure public address");
+        if (strcmp("0.0.0.0",igd->wan_ip)) {
+            /* create the port map */
+            if (0 != add_portmap(igd)) {
+                qeo_log_e("failed to configure port map using UPnP IGD");
             }
+            /* configure factory with public address */
             else {
-                success = true;
+                int port = atoi(igd->wan_port);
+
+                if (QEO_OK != qeocore_fwdfactory_set_public_locator(_factory, igd->wan_ip, port)) {
+                    qeo_log_e("failed to configure public address");
+                }
+                else {
+                    success = true;
+                }
             }
         }
     }
+
+
     else {
         /* wan ip did not change, nothing to be done */
         success = true;

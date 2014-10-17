@@ -1,0 +1,107 @@
+/*
+Hack alert !!!
+We are redefining the buildDir from gradle to output.
+As "./build/" is already used for the middleware build system.
+So we decided to use the output directory of that system.
+Keep this line on top of the others!
+*/
+project.buildDir = "output/gradle"
+project.ext.tarDir = new File("$buildDir/tarDir")
+
+apply from: (System.properties['qeoGradleHelper'] ? System.properties['qeoGradleHelper'] : '') + '/artifactory.gradle'
+apply from: (System.properties['qeoGradleHelper'] ? System.properties['qeoGradleHelper'] : '') + '/androidNdk.gradle'
+
+/* Store makeCmd and makeEnvironment project properties to enable tasks in other build files to use it */
+project.ext.makeCmd = ["make", "-f", "Makefile_component", "PROJECT_VERSION=" + (project.properties["displayVersion"]?:project.version)]
+project.ext.makeEnvironment = [:]
+if (project.hasProperty("makeExtras")) {
+	project.ext.makeCmd.addAll(project.makeExtras.tokenize(' '))
+}
+if (!project.hasProperty("mwbuildName")) {
+	project.ext.mwbuildName=project.name
+}
+if (System.properties.target) {
+    project.makeCmd.addAll("E=" + System.properties.target)
+    if (System.properties.target.contains('ANDROID')) {
+        project.ext.makeEnvironment['ANDROID_NDK'] = androidNdkLocation
+        project.ext.makeEnvironment['ANDROID_GCCVER'] = androidGccVersion
+    }
+}
+logger.info("makeCmd: $project.makeCmd")
+logger.info("Environment: $project.makeEnvironment")
+
+task cleanup(type:Exec) {
+	description "Clean $project.mwbuildName."
+	commandLine = makeCmd + ["clean_all"]
+	environment << makeEnvironment
+}
+
+task build_tarball(type:Exec) {
+	description "Build $project.mwbuildName for production and package it."
+	workingDir projectDir
+	commandLine = makeCmd + [project.mwbuildName + ".tgz"]
+	environment << makeEnvironment
+}
+
+task build_devel_tarball(type:Exec) {
+	description "Build $project.mwbuildName for development and package it."
+	workingDir projectDir
+	commandLine = makeCmd + [project.mwbuildName + "-devel.tgz"]
+	environment << makeEnvironment
+}
+
+task build_test_full_tarball(type:Exec) {
+	description "Build $project.mwbuildName for development/testing and package it."
+	workingDir projectDir
+	commandLine = makeCmd + [project.mwbuildName + "-test-full.tgz"]
+	environment << makeEnvironment
+}
+
+task normal_test_run(type:Exec) {
+	description "Run all tests."
+	workingDir projectDir
+	commandLine = makeCmd + ["test_run"]
+	environment << makeEnvironment
+}
+
+task gcovr_test_run(type:Exec) {
+	description "Run all tests and generate a coverage report (XML)."
+	workingDir projectDir
+	commandLine = makeCmd + ["COVERAGE=1", "gcovr_test_run"]
+	environment << makeEnvironment
+}
+
+task coverage_test_run(type:Exec) {
+	description "Run all tests and generate a coverage report (HTML)."
+	workingDir projectDir
+	commandLine = makeCmd + ["COVERAGE=1", "coverage_test_run"]
+	environment << makeEnvironment
+}
+
+// hook-up standard gradle tasks
+project.tasks.clean.dependsOn cleanup
+project.tasks.assemble.dependsOn build_tarball
+
+task test {
+	description "Runs the unit and system tests."
+	dependsOn gcovr_test_run
+	group "Verification"
+}
+
+task testNoCoverage {
+	description "Runs the unit and system tests (no coverage reporting)."
+	dependsOn normal_test_run
+	group "Verification"
+}
+
+task check {
+	description "Runs all checks (coverage, klocwork)."
+	dependsOn  gcovr_test_run
+	group "Verification"
+}
+
+task build {
+	description "Assembles and tests this project."
+	dependsOn assemble, check
+	group "Build"
+}

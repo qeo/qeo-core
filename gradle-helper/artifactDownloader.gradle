@@ -1,0 +1,116 @@
+
+//download files that are listen in a configuration named "download"
+
+configurations {
+    download {
+        "Download artifacts"
+    }
+    downloadUnzip {
+        "Download and unzip artifacts"
+    }
+}
+/* much easier, but does not work with the ziptree
+task artifactDownload(type: Copy) {
+    //configuration parameters
+    ext.outputDir = "${buildDir}/download"
+    ext.unzip = false
+
+    from configurations.download
+    afterEvaluate {
+        into outputDir
+    }
+}*/
+
+
+task artifactDownload() {
+    description "Download (and extract) artifacts"
+    def filesToFetch = []
+
+    //configuration parameters
+    ext.outputDir = "${buildDir}/download"
+    ext.unzip = false
+
+    afterEvaluate {
+        outputs.dir files(outputDir)
+        project.configurations.download.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            inputs.file artifact.file
+            filesToFetch += artifact.file
+        }
+    }
+    doLast {
+        filesToFetch.each { f ->
+            copy {
+                if (unzip) {
+                    logger.info("unzipping ${f} into ${outputDir}")
+                    from zipTree(f)
+                }
+                else {
+                    logger.info("copying ${f} into ${outputDir}")
+                    from f
+                }
+                into file(outputDir)
+            }
+        }
+    }
+}
+
+task artifactDownloadUnzip() {
+    description "Download and unzip artifacts"
+    def filesToFetch = []
+
+    //configuration parameters
+    ext.outputDir = "${buildDir}/download"
+    ext.useNativeUnzip = false
+
+    afterEvaluate {
+        outputs.dir files(outputDir)
+        project.configurations.downloadUnzip.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            inputs.file artifact.file
+            filesToFetch += artifact.file
+        }
+    }
+    doLast {
+        filesToFetch.each { f ->
+            if (useNativeUnzip) {
+                if (f.name.endsWith(".zip")) {
+	                // This enables the correct extraction of symbolic links on Un*x systems
+	                logger.info("unzipping (native) ${f} into ${outputDir}")
+	                mkdir outputDir
+	                exec {
+	                    workingDir = outputDir
+	                    commandLine = [ 'unzip', f ]
+	                }
+                }
+                else if (f.name.endsWith(".tgz")) {
+                    // This enables the correct extraction of symbolic links on Un*x systems
+                    logger.info("unzipping (native) ${f} into ${outputDir}")
+                    mkdir outputDir
+                    exec {
+                        workingDir = outputDir
+                        commandLine = [ 'tar', '-zxf', f ]
+                    }
+                }
+                else {
+                    throw new IllegalArgumentException("can't handle file for \"downloadUnzip\" configuration: ${f}");
+                }
+            }
+            else {
+                copy {
+                    if (f.name.endsWith(".zip") || f.name.endsWith(".jar") || f.name.endsWith(".apk")) {
+                        logger.info("unzipping ${f} into ${outputDir}")
+                        from zipTree(f)
+                    }
+                    else if (f.name.endsWith(".tgz") || f.name.endsWith(".tar.gz")) {
+                        logger.info("untgz ${f} into ${outputDir}")
+                        from tarTree(resources.gzip(f))
+                    }
+                    else {
+                        throw new IllegalArgumentException("can't handle file for \"downloadUnzip\" configuration: ${f}");
+                    }
+                    into file(outputDir)
+                }
+            }
+        }
+    }
+}
+

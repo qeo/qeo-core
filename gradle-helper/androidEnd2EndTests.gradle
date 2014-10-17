@@ -1,0 +1,344 @@
+import org.gradle.api.GradleException
+
+apply from: (System.properties['qeoGradleHelper'] ? System.properties['qeoGradleHelper'] : '') + '/artifactory.gradle'
+apply from: (System.properties['qeoGradleHelper'] ? System.properties['qeoGradleHelper'] : '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ? System.properties['qeoGradleHelper'] : '') + '/androidInstallerTools.gradle'
+
+//Add an extra configuration in order to be able to download dependencies.
+configurations { testApkDependencies { description = 'download apk\'s to which we have dependencies' } }
+
+project.ext.emulators = []
+
+
+// Map gradle project layout to the one from eclipse
+android {
+    defaultConfig {
+        //Configure the android gradle plugin to use the following instrumentationrunner in order to
+        //be able to generate xml-files.
+        testInstrumentationRunner = 'pl.polidea.instrumentation.PolideaInstrumentationTestRunner'
+    }
+}
+
+def adb = new File(System.env.ANDROID_HOME, "platform-tools${File.separator}adb");
+if (!adb.isFile()) {
+	throw new GradleException("ANDROID_HOME is not correct, can't find ${adb}")
+}
+
+afterEvaluate{
+    task installDependentAPKs << {
+        println("-------------------------------------------------------------------------")
+        println("Install the APK\'s needed to run the end to end tests on both emulators")
+        println("-------------------------------------------------------------------------")
+        project.emulators.each { emu ->
+            println("----------------------------------------")
+            println("Installing on: " + emu)
+            println("----------------------------------------")
+            project.configurations.testApkDependencies.each { File file ->
+                println ("Downloaded APK dependency: " + file.getAbsolutePath())
+                def depInstallStatus = ""
+                new ByteArrayOutputStream().withStream { out ->
+                    project.exec {
+                        executable = adb
+                        args = [
+                            '-s',
+                            emu,
+                            'install',
+                            '-r',
+                            file.getAbsolutePath()
+                        ]
+                        standardOutput = out
+                    }
+                    depInstallStatus = out.toString()
+                }
+                if(depInstallStatus.contains("Success")){
+                    println ("Installed APK successfully!")
+                }
+                if(depInstallStatus.contains("Failure")){
+                    throw new GradleException("Dependant APK\'s could not be installed \n" +
+                    "Probably an old install of an apk is present \n" +
+                    "on the emulator/device. Make sure you uninstall \n" +
+                    "all old apk\'s.")
+                }
+            }
+        }
+    }
+
+    task installTestsOnEmus << {
+        println("------------------------------------------")
+        println("Install the tests needed on both emulators")
+        println("------------------------------------------")
+        project.emulators.each { emu ->
+            println("----------------------------------------")
+            println("Installing on: " + emu)
+            println("----------------------------------------")
+            def depInstallStatus = ""
+            new ByteArrayOutputStream().withStream { out ->
+                project.exec {
+                    executable = adb
+                    args = [
+                        '-s',
+                        emu,
+                        'install',
+                        '-r',
+                        file("${project.buildDir}/apk/${project.name}-debug-unaligned.apk").getAbsolutePath()
+                    ]
+                    standardOutput = out
+                }
+                depInstallStatus = out.toString()
+            }
+            if(depInstallStatus.contains("Success")){
+                println ("Installed TestAPKs successfully on " + emu + "!")
+            }
+            if(depInstallStatus.contains("Failure")){
+                throw new GradleException("Dependant APK\'s could not be installed \n" +
+                "Probably an old install of an apk is present \n" +
+                "on the emulator/device. Make sure you uninstall \n" +
+                "all old apk\'s.")
+            }
+
+        }
+    }
+
+    task runEnd2EndTests << {
+        def procs = []
+        int deviceNumber = 0
+        
+        project.emulators.each { emu ->
+            println("----------------------------------------")
+            println("Clearing log on : " + emu)
+            println("----------------------------------------")
+            def result = project.exec {
+                executable = adb
+                args = [
+                    '-s',
+                    emu,
+                    'logcat',
+                    '-c'
+                ]
+            }
+            println("result : " + result)
+        }
+        
+        project.emulators.each { emu ->
+            println("----------------------------------------")
+            println("Starting tests on: " + emu)
+            println("----------------------------------------")
+            String deviceAnnotation = "TestRunner" + deviceNumber.toString()
+            def testAPKPackages = ""
+            //Search for the org.qeo installations on the android filesystem
+            new ByteArrayOutputStream().withStream { out ->
+                def result = project.exec {
+                    executable = adb
+                    //args = ['-s', emu, 'shell', 'ls', "/data/data/", '|', 'grep', "\"org.qeo.*.test\""]
+                    args = [
+                        '-s',
+                        emu,
+                        'shell',
+                        'ls',
+                        "/data/data/"
+                    ]
+                    standardOutput = out
+
+                }
+
+                testAPKPackages = out.toString()
+                println("APKs found : " + testAPKPackages)
+
+            }
+            testAPKPackages.eachLine { testPack ->
+                if (testPack.contains("org.qeo") && testPack.contains("test")) {
+                    println("Test APK found : " + testPack)
+		    println("ADB location: " + "${adb}")
+                    def runEnd2EndTestCommand = "${adb} -s $emu shell am instrument -w -e annotation org.qeo.end2endtest.${deviceAnnotation} ${testPack}/pl.polidea.instrumentation.PolideaInstrumentationTestRunner"
+                    println("Executing :" + runEnd2EndTestCommand)
+                    def proc = runEnd2EndTestCommand.execute()
+                    procs += proc
+                }
+            }
+            deviceNumber++
+        }
+        println("----------------------------------------")
+        println("Waiting for tests to finish")
+        println("----------------------------------------")
+        procs.each { proc2 ->
+            proc2.waitFor()
+            println "return code: ${ proc2.exitValue()}"
+            println "stderr: ${proc2.err.text}"
+            println "stdout: ${proc2.in.text}" // *out* from the external program is *in* for groovy
+        }
+
+        // get test results
+        project.emulators.each { emu ->
+            //String to filter all the technicolor xml-files
+            def shellString = "/data/data/org.qeo.*/files/*.xml"
+            def reportFilePaths = ""
+            //Search for the xml-files on the android filesystem
+            new ByteArrayOutputStream().withStream { outStr ->
+                def result = project.exec {
+                    executable = adb
+                    args = ['-s', emu,'shell', 'ls', shellString]
+                    standardOutput = outStr
+                }
+                reportFilePaths = outStr.toString()
+            }
+            //Use the results from the previous exec to pull all the xml-files from the device/emulator
+            reportFilePaths.eachLine { filePath ->
+                println("-----------")
+                println("Saving: " + filePath)
+                println("-----------")
+                if(filePath.contains("org.qeo")){
+                    project.exec {
+                        executable = adb
+                        args = [
+                            '-s',
+                            emu,
+                            'pull',
+                            filePath,
+                            "build/test-results/${project.file(filePath).name}"
+                        ]
+                    }
+                    //for reporting purposes we have to be able to make a difference between the tests that have run
+                    //on java and the ones that have run on android. For this reason we do some processing to the android
+                    //testrusults.
+                    def testResult = new XmlSlurper().parse("$buildDir/test-results/${project.file(filePath).name}")
+                    testResult.testsuite.testcase.each{it.@name = "${it.@name}_OnAndroid".toString()}
+                    new FileWriter("$buildDir/test-results/${emu}_${project.file(filePath).name}") << new groovy.xml.StreamingMarkupBuilder().bindNode(testResult)
+                    println("-----------")
+                    println("Results saved in build/test-results/${emu}_${project.file(filePath).name}")
+                    println("-----------")
+                }else{
+                    throw new GradleException("No XML-files where found on the Emulator/Device")
+                }
+            }
+        }
+
+        project.emulators.each { emu ->
+            println("----------------------------------------")
+            println("Getting log from : " + emu)
+            println("----------------------------------------")
+
+            def emuLog = ""
+            //Search for the org.qeo installations on the android filesystem
+            new ByteArrayOutputStream().withStream { out ->
+                def result = project.exec {
+                    executable = adb
+                    args = [
+                        '-s',
+                        emu,
+                        'logcat',
+                        '-d',
+                        '-v',
+                        'time'
+                    ]
+                    standardOutput = out
+                }
+                emuLog = out.toString()
+            }  
+            new File("${buildDir}/log").mkdir()         
+            new File("${buildDir}/log/${emu}.log").withWriter { out ->
+                emuLog.eachLine() { emuLogLine ->
+                out.writeLine(emuLogLine)
+                }
+            }
+            println("-----------")
+            println("Log saved in ${buildDir}/log/${emu}.log")
+            println("-----------")
+        }
+    }
+
+    task cleanupQeoAPKs << {
+        println("-------------------------------------------------------------------------")
+        println("In order to remove incompatible or lingering apk\'s we will uninstall all")
+        println("\"org.qeo\"-packages that are still present on the android filesystem.")
+        println("-------------------------------------------------------------------------")
+        project.emulators.each { emu ->
+            println("-----------------------------------")
+            println("Cleaning up: " + emu)
+            println("-----------------------------------")
+
+            def orgQeoInstallations = ""
+            //Search for the org.qeo installations on the android filesystem
+            new ByteArrayOutputStream().withStream { out ->
+                def result = project.exec {
+                    executable = adb
+                    args = [
+                        '-s',
+                        emu,
+                        'shell',
+                        'ls',
+                        "/data/data/",
+                        "|",
+                        "grep",
+                        "org.qeo"
+                    ]
+                    standardOutput = out
+                }
+                orgQeoInstallations = out.toString()
+            }
+            //Use the results from the previous exec to make sure there are no more installations of org.qeo packages on the emulator
+            orgQeoInstallations.eachLine { packs ->
+                println("-----------")
+                println("\"org.qeo\"-packages still on filesystem : " + packs)
+                println("-----------")
+                project.exec {
+                    executable = adb
+                    args = [
+                        '-s',
+                        emu,
+                        'uninstall',
+                        packs
+                    ]
+                }
+            }
+        }
+        println("-----------")
+        println("Removed all \"org.qeo\"-packages from filesystem")
+        println("-----------")
+    }
+
+    task getRunningEmulators << {
+        println("-------------------------------------------------------------------------")
+        println("Get a list of all running emulators")
+        println("-------------------------------------------------------------------------")
+        def runningEmus = ""
+        //Search for the org.qeo installations on the android filesystem
+        new ByteArrayOutputStream().withStream { out ->
+            def result = project.exec {
+                executable = adb
+                args = ['devices']
+                standardOutput = out
+            }
+            runningEmus = out.toString()
+        }
+        //Use the results from the previous exec to make sure there are no more installations of org.qeo packages on the emulator
+        runningEmus.eachLine { line ->
+            if(!line.contains("List of devices attached") && line.contains("emulator")){
+                def result = line.substring(0, line.indexOf("\t"))
+                project.emulators += result
+            }
+        }
+        println("-----------")
+        println("Running Emulators: " + project.emulators)
+        println("-----------")
+
+    }
+
+    project.tasks.assembleTest.dependsOn(assemble)
+    project.tasks.getRunningEmulators.dependsOn(assembleTest)
+    project.tasks.cleanupQeoAPKs.dependsOn(getRunningEmulators)
+    project.tasks.installDependentAPKs.dependsOn(cleanupQeoAPKs)
+    project.tasks.installCertFile.dependsOn(installDependentAPKs)
+    project.tasks.installTestsOnEmus.dependsOn(installCertFile)
+    project.tasks.runEnd2EndTests.dependsOn(installTestsOnEmus)
+}
+
+dependencies {
+    //To be able to generate xml results on android the following dependency is needed
+    compile group: 'pl.polidea', name: 'the-missing-android-xml-junit-test-runner-release', version: '1.3_2'
+    compile     group: 'org.qeo', name: 'qeo-android', version: version
+    compile     group: 'org.qeo', name: 'qeo-android-tests', version: version //should actually be test-compile dependency, but does not work??
+    compile     group: 'org.qeo', name: 'qeo-java', version: version, classifier: 'testlib' //should actually be test-compile dependency, but does not work??
+    compile group: 'org.qeo', name: 'qeo-java', version: version, classifier: 'tests'
+    compile group: 'com.google.android', name: 'support-v4', version: 'r7'
+    testApkDependencies group:'org.qeo', name:'qeo-android-service', version: version, classifier: 'debug', ext: 'apk'
+}

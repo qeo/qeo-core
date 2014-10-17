@@ -28,7 +28,7 @@
 #define RTPS_FRAGMENTS		/* Enable fragments support. */
 #endif
 /*#define RTPS_TRC_WRITER	** Trace Writer context changes. */
-/*#define RTPS_TRC_READER	** Trace Reader context changes. */
+#define RTPS_TRC_READER	** Trace Reader context changes. */
 /*#define RTPS_CACHE_CHECK	** Define this to enable cache checking. */
 /*#define RTPS_REL_CHECK	** Check reliability state. */
 /*#define RTPS_RANGE_CHECK	** Validata queue entry ranges. */
@@ -99,10 +99,10 @@
 #define	DEF_HB_SUPP_NS		0
 #endif
 #ifndef WALIVE_TO
-#define	WALIVE_TO		((TICKS_PER_SEC >> 2) * RT_MULT)
+#define	WALIVE_TO		((TICKS_PER_SEC >> 1) * RT_MULT)
 #endif
 #ifndef RALIVE_TO
-#define	RALIVE_TO		((TICKS_PER_SEC >> 3) * RT_MULT)
+#define	RALIVE_TO		((TICKS_PER_SEC >> 1) * RT_MULT)
 #endif
 #ifndef MIN_RTPS_MSG_SIZE
 #define	MIN_RTPS_MSG_SIZE	528	/* 576 - IP+UDP+RTPS headers. */

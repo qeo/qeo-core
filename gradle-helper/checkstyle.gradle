@@ -1,0 +1,233 @@
+import groovy.xml.MarkupBuilder
+
+import org.gradle.api.DefaultTask
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.TaskAction
+
+//Set the checkstyle configuration
+apply plugin: 'checkstyle'
+
+
+def checkstyleURL = 'file://' + (System.properties['qeoGradleHelper'] ?: '') + '/technicolor_checkstyle_rules.xml'
+if (project.hasProperty('isSDKSample')){
+    checkstyleURL = 'file://' + (System.properties['qeoGradleHelper'] ?: '') + '/technicolor_checkstyle_sample_rules.xml'
+}
+def checkstyleTestURL = 'file://' + (System.properties['qeoGradleHelper'] ?: '') + '/technicolor_checkstyle_rules_test.xml'
+def checkstyleAidlURL = 'file://' + (System.properties['qeoGradleHelper'] ?: '') + '/technicolor_checkstyle_rules_aidl.xml'
+
+// Only do this for android. Checkstyle works out of the box for java
+if (project.hasProperty('android')) {
+	// CheckstyleMain and CheckstyleTest tasks are missing for android
+	task checkstyleMain(type: Checkstyle) {
+        afterEvaluate {
+    		dependsOn('compileDebugJava') //classes are needed for the classpath
+        }
+	}
+	
+	task checkstyleTest(type: Checkstyle) {
+	}
+	
+	task checkstyle(dependsOn: [checkstyleMain, checkstyleTest]) {
+	}
+	
+	if (project.hasProperty('hasAidl')){
+		task checkstyleAidl(type: Checkstyle) {
+		}
+		project.tasks.checkstyle.dependsOn('checkstyleAidl')
+	}
+
+	project.tasks.check.dependsOn('checkstyle')
+
+}
+
+//Make sure we only need 1 centralized checkstyle.xml file for all of our development
+allprojects {
+    task eclipseCheckstyle {
+        description = "Generate .checktyle file for eclipse"
+        ext.ignoreDirs = []
+    }
+
+    afterEvaluate { project ->
+
+		if (tasks.findByPath("checkstyleMain") != null) {
+        	task downloadCheckstyleConfig(type: DownloadFileTask) {
+        	    description = 'Download company Checkstyle configuration'
+        	    url = checkstyleURL
+        	    destinationFile = checkstyleMain.configFile
+        	}
+			tasks.checkstyleMain.dependsOn(downloadCheckstyleConfig)
+		}
+
+		if (tasks.findByPath("checkstyleTest") != null) {
+	        task downloadCheckstyleTestConfig(type: DownloadFileTask) {
+	            description = 'Download company Checkstyle configuration for Test classes'
+	            url = checkstyleTestURL
+	            destinationFile = checkstyleTest.configFile
+	        }
+			tasks.checkstyleTest.dependsOn(downloadCheckstyleTestConfig)
+		}
+
+		if (project.hasProperty('hasAidl')){
+
+			task filterAidlForCheckstyle(type: Copy) {
+				android.sourceSets.main.aidl.srcDirs.each{ srcdir -> 
+					from srcdir
+				}
+				into "${buildDir}/tmp/aidlForCheckstyle"
+				// Use a closure to filter each line
+				filter { String line ->
+					//filter out aidl specific tags to comply to standard java code
+					if (line =~ /\s*\*/ || line =~ /\s*\/\*/) {
+					    return line; //ignore javadoc blocks
+					}
+					line = line.replaceAll("([,\\(]\\s*)in ", "\$1")
+					line = line.replaceAll("(^\\s*)in ", "\$1")
+					line = line.replaceAll("([,\\(]\\s*)out ", "\$1")
+					line = line.replaceAll("(^\\s*)out ", "\$1")
+					line = line.replaceAll("([,\\(]\\s*)inout ", "\$1")
+					line = line.replaceAll("(^\\s*)inout ", "\$1")
+					line = line.replaceAll("^\\s*parcelable .*;", "")
+					line = line.replaceAll("^\\s*oneway\\s+interface ", "interface ")
+					return line
+				}
+				rename '(.*).aidl', '$1.aidl.java'
+			}
+	
+    	    task downloadCheckstyleAidlConfig(type: DownloadFileTask) {
+    	        description = 'Download company Checkstyle configuration for Aidl files'
+    	        url = checkstyleAidlURL
+    	        destinationFile = checkstyleAidl.configFile
+    	    }
+			tasks.checkstyleAidl.dependsOn(downloadCheckstyleAidlConfig)
+			tasks.checkstyleAidl.dependsOn(filterAidlForCheckstyle)
+		}
+
+        // When the eclipse plugin is enabled, lets generate the necessary config files for the checkstyle plugin
+        if(project.plugins.findPlugin('eclipse') != null) {
+
+            // generate .checkstyle file
+            eclipseCheckstyle {
+                doLast {
+                    def CSSourceSetsMain
+                    def CSSourceSetsTest
+                    if (project.hasProperty('android')){
+                        CSSourceSetsMain = android.sourceSets.main.java.srcDirs
+                        CSSourceSetsTest = android.sourceSets.androidTest.java.srcDirs
+                    }
+                    else {
+                        CSSourceSetsMain = project.sourceSets.main.java.srcDirTrees
+                        CSSourceSetsTest = project.sourceSets.test.java.srcDirTrees
+                    }
+
+                    def xml = new MarkupBuilder(new FileWriter(project.file('.checkstyle')))
+                    def addLocalCheckConfig = { name, location ->
+                        xml.'local-check-config'(['name':name, 'location':location, type:'remote', description:'Automatically generated by gradle']) {
+                            'additional-data'(['name':'cache-file', 'value':false])
+                        }
+                    }
+                    def newFileSet = { name, sourceDirTrees ->
+                        xml.fileset(['name':name, enabled:true, 'check-config-name':name, local:true]) {
+
+                            sourceDirTrees.each {
+                                File dir;
+                                if (it instanceof File) {
+                                    dir = it;
+                                }
+                                else {
+                                    dir = it.dir
+                                }
+                                if (ignoreDirs.contains(dir)) {
+                                    return
+                                }
+                                xml.'file-match-pattern'(['match-pattern':"^${project.relativePath(dir)}/.*\\.java", 'include-pattern':true])
+                            }
+                        }
+                    }
+                    xml.'fileset-config'(['file-format-version':'1.2.0', 'simple-config':false, 'sync-formatter':false]) {
+                        addLocalCheckConfig('main', checkstyleURL)
+                        addLocalCheckConfig('test', checkstyleTestURL)
+                        newFileSet('main', CSSourceSetsMain)
+                        newFileSet('test', CSSourceSetsTest)
+                    }
+                }
+            }
+
+            // Attach it to the eclipse task
+            project.tasks.eclipse.dependsOn eclipseCheckstyle
+
+            // Enable the checkstyle plugin for this project
+            project.eclipse.project {
+                natures "net.sf.eclipsecs.core.CheckstyleNature"
+                buildCommand "net.sf.eclipsecs.core.CheckstyleBuilder"
+            }
+        }
+    }
+}
+
+class DownloadFileTask extends DefaultTask {
+    @Input
+    String url
+    @OutputFile
+    File destinationFile
+    @TaskAction
+    def downloadFile() {
+		if (url.startsWith("/")) {
+			url = "file://" + url; //prepend file protocol
+		}
+        destinationFile.bytes = new URL(url).bytes
+    }
+}
+
+checkstyleMain {
+    configFile = project.file ("$buildDir/checkstyle.xml")
+    if (project.hasProperty('android')){
+		android.sourceSets.main.java.srcDirs.each{ srcdir -> 
+			source srcdir
+		}
+		classpath = files("${buildDir}/intermediates/classes/debug")
+		afterEvaluate {
+			for  (i in configurations.compile) {
+				if (i.getName().endsWith(".jar")) {
+					logger.debug("added ${i} to checkstyleMain classpath")
+					classpath += files(i)
+				}
+			}
+		}
+    }
+}
+
+checkstyleTest {
+    configFile = project.file ("$buildDir/checkstyle_test.xml")
+    if (project.hasProperty('android')){
+		android.sourceSets.androidTest.java.srcDirs.each{ srcdir -> 
+			source srcdir
+		}
+		classpath = files("${buildDir}/intermediates/classes/debug")
+		afterEvaluate {
+			for  (i in configurations.compile) {
+				if (i.getName().endsWith(".jar")) {
+					logger.debug("added ${i} to checkstyleTest classpath")
+					classpath += files(i)
+				}
+			}
+		}
+    }
+}
+
+if (project.hasProperty('hasAidl')){
+	checkstyleAidl {
+	    configFile = project.file ("$buildDir/checkstyle_aidl.xml")
+		source files("${buildDir}/tmp/aidlForCheckstyle")
+		classpath = files("${buildDir}/intermediates/classes/debug")
+		afterEvaluate {
+			for  (i in configurations.compile) {
+				if (i.getName().endsWith(".jar")) {
+					logger.debug("added ${i} to checkstyleAidl classpath")
+					classpath += files(i)
+				}
+			}
+		}
+	}
+}
+

@@ -340,7 +340,7 @@ struct history_cache_st {
 	unsigned	hc_liveliness:1;/* Liveliness enabled. */
 	unsigned	hc_deadline:1;	/* Deadline checks enabled. */
 	unsigned	hc_deadlined:1;	/* Deadline exceeded. */
-	unsigned	hc_lifespan:1;	/* Lifespan checks enabled. */
+	unsigned	hc_lifespan:1;	/* Lifespan check enabled. */
 	unsigned	hc_tfilter:1;	/* Time-based filter enabled. */
 	unsigned	hc_purge_nw:1;	/* Autopurge no-writers checks. */
 	unsigned	hc_purge_dis:1;	/* Autopurge disposed checks. */
@@ -981,7 +981,7 @@ static INSTANCE *hc_get_instance_key (HistoryCache_t  *hcp,
 				      unsigned        ooo,
 				      RejectCause_t   *cause)
 {
-	INSTANCE	*p, **hash_pp, **handle_pp, *r_ip = NULL;
+	INSTANCE	*p, **hash_pp, **handle_pp, *r_ip = NULL, tmp_inst;
 	int		is_new, error;
 	const unsigned char *dp, *sp;
 	unsigned	dl, sl;
@@ -1107,11 +1107,17 @@ static INSTANCE *hc_get_instance_key (HistoryCache_t  *hcp,
 		hash_pp = NULL;		/* Avoid compiler warning! */
 
 	/* Entry was not found; create a new instance. */
-	if (r_ip) {
+	if (r_ip)
 		hc_inst_free (hcp, r_ip->i_handle);
-	}
+
 	p = mds_pool_alloc (&mem_blocks [MB_INSTANCE]);
 	if (!p) {
+		if (hash_pp && !*hash_pp) { /* Recover in case where list node
+					       was already added! */
+			tmp_inst.i_hash = *hp;
+			*hash_pp = &tmp_inst;
+			sl_delete (hcp->hc_hashes, hp, hash_cmp_fct);
+		}
 		log_printf (CACHE_ID, 0, "hc_get_instance_key (): out of memory for instance!\r\n");
 		return (NULL);
 	}
@@ -1160,7 +1166,7 @@ static INSTANCE *hc_get_instance_key (HistoryCache_t  *hcp,
 	p->i_registered = 0;
 	p->i_disp_cnt = p->i_no_w_cnt = 0;	/* Generation counters. */
 	p->i_tbf = NULL;
-	if (hcp->hc_skiplists != 0) {
+	if (hcp->hc_skiplists) {
 
 		/* Add to hash-collision list. */
 		p->i_next = *hash_pp;	/* Add at head -- faster :-) */
@@ -1706,7 +1712,7 @@ static void hc_match_begin (HistoryCache_t *wcp, HistoryCache_t *rcp)
 		deadline_enable (&wep->w_ep, &rep->r_ep);
 
 	/* Enable lifespan. */
-	if (rcp->hc_lifespan)
+	if (wcp->hc_lifespan)
 		lifespan_enable (&wep->w_ep, &rep->r_ep);
 
 	/* If writer cache contains data, transfer data. */
@@ -1732,7 +1738,7 @@ static void hc_match_end (HistoryCache_t *wcp,
 			  CacheRef_t     *prev_cp)
 {
 	/* Disable lifespan. */
-	if (rcp->hc_lifespan)
+	if (wcp->hc_lifespan)
 		lifespan_disable (&wcp->hc_endpoint->ep, &rcp->hc_endpoint->ep);
 
 	/* Disable deadline checks. */
@@ -2784,7 +2790,16 @@ void hc_rem_writer_removed (Cache_t cache, handle_t writer)
 	rw.writer = writer;
 	hc_walk_instances (hcp, inst_rem_writer, &rw);
 }
- 
+
+/* hc_writer_lifespan -- Check if a writer uses Lifespan QoS. */
+
+static int hc_writer_lifespan (handle_t wh)
+{
+	Endpoint_t	*ep = (Endpoint_t *) entity_ptr (wh);
+
+	return (ep && lifespan_used (&ep->qos->qos));
+}
+
 /* hc_add_i -- Add a change to an instance of the history cache. */
 
 static int hc_add_i (HistoryCache_t *hcp, INSTANCE *ip, Change_t *cp)
@@ -2908,9 +2923,13 @@ static int hc_add_i (HistoryCache_t *hcp, INSTANCE *ip, Change_t *cp)
 	}
 
 	/* If lifespan checks were enabled but idle, restart them. */
-	if (hcp->hc_lifespan && hcp->hc_lsc_idle)
+	if (cp->c_kind == ALIVE &&
+	    hcp->hc_lifespan &&
+	    hcp->hc_lsc_idle &&
+	    (hcp->hc_writer || hc_writer_lifespan (cp->c_writer))) {
 		lifespan_continue (hcp->hc_endpoint);
-
+		hcp->hc_lsc_idle = 0;
+	}
 	return (DDS_RETCODE_OK);
 }
 
@@ -4532,11 +4551,13 @@ typedef struct cache_action_check_st {
 #define	act_printf(s)		dbg_printf(s)
 #define	act_print1(s,a1)	dbg_printf(s,a1)
 #define	act_print2(s,a1,a2)	dbg_printf(s,a1,a2)
+#define	act_print3(s,a1,a2,a3)	dbg_printf(s,a1,a2,a3)
 #define act_printtime(t)	dbg_print_time(t)
 #else
 #define	act_printf(s)
 #define	act_print1(s,a1)
 #define	act_print2(s,a1,a2)
+#define	act_print3(s,a1,a2,a3)
 #define act_printtime(t)
 #endif
 
@@ -4578,29 +4599,76 @@ static int hc_inst_check_deadline (CacheActCheck_t *cp, INSTANCE *ip)
 	return (1);
 }
 
+/* hc_check_deadline -- Check if a cache has deadlined. */
+
+static void hc_check_deadline (CacheActCheck_t *cp)
+{
+	if (!cp->hcp->hc_deadline)
+		return;
+
+	if (cp->hcp->hc_deadlined)
+		return;
+
+	if (!cp->hcp->hc_nchanges)
+		cp->next = cp->hcp->hc_time;
+	else
+		cp->next = cp->hcp->hc_tail->change->c_time;
+	FTIME_ADD (cp->next, cp->period);
+	if (FTIME_LT (cp->next, cp->now)) { /* Deadline detected! */
+		cp->hcp->hc_deadlined = 1;
+		if (cp->hcp->hc_writer)
+			dcps_offered_deadline_missed ((Writer_t *) cp->hcp->hc_endpoint, 0);
+		else
+			dcps_requested_deadline_missed ((Reader_t *) cp->hcp->hc_endpoint, 0);
+		cp->hcp->hc_dlc_idle = 1;
+		return;
+	}
+	cp->nalive++;
+}
+
 /* hc_inst_check_lifespan -- Check if an instance has samples with lifespan
 			     exceeded. */
 
 static int hc_inst_check_lifespan (CacheActCheck_t *cp, INSTANCE *ip)
 {
+	Endpoint_t	*ep;
 	FTime_t		ntime;
 	CCREF		*rp, *next_rp;
 	CCREF		*crp, *irp;
+	Ticks_t		period;
 
 	act_print2 ("..<hc_inst_check_lifespan(%p,%p)>\r\n", (void *) cp->hcp, (void *) ip);
 	if (!ip->i_nchanges || (!cp->hcp->hc_writer && !ip->i_nwriters))
 		return (0);
 
+	/* Can't rely on cp->writer since only the topmost guard is used for
+	   all lifespan checks of any discovered writer, so this optimization
+	   is currently not correct!!!  For now, on reader caches, we simply
+	   use cp->writer as a cache identifier for the writer timer period.
 	if (!cp->hcp->hc_writer &&
 	    hc_lookup_handle (WLIST_HANDLES (ip),
 			      cp->writer,
 			      ip->i_nwriters) < 0)
-		return (0);
+		return (0); */
 
 	for (rp = ip->i_head; rp; rp = next_rp) {
 		next_rp = LIST_NEXT (ip->i_list, *rp);
+
+		/* Same as previous comment: can't rely on cp->writer!
 		if (!cp->hcp->hc_writer && rp->change->c_writer != cp->writer)
-			continue;
+			continue; */
+
+		if (!cp->hcp->hc_writer) {
+			ep = (Endpoint_t *) entity_ptr (rp->change->c_writer);
+			if (!ep || !lifespan_used (&ep->qos->qos))
+				continue;
+
+			if (cp->writer != rp->change->c_writer) {
+				cp->writer = rp->change->c_writer;
+				period = duration2ticks ((const Duration_t *) &ep->qos->qos.lifespan);
+				FTIME_SETT (cp->period, period); 
+			}
+		}
 
 		/* Calculate lifespan exceeded time of sample. */
 		ntime = rp->change->c_time;
@@ -4634,19 +4702,24 @@ static int hc_inst_check_lifespan (CacheActCheck_t *cp, INSTANCE *ip)
 		}
 
 		/* Remove the change. */
-		irp = ccref_remove_change (&ip->i_list, rp->change);
+		irp = ccref_remove_ref (&ip->i_list, rp);
 		if (!irp)
-			return (0);
+			break;
 
 		if (rp->change->c_nrefs < 2)
 			fatal_printf ("hc_inst_check_lifespan: invalid change!");
+
+		if (rp->change->c_kind == ALIVE)
+			ip->i_ndata--;
 
 		crp = irp->mirror;
 		ccref_delete (irp);
 		ccref_remove_ref (&cp->hcp->hc_changes, crp);
 		if (crp->change)
 			crp->change->c_cached = 0;
-		
+		if (crp->change->c_kind == ALIVE)
+			cp->hcp->hc_ndata--;
+
 		/* Finally delete the change reference. */
 		ccref_delete (crp);
 
@@ -4656,10 +4729,90 @@ static int hc_inst_check_lifespan (CacheActCheck_t *cp, INSTANCE *ip)
 		    (ip->i_kind & NOT_ALIVE_UNREGISTERED) != 0) {
 			act_print1 ("..<lifespan:remove-instance(%p)>\r\n", (void *) ip);
 			hc_free_instance (cp->hcp, ip->i_handle);
-			return (0);
+			break;
 		}
 	}
 	return (0);
+}
+
+/* hc_check_lifespan -- Check if a cache has samples with lifespan exceeded. */
+
+static void hc_check_lifespan (CacheActCheck_t *cp)
+{
+	Endpoint_t	*ep;
+	FTime_t		ntime;
+	CCREF		*rp, *next_rp;
+	CCREF		*crp;
+	Ticks_t		period;
+
+	if (!cp->hcp->hc_nchanges)
+		return;
+
+	for (rp = cp->hcp->hc_head; rp; rp = next_rp) {
+		next_rp = LIST_NEXT (cp->hcp->hc_list, *rp);
+
+		/* Can't rely on cp->writer!
+		if (rp->change->c_writer != cp->writer)
+			break;
+		*/
+
+		if (!cp->hcp->hc_writer) {
+			ep = (Endpoint_t *) entity_ptr (rp->change->c_writer);
+			if (!ep || !lifespan_used (&ep->qos->qos))
+				continue;
+
+			if (cp->writer != rp->change->c_writer) {
+				cp->writer = rp->change->c_writer;
+				period = duration2ticks ((const Duration_t *) &ep->qos->qos.lifespan);
+				FTIME_SETT (cp->period, period); 
+			}
+		}
+
+		/* Calculate lifespan exceeded time of sample. */
+		ntime = rp->change->c_time;
+		FTIME_ADD (ntime, cp->period);
+		if (FTIME_GT (ntime, cp->now)) { /* No time-out on cache. */
+
+			/* Update next scheduling time. */
+			if (FTIME_ZERO (cp->next) || FTIME_LT (ntime, cp->next))
+				cp->next = ntime;
+			cp->nalive++;
+			break;
+		}
+
+		/* Lifespan exceeded of sample - check if it can be removed. */
+		act_print1 ("..<lifespan:remove(%p)>\r\n", (void *) rp->change);
+		if (cp->hcp->hc_must_ack && rp->change->c_wack) {
+
+			/* Can't remove sample, since underway on RTPS! */
+			cp->next = cp->now; /* Recheck as fast as possible! */
+			cp->nalive++;
+			break;
+		}
+
+		/* We are allowed to remove the sample. Notify lower-layer if it
+		   is still using the change. */
+		if (!cp->hcp->hc_must_ack && rp->change->c_wack) {
+			cp->hcp->hc_unacked -= rp->change->c_wack;
+			if (cp->hcp->hc_monitor) {
+				(*mon_remove_fct) (cp->hcp->hc_mon_user,
+						   rp->change);
+				STATS_INC (cp->hcp->hc_stats.m_remove);
+			}
+		}
+
+		/* Remove the change. */
+		crp = ccref_remove_ref (&cp->hcp->hc_changes, rp);
+		if (!crp)
+			break;
+
+		crp->change->c_cached = 0;
+		if (crp->change->c_kind == ALIVE)
+			cp->hcp->hc_ndata--;
+
+		/* Finally delete the change reference. */
+		ccref_delete (crp);
+	}
 }
 
 static void hc_inst_purge (HistoryCache_t *hcp, INSTANCE *ip)
@@ -4768,60 +4921,57 @@ Ticks_t hc_handle_xqos (Cache_t cache, int type, handle_t w, Ticks_t period)
 	Ticks_t		ticks;
 	CacheActCheck_t	check;
 
-	act_print2 ("<handle_xqos:%d,%u - ", type, w);
+	act_print3 ("<handle_xqos:%d,%u,%u - ", type, hcp->hc_endpoint->ep.entity.handle, w);
 	check.hcp = cache;
 	check.type = type;
-	check.writer = w;
+	check.nalive = 0;
+	if (type == GT_LIFESPAN && !hcp->hc_writer) {
+
+		/* Can't rely on w for Reader Lifespan checks! */
+		check.writer = 0;
+		check.period = 0;
+	}
+	else {
+		check.writer = w;
+		FTIME_SETT (check.period, period);
+	}
 	sys_getftime (&check.now);
 	act_printtime (&check.now);
 	act_printf (">\r\n");
-	FTIME_SETT (check.period, period);
+	FTIME_CLR (check.next);
 	if (!hcp->hc_multi_inst) {
-		if (type != GT_DEADLINE || !hcp->hc_deadline)
-			return (0);
-
-		if (hcp->hc_deadlined)
-			return (0);
-
-		if (!hcp->hc_nchanges)
-			check.next = hcp->hc_time;
-		else
-			check.next = hcp->hc_tail->change->c_time;
-		FTIME_ADD (check.next, period);
-		if (FTIME_LT (check.next, check.now)) { /* Deadline detected! */
-			hcp->hc_deadlined = 1;
-			if (hcp->hc_writer)
-				dcps_offered_deadline_missed ((Writer_t *) hcp->hc_endpoint, 0);
-			else
-				dcps_requested_deadline_missed ((Reader_t *) hcp->hc_endpoint, 0);
-			hcp->hc_dlc_idle = 1;
-			return (0);
+		switch (type) {
+			case GT_DEADLINE:
+				hc_check_deadline (&check);
+				break;
+			case GT_LIFESPAN:
+				hc_check_lifespan (&check);
+				break;
+			default:
+				break;
 		}
 	}
-	else {
-		FTIME_CLR (check.next);
-		check.nalive = 0;
+	else
 		hc_walk_instances (hcp, hc_inst_qos_action, &check);
-		if (!check.nalive) {
-			switch (type) {
-				case GT_DEADLINE:
-					hcp->hc_dlc_idle = 1;
-					break;
-				case GT_LIFESPAN:
-					hcp->hc_lsc_idle = 1;
-					break;
-				case GT_AUTOP_NW:
-					hcp->hc_apw_idle = 1;
-					break;
-				case GT_AUTOP_DISP:
-					hcp->hc_apd_idle = 1;
-					break;
-				default:
-					break;
-			}
-			act_printf ("<handle_actions:idle>\r\n");
-			return (0);
+	if (!check.nalive) {
+		switch (type) {
+			case GT_DEADLINE:
+				hcp->hc_dlc_idle = 1;
+				break;
+			case GT_LIFESPAN:
+				hcp->hc_lsc_idle = 1;
+				break;
+			case GT_AUTOP_NW:
+				hcp->hc_apw_idle = 1;
+				break;
+			case GT_AUTOP_DISP:
+				hcp->hc_apd_idle = 1;
+				break;
+			default:
+				break;
 		}
+      		act_printf ("<handle_actions:idle>\r\n");
+		return (0);
 	}
 	FTIME_SUB (check.next, check.now);
 	ticks = FTIME_TICKS (check.next);
@@ -5398,6 +5548,35 @@ void hc_cache_dump (Cache_t cache)
 	if (hcp->hc_secure_h)
 		dbg_printf ("/secure");
 #endif
+	if (hcp->hc_liveliness || 
+	    hcp->hc_deadline ||
+	    hcp->hc_lifespan ||
+	    hcp->hc_purge_nw ||
+	    hcp->hc_purge_dis) {
+		dbg_printf ("\r\nGuards:");
+		if (hcp->hc_liveliness)
+			dbg_printf (" Liveliness");
+		if (hcp->hc_deadline) {
+			dbg_printf (" Deadline(%u", hcp->hc_deadlined);
+			if (hcp->hc_dlc_idle)
+				dbg_printf (":idle)");
+		}
+		if (hcp->hc_lifespan) {
+			dbg_printf (" Lifespan");
+			if (hcp->hc_lsc_idle)
+				dbg_printf ("(idle)");
+		}
+		if (hcp->hc_purge_nw) {
+			dbg_printf (" Purge_NW");
+			if (hcp->hc_apw_idle)
+				dbg_printf ("(idle)");
+		}
+		if (hcp->hc_purge_dis) {
+			dbg_printf (" Purge_Disp");
+			if (hcp->hc_apd_idle)
+				dbg_printf ("(idle)");
+		}
+	}
 	dbg_printf ("\r\nLimits: ");
 	dbg_print_limit (hcp->hc_max_samples, MAX_LIST_CHANGES, "samples, ");
 	dbg_print_limit (hcp->hc_max_inst, MAX_INST_HANDLE, "instances, ");
@@ -5430,9 +5609,7 @@ void hc_cache_dump (Cache_t cache)
 	else
 		dbg_printf ("None {%u}.\r\n", hcp->hc_ndata);
 
-	if (!hcp->hc_multi_inst)
-		hc_dump_cclist ("\r\nNo key changes", &hcp->hc_changes, !hcp->hc_writer);
-	else {
+	if (hcp->hc_multi_inst) {
 		dbg_printf ("Last handle = %u, Maximum key size = ",
 				hcp->hc_last_handle);
 		if (hcp->hc_key_size)

@@ -1,0 +1,30 @@
+/*
+ Hack alert !!!
+ We are redefining the buildDir from gradle to output.
+ As "./build/" is already used for the middleware build system.
+ So we decided to use the output directory of that system.
+ Keep this line on top of the others!
+*/
+project.buildDir = "output/gradle"
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+
+subprojects {
+    group = project.qeoGroup
+    version = project.qeoVersion
+}
+
+task kwinject() {
+    File klocwork = file("klocwork.out")
+    doLast {
+        klocwork.createNewFile()
+        klocwork.text = ""
+        subprojects.each {
+            if (it.name == "qeo-native") {
+                return; //ignore
+            }
+            klocwork.text += "${project.projectDir.absolutePath}/${it.name}/${it.name}.kwinject\n"
+        }
+    }
+}
+

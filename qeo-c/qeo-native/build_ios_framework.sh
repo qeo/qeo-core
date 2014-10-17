@@ -72,7 +72,7 @@ rm -rf ${FRAMEWORK_DIR}
 for ARCH in ${ARCHITECTURES}
 do
     mkdir -p "${WRK_DIR}/${ARCH}"
-    make -f Makefile_component.ios E=${ARCH} DEBUG=${DEBUG} install DESTDIR=${WRK_DIR}/${ARCH} &
+    make -f Makefile_component.ios E=${ARCH} DEBUG=${DEBUG} dds_LOG_FILE=${DEBUG} install DESTDIR=${WRK_DIR}/${ARCH} &
 done
 wait
 

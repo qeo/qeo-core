@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+    <module name="org::qeo::test">
+        <enum name="EnumName">
+            <enumerator name="enum1"/>
+            <enumerator name="enum2"/>
+        </enum>
+        <struct name="MyStructWithEnums" >       
+            <doc>Struct containing enums. </doc> 
+            <member name="MyBoolean" type="boolean"/>
+            <member name="MyByte" type="byte"/>
+            <member name="MyInt16" type="int16"/>
+            <member name="MyEnum" type="nonBasic" nonBasicTypeName="org::qeo::testo::EnumNameBis"/>
+        </struct>
+        
+        <enum name="EnumNameBis">
+            <enumerator name="enum1"/>
+            <enumerator name="enum2"/>
+        </enum>
+        <struct name="MyStructWithEnumsBis" >       
+            <doc>Struct containing enums. </doc> 
+            <member name="MyInt32" type="int32"/>
+            <member name="MyInt64" type="int64"/>
+            <member name="MyEnumBis" type="nonBasic" nonBasicTypeName="org::qeo::test::EnumName"/>
+        </struct>
+    </module>
+    <module name="org::qeo::testo">
+        <enum name="EnumName">
+            <enumerator name="enum3"/>
+            <enumerator name="enum4"/>
+        </enum>
+        <struct name="MyStructWithEnums" >       
+            <doc>Struct containing enums. </doc> 
+            <member name="MyFloat32" type="float32"/>
+            <member name="MyString" type="string"/>
+            <member name="MyEnum" type="nonBasic" nonBasicTypeName="org::qeo::testo::EnumNameBis"/>
+        </struct>
+        
+        <enum name="EnumNameBis">
+            <enumerator name="enum1"/>
+            <enumerator name="enum2"/>
+        </enum>
+        <struct name="MyStructWithEnumsBis" >       
+            <doc>Struct containing enums. </doc> 
+            <member name="MyBooleanBis" type="boolean"/>
+            <member name="MyByteBis" type="byte"/>
+            <member name="MyInt16Bis" type="int16"/>
+            <member name="MyEnumBis" type="nonBasic" nonBasicTypeName="EnumNameBis"/>
+        </struct>
+    </module>
+</types>

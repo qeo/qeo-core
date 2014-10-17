@@ -76,6 +76,13 @@ typedef struct _CMOCK_qeo_mgmt_client_clean_CALL_INSTANCE
 
 } CMOCK_qeo_mgmt_client_clean_CALL_INSTANCE;
 
+typedef struct _CMOCK_qeo_mgmt_client_ctx_stop_CALL_INSTANCE
+{
+  UNITY_LINE_TYPE LineNumber;
+  qeo_mgmt_client_ctx_t* Expected_ctx;
+
+} CMOCK_qeo_mgmt_client_ctx_stop_CALL_INSTANCE;
+
 static struct Mockmgmt_clientInstance
 {
   int qeo_mgmt_client_init_IgnoreBool;
@@ -102,6 +109,10 @@ static struct Mockmgmt_clientInstance
   CMOCK_qeo_mgmt_client_clean_CALLBACK qeo_mgmt_client_clean_CallbackFunctionPointer;
   int qeo_mgmt_client_clean_CallbackCalls;
   CMOCK_MEM_INDEX_TYPE qeo_mgmt_client_clean_CallInstance;
+  int qeo_mgmt_client_ctx_stop_IgnoreBool;
+  CMOCK_qeo_mgmt_client_ctx_stop_CALLBACK qeo_mgmt_client_ctx_stop_CallbackFunctionPointer;
+  int qeo_mgmt_client_ctx_stop_CallbackCalls;
+  CMOCK_MEM_INDEX_TYPE qeo_mgmt_client_ctx_stop_CallInstance;
 } Mock;
 
 extern jmp_buf AbortFrame;
@@ -134,6 +145,11 @@ void Mockmgmt_client_Verify(void)
   UNITY_TEST_ASSERT(CMOCK_GUTS_NONE == Mock.qeo_mgmt_client_clean_CallInstance, cmock_line, "Function 'qeo_mgmt_client_clean' called less times than expected.");
   if (Mock.qeo_mgmt_client_clean_CallbackFunctionPointer != NULL)
     Mock.qeo_mgmt_client_clean_CallInstance = CMOCK_GUTS_NONE;
+  if (Mock.qeo_mgmt_client_ctx_stop_IgnoreBool)
+    Mock.qeo_mgmt_client_ctx_stop_CallInstance = CMOCK_GUTS_NONE;
+  UNITY_TEST_ASSERT(CMOCK_GUTS_NONE == Mock.qeo_mgmt_client_ctx_stop_CallInstance, cmock_line, "Function 'qeo_mgmt_client_ctx_stop' called less times than expected.");
+  if (Mock.qeo_mgmt_client_ctx_stop_CallbackFunctionPointer != NULL)
+    Mock.qeo_mgmt_client_ctx_stop_CallInstance = CMOCK_GUTS_NONE;
 }
 
 void Mockmgmt_client_Init(void)
@@ -155,6 +171,8 @@ void Mockmgmt_client_Destroy(void)
   Mock.qeo_mgmt_client_check_policy_CallbackCalls = 0;
   Mock.qeo_mgmt_client_clean_CallbackFunctionPointer = NULL;
   Mock.qeo_mgmt_client_clean_CallbackCalls = 0;
+  Mock.qeo_mgmt_client_ctx_stop_CallbackFunctionPointer = NULL;
+  Mock.qeo_mgmt_client_ctx_stop_CallbackCalls = 0;
 }
 
 qeo_mgmt_client_ctx_t* qeo_mgmt_client_init(void)
@@ -457,5 +475,49 @@ void qeo_mgmt_client_clean_CMockExpect(UNITY_LINE_TYPE cmock_line, qeo_mgmt_clie
 void qeo_mgmt_client_clean_StubWithCallback(CMOCK_qeo_mgmt_client_clean_CALLBACK Callback)
 {
   Mock.qeo_mgmt_client_clean_CallbackFunctionPointer = Callback;
+}
+
+void qeo_mgmt_client_ctx_stop(qeo_mgmt_client_ctx_t* ctx)
+{
+  UNITY_LINE_TYPE cmock_line = TEST_LINE_NUM;
+  CMOCK_qeo_mgmt_client_ctx_stop_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeo_mgmt_client_ctx_stop_CALL_INSTANCE*)CMock_Guts_GetAddressFor(Mock.qeo_mgmt_client_ctx_stop_CallInstance);
+  Mock.qeo_mgmt_client_ctx_stop_CallInstance = CMock_Guts_MemNext(Mock.qeo_mgmt_client_ctx_stop_CallInstance);
+  if (Mock.qeo_mgmt_client_ctx_stop_IgnoreBool)
+  {
+    return;
+  }
+  if (Mock.qeo_mgmt_client_ctx_stop_CallbackFunctionPointer != NULL)
+  {
+    Mock.qeo_mgmt_client_ctx_stop_CallbackFunctionPointer(ctx, Mock.qeo_mgmt_client_ctx_stop_CallbackCalls++);
+    return;
+  }
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeo_mgmt_client_ctx_stop' called more times than expected.");
+  cmock_line = cmock_call_instance->LineNumber;
+  UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_ctx), (void*)(ctx), sizeof(qeo_mgmt_client_ctx_t), cmock_line, "Function 'qeo_mgmt_client_ctx_stop' called with unexpected value for argument 'ctx'.");
+}
+
+void CMockExpectParameters_qeo_mgmt_client_ctx_stop(CMOCK_qeo_mgmt_client_ctx_stop_CALL_INSTANCE* cmock_call_instance, qeo_mgmt_client_ctx_t* ctx)
+{
+  cmock_call_instance->Expected_ctx = ctx;
+}
+
+void qeo_mgmt_client_ctx_stop_CMockIgnore(UNITY_LINE_TYPE cmock_line)
+{
+  Mock.qeo_mgmt_client_ctx_stop_IgnoreBool = (int)1;
+}
+
+void qeo_mgmt_client_ctx_stop_CMockExpect(UNITY_LINE_TYPE cmock_line, qeo_mgmt_client_ctx_t* ctx)
+{
+  CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_qeo_mgmt_client_ctx_stop_CALL_INSTANCE));
+  CMOCK_qeo_mgmt_client_ctx_stop_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeo_mgmt_client_ctx_stop_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
+  Mock.qeo_mgmt_client_ctx_stop_CallInstance = CMock_Guts_MemChain(Mock.qeo_mgmt_client_ctx_stop_CallInstance, cmock_guts_index);
+  cmock_call_instance->LineNumber = cmock_line;
+  CMockExpectParameters_qeo_mgmt_client_ctx_stop(cmock_call_instance, ctx);
+}
+
+void qeo_mgmt_client_ctx_stop_StubWithCallback(CMOCK_qeo_mgmt_client_ctx_stop_CALLBACK Callback)
+{
+  Mock.qeo_mgmt_client_ctx_stop_CallbackFunctionPointer = Callback;
 }
 

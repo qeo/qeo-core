@@ -5,6 +5,7 @@ global:
     qeo_factory_create_by_id;
     qeo_factory_close;
     qeo_version_string;
+    qeo_security_set_init_openssl;
 
     /* qeo_dyntype.h */
     qeocore_type_register;

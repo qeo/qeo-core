@@ -171,6 +171,14 @@ int main(int argc, const char **argv)
         qeo_state_change_reader_close(change[i]);
         qeo_state_reader_close(reader[i]);
     }
+
+    /* Try to create random topic on open domain. Should work since restriction is removed */
+    log_verbose("create random topic");
+    qeo_event_writer_t * ew = qeo_factory_create_event_writer(factory, _tsm_types, NULL, 0);
+    assert(ew != NULL);
+    qeo_event_writer_close(ew);
+
+    log_verbose("close factory");
     qeo_factory_close(factory);
     sem_destroy(&_sync);
     sem_destroy(&_notify_sync);

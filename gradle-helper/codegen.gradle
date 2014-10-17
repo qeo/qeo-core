@@ -1,0 +1,303 @@
+
+import org.gradle.plugins.ide.eclipse.model.SourceFolder
+
+//Add an extra configuration on order to be able to download generator dependencies
+configurations {
+    generated {
+        description = "dependencies for codegeneration"
+    }
+}
+
+//codegeneration
+def generatorDir = file("${buildDir}/generator")
+
+task getCodeGen() {
+    description "Download and extract codegenerator"
+    def filesToExtract = []
+    outputs.dir files(generatorDir)
+    afterEvaluate {
+        project.configurations.getByName("generated").resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            inputs.file artifact.file
+            filesToExtract += artifact.file
+        }
+    }
+    doLast {
+        filesToExtract.each { f ->
+            copy {
+                if (f.name.endsWith(".zip")) {
+                    from zipTree(f)
+                }
+                else if (f.name.endsWith(".tgz") || f.name.endsWith(".tar.gz")) {
+                    from tarTree(resources.gzip(f))
+                }
+                else {
+                    throw new IllegalArgumentException("can't handle file for \"generated\" configuration: ${f}");
+                }
+                into generatorDir
+            }
+        }
+    }
+}
+
+task generateTypes(type: JavaExec) {
+    dependsOn getCodeGen
+
+    //external properties - on input
+    ext.language = null
+    ext.qdms = null
+    ext.outputDir = null;
+    // full collection of qdmfiles - on output
+    ext.qdmFileCollection = new ArrayList()
+    
+    description "Execute codegenerator"
+    main = "com.technicolor.qeo.codegen.Main"
+    ext.typesDir = null
+
+
+            //TODO: fixme, but changed in 0.11, can't be added in afterevaluate anymore :-(
+            if (project.hasProperty('android')) {
+                android.sourceSets.main.java.srcDir "build/generated/source/qdm/java"
+            }
+    
+    afterEvaluate {
+        if (language == null) {
+            logger.info("generateTypes is disabled as the \"language\" property is not set")
+            enabled = false
+            return
+        }
+        typesDir = outputDir != null ? outputDir : null
+        if ((project.hasProperty("cSdkSample") && cSdkSample == true) || (language == "c")) {
+            typesDir = typesDir ?: "src"
+        }
+        else if (language == "js") {
+            typesDir = typesDir ?: "${buildDir}/generated/source/qdm"
+        }
+        else if (language == "java") {
+            if (project.hasProperty('android')) {
+                typesDir = typesDir ?: "build/generated/source/qdm/java"
+                logger.debug("Android plugin detected, adding codegen directory to android sourceSets")
+                android.sourceSets.main.java.srcDir file(typesDir) //add types dir to java sourcepath
+
+                //TODO: fixme: remove
+                if (typesDir != "build/generated/source/qdm/java") {
+                    throw new GradleException ("this is broken :-(")
+                }
+            }
+            else {
+                typesDir = typesDir ?: "${buildDir}/generated/source/qdm/java"
+                if (tasks.findByPath("compileJava") != null) {
+                    logger.debug("Java plugin detected, adding codegen directory to java sourceSets")
+                    sourceSets.main.java.srcDir file(typesDir) //add types dir to java sourcepath
+                }
+            }
+        }
+
+        inputs.dir files(generatorDir)
+        outputs.dir file(typesDir)
+
+        if (project.hasProperty("checkstyleMain")) {
+            //if project has checkstyle enabled, ensure not to take in generated code
+            checkstyleMain {
+                def srcs
+                if (project.hasProperty('android')) {
+                    srcs = android.sourceSets
+                }
+                else {
+                    srcs = sourceSets
+                }
+
+                srcs.main.java.srcDirs.each {
+                    if (it.path.matches(".*${typesDir}")) {
+                        logger.debug("Excluding filetree ${it} from checkstyle")
+                        source -= fileTree(it)
+                    }
+                }
+            }
+        }
+        if (project.hasProperty("eclipse")) {
+            tasks.eclipseClasspath.dependsOn(generateTypes)
+            eclipse {
+                classpath {
+                    file {
+                        if (project.hasProperty('android')) {
+                            beforeMerged { classpath ->
+                                  classpath.entries.add(new SourceFolder(typesDir, null))
+                            }
+                        }
+                        //Ignore eclipse warnings in the types folder
+                        withXml { provider ->
+                            provider.asNode().findAll { it.@path.contains(typesDir) }.each {
+                                it.appendNode('attributes').appendNode('attribute', [name: 'ignore_optional_problems', value:'true'])
+                            }
+                        }
+                    }
+                }
+            }
+            if (tasks.findByPath("eclipseCheckstyle") != null) {
+                eclipseCheckstyle {
+                    ignoreDirs += file(typesDir)
+                }
+            }
+        }
+        if (language == "c") {
+            if (project.hasProperty("cSdkSample") && cSdkSample == true) {
+                tasks."prepareSources".dependsOn(generateTypes)
+            }
+        }
+        else if (language == "js") {
+            //no default dependsOn for js
+        }
+        else if (language == "java") {
+            if (project.hasProperty('android')) {
+                tasks."preBuild".dependsOn(generateTypes)
+            }
+            else if (tasks.findByPath("compileJava") != null) {
+                tasks."compileJava".dependsOn(generateTypes)
+            }
+        }
+        outputs.dir qdms
+    }
+
+    //add classpaths
+    doFirst {
+        if (!ext.has("qdms")) {
+            throw new GradleException("\"qdms\" property is not set")
+        }
+        def typesDirFile = file(typesDir)
+        mkdir typesDirFile //make sure the directory is immediately created
+        new File("${generatorDir.path}/qeo-codegen-${project.qeoVersion}/lib").listFiles().each { classpath it }
+        args "-l${language}"
+        args "-o${typesDirFile.path}"
+        // collect the full collection of qdmfiles 
+        qdms.each {
+            if (it instanceof File) {
+                qdmFileCollection.add(it)
+            }
+            else {
+                // interpret it as a regex
+                qdmFileCollection.addAll(fileTree("${generatorDir.path}/qdm").include(it) as Collection)
+            }
+        }
+        qdmFileCollection.each {
+            logger.info "Using QDM ${it}"
+            args it.absolutePath
+        }
+    }
+}
+
+task generateTestTypes(type: JavaExec) {
+    dependsOn getCodeGen
+    description "Execute codegenerator for tests"
+    main = "com.technicolor.qeo.codegen.Main"
+    def typesDir
+
+    afterEvaluate {
+        if (!ext.has("language")) {
+            logger.info("generateTestTypes is disabled as the \"language\" property is not set")
+            enabled = false
+            return
+        }
+        typesDir = ext.has("outputDir") ? ext.outputDir : null
+        if ((project.hasProperty("cSdkSample") && cSdkSample == true) || (language == "c")) {
+            typesDir = typesDir ?: "src"
+        }
+        else {
+            if (project.hasProperty('android')) {
+                typesDir = typesDir ?: "build/generated/source/qdm-test/java"
+                logger.debug("Android plugin detected, adding codegen directory to android test sourceSets")
+                android.sourceSets.test.java.srcDir file(typesDir) //add types dir to java sourcepath
+            }
+            else {
+                typesDir = typesDir ?: "${buildDir}/generated/source/qdm-test/java"
+                logger.debug("Java plugin detected, adding codegen directory to java test sourceSets")
+                sourceSets.test.java.srcDir file(typesDir) //add types dir to java sourcepath
+            }
+        }
+
+        inputs.dir files(generatorDir)
+        outputs.dir file(typesDir)
+
+        if (project.hasProperty("checkstyleTest")) {
+            //if project has checkstyle enabled, ensure not to take in generated code
+            checkstyleTest {
+                def srcs
+                if (project.hasProperty('android')) {
+                    srcs = android.sourceSets
+                }
+                else {
+                    srcs = sourceSets
+                }
+
+                srcs.test.java.srcDirs.each {
+                    if (it.path.matches(".*${typesDir}")) {
+                        logger.debug("Excluding filetree ${it} from checkstyle")
+                        source -= fileTree(it)
+                    }
+                }
+            }
+        }
+        if (project.hasProperty("eclipse")) {
+            tasks.eclipseClasspath.dependsOn(generateTestTypes)
+            eclipse {
+                classpath {
+                    file {
+                        if (project.hasProperty('android')) {
+                            beforeMerged { classpath ->
+                                  classpath.entries.add(new SourceFolder(typesDir, null))
+                            }
+                        }
+                        //Ignore eclipse warnings in the types folder
+                        withXml { provider ->
+                            provider.asNode().findAll { it.@path.contains(typesDir) }.each {
+                                it.appendNode('attributes').appendNode('attribute', [name: 'ignore_optional_problems', value:'true'])
+                            }
+                        }
+                    }
+                }
+            }
+            if (tasks.findByPath("eclipseCheckstyle") != null) {
+                eclipseCheckstyle {
+                    ignoreDirs += file(typesDir)
+                }
+            }
+        }
+        if (language == "c") {
+            if (project.hasProperty("cSdkSample") && cSdkSample == true) {
+                tasks."prepareSources".dependsOn(generateTestTypes)
+            }
+        }
+        else {
+            if (project.hasProperty('android')) {
+                tasks."preBuild".dependsOn(generateTestTypes)
+            }
+            else {
+                tasks."compileTestJava".dependsOn(generateTestTypes)
+            }
+        }
+    }
+
+    //add classpaths
+    doFirst {
+        def typesDirFile = file(typesDir)
+        mkdir typesDirFile //make sure the directory is immediately created
+        new File("${generatorDir.path}/qeo-codegen-${project.qeoVersion}/lib").listFiles().each { classpath it }
+        args "-l${language}"
+        args "-o${typesDirFile.path}"
+        qdms.each {
+            if (it instanceof File) {
+                logger.info "Using QDM ${it}"
+                args it.absolutePath
+            }
+            else {
+                logger.info "Resolving QDM ${it}"
+                args "${generatorDir.path}/qdm/${it}"
+            }
+        }
+    }
+}
+
+dependencies {
+    //codegenerator
+    generated "org.qeo.tools:qeo-codegen:${project.qeoVersion}:@zip"
+}
+

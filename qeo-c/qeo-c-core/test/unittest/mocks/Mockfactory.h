@@ -134,5 +134,11 @@ void qeocore_atexit_CMockIgnore(UNITY_LINE_TYPE cmock_line);
 void qeocore_atexit_CMockExpect(UNITY_LINE_TYPE cmock_line, const qeocore_exit_cb cb);
 typedef void (* CMOCK_qeocore_atexit_CALLBACK)(const qeocore_exit_cb cb, int cmock_num_calls);
 void qeocore_atexit_StubWithCallback(CMOCK_qeocore_atexit_CALLBACK Callback);
+#define qeocore_get_num_factories_IgnoreAndReturn(cmock_retval) qeocore_get_num_factories_CMockIgnoreAndReturn(__LINE__, cmock_retval)
+void qeocore_get_num_factories_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, int cmock_to_return);
+#define qeocore_get_num_factories_ExpectAndReturn(cmock_retval) qeocore_get_num_factories_CMockExpectAndReturn(__LINE__, cmock_retval)
+void qeocore_get_num_factories_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, int cmock_to_return);
+typedef int (* CMOCK_qeocore_get_num_factories_CALLBACK)(int cmock_num_calls);
+void qeocore_get_num_factories_StubWithCallback(CMOCK_qeocore_get_num_factories_CALLBACK Callback);
 
 #endif

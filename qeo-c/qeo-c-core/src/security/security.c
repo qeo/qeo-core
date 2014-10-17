@@ -121,6 +121,7 @@ static bool             _initialized;
 static ENGINE           *_engine;
 static char             *_engine_id;
 static int              _qeosec_objects_count;
+static int              _init_openssl = 1;
 
 #ifdef __USE_GNU
     /* compile with -D_GNU_SOURCE */
@@ -1551,6 +1552,11 @@ static qeo_retcode_t start_authentication(qeo_security_hndl qeoSec)
     return QEO_OK;
 }
 
+void qeo_security_set_init_openssl(int value)
+{
+    _init_openssl = value;
+}
+
 static bool init_openSSL(void)
 {
     if (qeo_openssl_engine_init() != QEO_OPENSSL_ENGINE_OK){
@@ -1558,11 +1564,16 @@ static bool init_openSSL(void)
         return false;
     }
 
-    DDS_Security_set_library_init (0);
-    DDS_Security_set_library_lock ();
+    if (_init_openssl) {
 
-    OpenSSL_add_all_algorithms();
-    SSL_library_init();
+        /*don't do openssl init in dds*/
+        DDS_Security_set_library_init(0);
+        /*Let dds handle openssl locking for multithreading support */
+        DDS_Security_set_library_lock();
+
+        OpenSSL_add_all_algorithms();
+        SSL_library_init();
+    }
 
     return true;
 }

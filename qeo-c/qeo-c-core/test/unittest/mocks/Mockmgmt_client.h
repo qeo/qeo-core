@@ -56,5 +56,11 @@ void qeo_mgmt_client_clean_CMockIgnore(UNITY_LINE_TYPE cmock_line);
 void qeo_mgmt_client_clean_CMockExpect(UNITY_LINE_TYPE cmock_line, qeo_mgmt_client_ctx_t* ctx);
 typedef void (* CMOCK_qeo_mgmt_client_clean_CALLBACK)(qeo_mgmt_client_ctx_t* ctx, int cmock_num_calls);
 void qeo_mgmt_client_clean_StubWithCallback(CMOCK_qeo_mgmt_client_clean_CALLBACK Callback);
+#define qeo_mgmt_client_ctx_stop_Ignore() qeo_mgmt_client_ctx_stop_CMockIgnore(__LINE__)
+void qeo_mgmt_client_ctx_stop_CMockIgnore(UNITY_LINE_TYPE cmock_line);
+#define qeo_mgmt_client_ctx_stop_Expect(ctx) qeo_mgmt_client_ctx_stop_CMockExpect(__LINE__, ctx)
+void qeo_mgmt_client_ctx_stop_CMockExpect(UNITY_LINE_TYPE cmock_line, qeo_mgmt_client_ctx_t* ctx);
+typedef void (* CMOCK_qeo_mgmt_client_ctx_stop_CALLBACK)(qeo_mgmt_client_ctx_t* ctx, int cmock_num_calls);
+void qeo_mgmt_client_ctx_stop_StubWithCallback(CMOCK_qeo_mgmt_client_ctx_stop_CALLBACK Callback);
 
 #endif

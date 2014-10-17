@@ -105,6 +105,7 @@ struct qeo_factory_s {
     DDS_DomainParticipant dp;
     uintptr_t      userdata;
     forwarder_t fwd;
+    qeocore_writer_t *deviceinfo_writer;
 };
 
 typedef struct {
@@ -281,5 +282,7 @@ qeo_factory_t *core_get_open_domain_factory();
 
 qeo_retcode_t core_factory_set_tcp_server_no_lock(qeo_factory_t  *factory,
                                                   const char     *tcp_server);
+
+qeocore_domain_id_t core_get_domain_id_open(void);
 
 #endif /* CORE_H_ */

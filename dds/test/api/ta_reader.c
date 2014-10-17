@@ -40,7 +40,7 @@ static void test_qos (int enabled)
 	r = DDS_DomainParticipantFactory_set_qos (&qos);
 	fail_unless (r == DDS_RETCODE_OK);
 
-	p = DDS_DomainParticipantFactory_create_participant (0, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
+	p = DDS_DomainParticipantFactory_create_participant (1, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
 	fail_unless (p != NULL);
 	r = register_HelloWorldData_type (p);
 	fail_unless (r == DDS_RETCODE_OK);
@@ -224,7 +224,7 @@ static void test_listener (void)
 	DDS_DataReaderListener		*lp;
 	DDS_ReturnCode_t		r;
 
-	p = DDS_DomainParticipantFactory_create_participant (0, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
+	p = DDS_DomainParticipantFactory_create_participant (1, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
 	fail_unless (p != NULL);
 
 	r = register_HelloWorldData_type (p);
@@ -317,7 +317,7 @@ static void test_aux (void)
 	DDS_InstanceHandleSeq		handles;
 	DDS_ReturnCode_t		r;
 
-	p = DDS_DomainParticipantFactory_create_participant (0, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
+	p = DDS_DomainParticipantFactory_create_participant (1, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
 	fail_unless (p != NULL);
 
 	r = register_HelloWorldData_type (p);

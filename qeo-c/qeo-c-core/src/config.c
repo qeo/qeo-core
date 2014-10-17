@@ -67,7 +67,7 @@ typedef struct group_s {
 
 
 /**
- * The forwarder group specific configuration parameters.
+ * The forwarder group specific configuration parameters. (prefix FWD_)
  */
 static parameter_t fwd_parameters[] = {
     {QEOCORE_GROUP_TYPE_FWD, "LOC_SRV_MIN_TIMEOUT", QEOCORE_PAR_TYPE_NUMBER, {.num = 30000}},
@@ -79,7 +79,7 @@ static parameter_t fwd_parameters[] = {
 #define NBR_FWD_PARAMETERS  (sizeof(fwd_parameters) / sizeof(parameter_t))
 
 /**
- * The DDS group specific configuration parameters.
+ * The DDS group specific configuration parameters. (prefix DDS_)
  */
 static parameter_t dds_parameters[] = {
     {QEOCORE_GROUP_TYPE_DDS, "NO_SECURITY", QEOCORE_PAR_TYPE_NUMBER, {.num = 0}},
@@ -89,10 +89,11 @@ static parameter_t dds_parameters[] = {
 #define NBR_DDS_PARAMETERS  (sizeof(dds_parameters) / sizeof(parameter_t))
 
 /**
- * The DDS group specific configuration parameters.
+ * The common configuration parameters. (prefix CMN_)
  */
 static parameter_t qeo_parameters[] = {
     {QEOCORE_GROUP_TYPE_COMMON, "PUB_DEVICEINFO", QEOCORE_PAR_TYPE_NUMBER, {.num = 1}},
+    {QEOCORE_GROUP_TYPE_COMMON, "PUB_DEVICEINFO_OPEN_DOMAIN", QEOCORE_PAR_TYPE_NUMBER, {.num = 1}},
 };
 #define NBR_QEO_PARAMETERS  (sizeof(qeo_parameters) / sizeof(parameter_t))
 

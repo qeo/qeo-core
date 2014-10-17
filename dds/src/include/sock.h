@@ -34,7 +34,7 @@
 typedef void (* RHDATAFCT) (HANDLE h, short revents, void *udata);
 typedef void (* RSDATAFCT) (SOCKET fd, short revents, void *udata);
 
-int sock_fd_init (void);
+int sock_fd_init (unsigned max_cx, unsigned grow);
 
 /* Initialize the socket I/O handler. */
 

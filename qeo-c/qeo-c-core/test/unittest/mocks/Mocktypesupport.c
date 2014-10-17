@@ -101,10 +101,7 @@ uint32_t calculate_member_id(const char* name)
   }
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'calculate_member_id' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
-  if (cmock_call_instance->Expected_name == NULL)
-    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'calculate_member_id' called with unexpected value for argument 'name'."); }
-  else
-    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'calculate_member_id' called with unexpected value for argument 'name'."); }
+  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'calculate_member_id' called with unexpected value for argument 'name'.");
   return cmock_call_instance->ReturnVal;
 }
 

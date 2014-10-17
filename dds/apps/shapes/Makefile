@@ -92,7 +92,7 @@ CC       = gcc
 
 INC_PATH = -I${BASE}/include -I../../api/headers -I/usr/include/libxml2 -I../../plugins/security/ -I${NSECP}/ -I../../../qeo-c-import/openssl/outputNative/openssl/HOSTLINUX/Debug/src/openssl-1.0.1f/include/
 #LIB_PATH =
-LIB_PATH = -L../../../qeo-c-import/openssl/output/install/usr/local/lib
+LIB_PATH = -L../../../qeo-c/output/openssl/HOSTLINUX
 LIBS     = 
 
 DEFINES  = -DRTPS_USED -DRTPS_TRACE -DLOG_FILE -DFILT_VMWARE -DPTHREADS_USED \

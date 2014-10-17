@@ -1,0 +1,268 @@
+import java.io.File;
+
+import org.gradle.api.Project;
+import groovy.xml.MarkupBuilder;
+import javax.xml.XMLConstants
+import javax.xml.transform.stream.StreamSource
+import javax.xml.validation.SchemaFactory
+
+ext.isSDKSample = true
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryUpload.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidSample.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+
+ext.SDKSampleDir = "${project.buildDir}/sample/${project.name}"
+ext.SDKSampleBuildFile = 'SDKSampleInternalBuildFile.gradle'
+ext.SDKSampleBuildFileURL = (System.properties['qeoGradleHelper'] ?: '') + "/${SDKSampleBuildFile}"
+ext.SDKSampleTestGitRepo = System.properties['qeoSampleTestGitRepo'] ?: 'git@gitolite:qeo/tools-sdksampletest.git'
+ext.SDKSampleGroup = 'Qeo SDK Sample' 
+/**
+ * We deliberately set the group here to enforce that all SDK samples belong to the same group.
+ */
+group = "org.qeo.sample"
+
+/**
+ * Make sure that the SDK samples do not contain warnings
+ */
+afterEvaluate {
+    compileDebugJava.options.compilerArgs = ['-Xlint:all', '-Werror']
+    compileReleaseJava.options.compilerArgs = ['-Xlint:all', '-Werror']
+}
+
+// We do an after evaluate, as accessing the sourceSets of other projects
+// is not possible otherwise
+afterEvaluate {
+    /**
+     * Copy all the sources from project compile dependencies into the sample
+     */
+    task SDKSampleCopyDependencies(type: Copy, description: 'Copy sources from dependant projects.') {
+        group = SDKSampleGroup
+        into("${SDKSampleDir}/src")
+        project.configurations.compile.allDependencies.each { dep ->
+            if (dep instanceof org.gradle.api.internal.artifacts.dependencies.DefaultProjectDependency && dep.dependencyProject.hasProperty("sourceSets") && dep.dependencyProject.sourceSets.hasProperty("main")) {
+                from dep.dependencyProject.sourceSets.main.java
+            }
+        }
+    }
+}
+
+/**
+ * Copy all sources/resources and other usefull files into the sample.
+ */
+task SDKSampleCopy(type: Copy, description: 'Copy the contents from this project to the sample.') {
+    group = SDKSampleGroup
+    into(SDKSampleDir)
+    from(projectDir){
+        include { FileTreeElement e -> ! e.path.startsWith('.') }
+        // exclude all non-usefull resources
+        exclude 'project.properties'
+        exclude '**/*.gradle'
+        exclude 'build'
+        exclude 'bin'
+        exclude 'gen'
+        exclude 'src'
+        // exclude all tests
+        exclude '**/test/**'
+        exclude '**/tests/**'
+        exclude '**/uitest/**'
+        exclude '**/uitests/**'
+        exclude "AndroidManifest.xml"
+    }
+    
+}
+
+task SDKSampleSrcCopy(type: Copy, description: 'Copy java source files') {
+    group = SDKSampleGroup
+    into(SDKSampleDir + "/src")
+
+    afterEvaluate {
+        android.sourceSets.main.java.srcDirs.each {
+            from it
+        }
+    }
+    doFirst {
+        //not very clean. Some sourcesets are added by codegen after this afterevaluate block. So iterate again over it in doFirst.
+        //note that only a doFirst block does not work as the task will complain that there are not sources
+        android.sourceSets.main.java.srcDirs.each {
+            from it
+        }
+    }
+}
+
+// We do an after evaluate, as the google android plugin cannot cope with the fact
+// that someone is resolving the dependencies before it had a change to look at it.
+// TODO: check if this is fixed in the android plugin version 0.3
+afterEvaluate {
+    /**
+     * Copy the dependent libraries as jars inside the libs directory of the sample
+     * so that they can be picked up by the sample.
+     */
+    task SDKSampleCopyLibs(type: Copy, description: 'Copy all dependent libraries.') {
+        group = SDKSampleGroup
+        into "$SDKSampleDir/libs"
+        /*
+         * We need to retrieve all the artifacts which do not have the testlib classifier and
+         * which do not come from a project compile dependency (for such dependency, the
+         * sources are included as is)
+         * The code below is a "not so clean way of doing so"
+         * 
+         * We retrieve all non-project dependencies and than search for artifacts that belong to 
+         * a dependency with the same name, group and version
+         * 
+         * TODO make this cleaner !!!
+         * 
+         */
+        def depstoavoid = []
+        project.configurations.compile.allDependencies.each{ dep -> 
+            if (dep instanceof org.gradle.api.internal.artifacts.dependencies.DefaultProjectDependency){
+                depstoavoid.add(dep)
+            }
+        }
+        
+        
+        project.configurations.getByName('compile').resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            def skip = false
+            if (artifact instanceof ResolvedArtifact) {
+                if (artifact.moduleVersion.id.group == "com.android.support") {
+                    //don't include android support libraries, gradle version conflicts with eclipse
+                    return;
+                }
+                if (artifact.moduleVersion.id.name == "qeo-android-tests") {
+                    //don't include android tests
+                    return;
+                }
+            }
+            depstoavoid.each{ dep ->
+                if (artifact.moduleVersion.id.name.equals(dep.name) &&
+                    artifact.moduleVersion.id.group.equals(dep.group) &&
+                    artifact.moduleVersion.id.version.equals(dep.version)){
+                    skip = true /* Only copy artifacts from non - project dependencies */
+                }
+            }
+            if (artifact.extension == "jar" && !skip && !artifact.file.name.contains("testlib")){//do not copy dependencies that have the testlib classifier
+                from (project.fileTree(artifact.file))
+            }
+        }
+
+    }
+}
+
+/**
+ * Download SDKSample gradle file that is used to generate eclipse files for sample
+ */
+task SDKSampleDownloadBuildFile(type: DownloadFileTask, description: 'Download custom gradle file for sample.') {
+    group = SDKSampleGroup
+    url = SDKSampleBuildFileURL
+    destinationFile = new File("$SDKSampleDir/$SDKSampleBuildFile")
+}
+
+/**
+ * Call an external build script inside the generated sample directory to generate
+ * the eclipse files for the samples.
+ */
+task buildSDKSample(type: GradleBuild, description: 'Create eclipse files for the sample.', dependsOn: ['SDKSampleDownloadBuildFile', 'SDKSampleCopyDependencies', 'SDKSampleCopy', 'SDKSampleSrcCopy', 'SDKSampleCopyLibs', 'SDKSampleUpdateManifest']) {
+    group = SDKSampleGroup
+    buildFile = "$SDKSampleDir/$SDKSampleBuildFile"
+    tasks = ['eclipse']
+}
+
+/**
+ * [DE2690] make sure to include the Android Manifest as generated by android plugin.
+ */
+task SDKSampleUpdateManifest(type: Copy, dependsOn: 'assembleDebug', description: 'make sure to include the Android Manifest as generated by android plugin.') {
+    group = SDKSampleGroup
+    from "${buildDir}/intermediates/manifests/debug/AndroidManifest.xml"
+    from "${buildDir}/intermediates/manifests/full/debug/AndroidManifest.xml"
+    into "$SDKSampleDir"
+}
+
+/**
+ * Clean up all unwanted resources from the sample which where created during previous steps
+ */
+task finalizeSDKSample(type: Delete, description: 'Remove internal files from the sample.', dependsOn: 'buildSDKSample') {
+    group = SDKSampleGroup
+    delete "$SDKSampleDir/$SDKSampleBuildFile"
+    delete "$SDKSampleDir/.gradle"
+}
+
+/**
+ * black box testing: do some verification after the finalize has been done.
+ */
+finalizeSDKSample.doLast {
+    // Check for mandatory content
+    def checkExists = ['libs/*.jar', 'src/**/*.java', 'AndroidManifest.xml']
+    checkExists.each{ regex ->
+        assert (!fileTree(SDKSampleDir).include(regex).isEmpty())
+    }
+    // Check for forbidden content
+    def checkAbsence = ['test', 'libs/*qeo-java-0.*', '**/.*git*', '**/*gradle.*']
+    checkAbsence.each{ regex ->
+        assert fileTree("$SDKSampleDir").include("$regex").isEmpty()
+    }
+    // [DE2690] version match: Qeo release version VS application version as mentioned in the Android manifest
+    def manifest = new XmlSlurper().parse(new File("$SDKSampleDir", 'AndroidManifest.xml'))
+    def manifestVersion = manifest.@'android:versionName'.text()
+    assert (project.qeoVersion == manifestVersion)
+}
+
+/**
+ * Create the final zip containing the sample as delivered to artifactory
+ */
+task createSDKSample(type: Zip, description: 'Create the Qeo SDK Sample zip file.', dependsOn: ['finalizeSDKSample']) {
+    group = SDKSampleGroup
+    classifier = 'SDKSample'
+    from SDKSampleDir
+}
+
+/**
+ * Clone the git repo for testing the sample to the build directory
+ */
+task testSDKSampleCloneGitRepo(type:Exec, description: 'Clone a git repo for testing the sdk samples'){
+    group = SDKSampleGroup
+    delete("${project.buildDir}/sdksampletest")
+    commandLine = ['git', 'clone', SDKSampleTestGitRepo, "${project.buildDir}/sdksampletest"]
+}
+
+/**
+ * Test the sample zip file as delivered to artifactory using swtbot
+ */
+task testSDKSample(type:Exec, description: 'Test the SDK Sample zip file.', dependsOn: ['createSDKSample', 'testSDKSampleCloneGitRepo']) {
+    group = SDKSampleGroup
+    commandLine = ['/home/users/cpeqeo/qeo-tools/apache-maven-3.0.4/bin/mvn', '-f', "${project.buildDir}/sdksampletest/pom.xml", 'install']
+    doFirst{
+        /** The archive path is not known during the configure closure, add an argument before the action is done. */
+        args("-Dsample.archive.location=${createSDKSample.archivePath}")
+    }
+    enabled = false
+}
+
+task sdkSample(description: 'Create and test the SDK Sample', dependsOn: ['testSDKSample', 'check']){
+    group = SDKSampleGroup
+    enabled = false
+}
+
+File apkFilePath = file("${project.buildDir}/outputs/apk/${project.name}-debug-unaligned.apk")
+
+installDebugAll {
+    apk = apkFilePath
+}
+
+artifacts {
+    archives createSDKSample
+    archives file: apkFilePath, name: project.name//, classifier: 'debug' //for now only debug apk is published, so publish it as the "main" apk. maven expects at least 1 file without classifier to be delivered
+}
+
+class DownloadFileTask extends DefaultTask {
+  @Input
+  String url
+  @OutputFile
+  File destinationFile
+  @TaskAction
+  def downloadFile() {
+         if (url.startsWith("/")) {
+             url = "file:///" + url
+         }
+     destinationFile.bytes = new URL(url).bytes
+  }
+}

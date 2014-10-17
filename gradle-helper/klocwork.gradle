@@ -1,0 +1,95 @@
+
+if (!project.hasProperty("kwInjectFile")) {
+	project.ext.kwInjectFile = project.name + ".kwinject"
+}
+def klocworkName = "Qeo_" + project.name.replaceAll("-","_").replaceAll("\\.","_").replaceAll(" ",""); //klocwork can't handle dashes, spaces and dots
+
+//klocwork tasks
+task klocworkProject(type:Exec) {
+    description "Create klocwork project directory"
+    dependsOn("kwinject")
+	workingDir projectDir
+    outputs.dir ".kwlp"
+    outputs.dir ".kwps"
+    inputs.file kwInjectFile
+    onlyIf {
+        !file(".kwlp").exists()
+    }
+    commandLine "/ap/klocwork/client/latest/bin/kwcheck", "create", "--host", "klocwork.edegem.eu.thmulti.com", "--port", "8090", "-b", kwInjectFile, "--project", klocworkName
+}
+task klocwork(type:Exec) {
+	description "Run klocwork analysis"
+    dependsOn("klocworkProject")
+    group "Verification"
+	workingDir projectDir
+    outputs.dir ".kwlp"
+    outputs.dir ".kwps"
+    inputs.file kwInjectFile
+    inputs.dir "src"
+    inputs.dir "api"
+    commandLine "/ap/klocwork/client/latest/bin/kwcheck", "run", "-j", "auto"
+}
+/*task klocworkXml(type:Exec) {
+    description "Create klocwork XML report"
+    dependsOn("klocwork")
+	workingDir projectDir
+    inputs.dir ".kwlp"
+    inputs.dir ".kwps"
+    outputs.file "klocwork_result.xml"
+    commandLine "/ap/klocwork/client/latest/bin/kwcheck", "list", "-F", "xml", "--report", "klocwork_result.xml", "--system", "--local"
+}
+afterEvaluate {
+    //Register klocwork as a dependency for check if check exists
+    if (tasks.findByPath("check") != null) {
+        check.dependsOn klocworkXml
+    }
+}*/
+
+task klocworkClean(type:Exec) {
+    description "Remote local klocwork files (.kwlp and .kwps)"
+    group "Verification"
+    workingDir projectDir
+    commandLine "rm", "-rf", ".kwlp", ".kwps", kwInjectFile, "klocwork_result.xml"
+}
+
+task kwinject(type:Exec) {
+    description "Create klocwork build specification file (" + kwInjectFile + ")"
+    group "Verification"
+    workingDir projectDir
+    outputs.file kwInjectFile
+    inputs.dir "src"
+    inputs.dir "api"
+    commandLine "make", "-f", "Makefile_component", "E=KLOCWORK", "DESTDIR=$projectDir", kwInjectFile
+    if (project.hasProperty("kwUseJNI")) {
+        commandLine += "JNI=1"
+    }
+}
+
+/*task kwBuildProject(type:Exec) {
+    description "Run klocwork server analysis"
+    dependsOn("kwinject")
+    workingDir projectDir
+    file('klocwork_tables').mkdir()
+    commandLine "/iscsi/klocwork1/KlocworkServerInstallation/bin/kwbuildproject", "--port", "8090", "-cfv", "-o", "klocwork_tables", "-S", klocworkName, "-j", "auto", kwInjectFile
+}
+
+task kwLoadProject(type:Exec) {
+    description "Load klocwork server results onto the webserver"
+    dependsOn("kwBuildProject")
+    doFirst {
+        if(System.env.BUILD_NUMBER == null) {
+            throw new GradleException('Environment variable BUILD_NUMBER is not set. This should be automatically set by jenkins.')
+        }
+    }
+    workingDir projectDir
+    //BUILD_NUMBER is set by jenkins
+    commandLine "/iscsi/klocwork1/KlocworkServerInstallation/bin/kwadmin", "--port", "8090", "load", klocworkName, "klocwork_tables" , "--name", System.env.BUILD_NUMBER
+}
+
+task klocworkServerAnalysis() {
+    description "Run klocwork server analysis. Not to be used by developers directly"
+    dependsOn("kwLoadProject")
+    group "Verification"
+}*/
+
+

@@ -9,9 +9,9 @@
  */
 project.buildDir = "output/gradle"
 
-apply from: (System.properties['qeoGradleHelper'] ?: '/home/users/cpeqeo/gradle-helper') + '/artifactoryVersion.gradle'
-apply from: (System.properties['qeoGradleHelper'] ?: '/home/users/cpeqeo/gradle-helper') + '/mwbuild.gradle'
-apply from: (System.properties['qeoGradleHelper'] ?: '/home/users/cpeqeo/gradle-helper') + '/artifactoryPom.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryVersion.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/mwbuild.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
 
 //hints:
 //compile with dds force_malloc: add "-PmakeExtras=dds_FORCE_MALLOC=1"

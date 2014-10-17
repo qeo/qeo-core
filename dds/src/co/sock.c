@@ -32,6 +32,7 @@
 #include "config.h"
 #include "log.h"
 #include "atomic.h"
+#include "list.h"
 #include "error.h"
 #include "timer.h"
 #include "dds.h"
@@ -91,7 +92,7 @@ static unsigned		num_handles, max_handles;
 
 /* sock_fd_init -- Initialize the file descriptor array. */
 
-int sock_fd_init (void)
+int sock_fd_init (unsigned max_cx, unsigned grow)
 {
 	static int	initialized = 0;
 
@@ -146,7 +147,7 @@ int sock_fd_add_handle (HANDLE     h,
 	void		*p;
 
 	if (!max_handles) /* Needed for Debug init ... */
-		sock_fd_init ();
+		dds_pre_init ();
 
 	lock_take (sock_lock);
 	if (num_handles == max_handles ||
@@ -443,44 +444,86 @@ void sock_fd_poll (unsigned poll_time)
 
 #else
 
-#ifndef FD_MAX_SIZE
-#define	FD_INC_SIZE	1024
-#define FD_MAX_SIZE	1024
-#else
-#ifndef FD_INC_SIZE
-#define	FD_INC_SIZE	FD_MAX_SIZE
-#endif
-#endif
+#define	FD_INC_SIZE	16
 
-static void *(*ud) [FD_MAX_SIZE];
-static const char *(*names) [FD_MAX_SIZE];
-static RSDATAFCT (*fcts) [FD_MAX_SIZE];
-static unsigned num_fds, max_fds, fd_max_size;
-static struct pollfd (*fds) [FD_MAX_SIZE];
+static MEM_DESC_ST	mem_blocks [1];
+static const char	*mem_names [1] = { "SOCK" };
+static size_t		mem_size;
+
+typedef enum {
+	PendingRemove,		/* Was active but needs to be deleted. */
+	PendingAdd,		/* New socket. */
+	ActiveSocket		/* Existing active socket. */
+} SockState_t;
+
+typedef struct sock_st Sock_t;
+struct sock_st {
+	Sock_t		*next;		/* Next in socket list. */
+	Sock_t		*prev;		/* Previous in socket list. */
+	SockState_t	state;		/* Current state. */
+	int		index;		/* Index in pollfd table. */
+	int		fd;		/* File descriptor handle. */
+	short		events;		/* Requested events. */
+	const char	*name;		/* Name of fd. */
+	RSDATAFCT	fct;		/* Callback function. */
+	void		*udata;		/* User data for callback. */
+};
+
+typedef struct sock_list_st {
+	Sock_t		*head;		/* First entry in socket list. */
+	Sock_t		*tail;		/* Last entry in socket list. */
+} SockList_t;
+
+static SockList_t	sockets;
+static unsigned 	num_fds, max_fds, fd_max_cx, nfds;
+static struct pollfd	*fds;
+static Sock_t		**sds;
+static int		sock_update_needed, poll_active;
 
 
 /* sock_fd_init -- Initialize the poll file descriptor array. */
 
-int sock_fd_init (void)
+int sock_fd_init (unsigned max_cx, unsigned grow)
 {
+	POOL_LIMITS	limits;
 	static int	initialized = 0;
 
 	if (fds)
-		return (0);
+		return (DDS_RETCODE_OK);
 
 	fds = xmalloc (sizeof (struct pollfd) * FD_INC_SIZE);
-	fcts = xmalloc (sizeof (RSDATAFCT) * FD_INC_SIZE);
-	ud = xmalloc (sizeof (void *) * FD_INC_SIZE);
-	names = xmalloc (sizeof (const char *) * FD_INC_SIZE);
-	if (!fds || !fcts || !ud || !names)
-		return (1);
+	sds = xmalloc (sizeof (Sock_t *) * FD_INC_SIZE);
 
-	atomic_set_w (num_fds, 0);
-	atomic_set_w (max_fds, FD_INC_SIZE);
+	fd_max_cx = config_get_number (DC_IP_Sockets, max_cx);
+	pool_limits_set (limits, FD_INC_SIZE, fd_max_cx, grow);
+
+	MDS_POOL_TYPE (mem_blocks, 0, limits, sizeof (Sock_t));
+	mem_size = mds_alloc (mem_blocks, mem_names, 1);
+
+	if (!fds || !sds
+#ifndef FORCE_MALLOC
+			 || !mem_size
+#endif
+				     ) {
+		if (fds) {
+			xfree (fds);
+			fds = NULL;
+		}
+		if (sds) {
+			xfree (sds);
+			sds = NULL;
+		}
+		if (mem_size)
+			mds_free (mem_blocks, 1);
+
+		return (DDS_RETCODE_OUT_OF_RESOURCES);
+	}
+	num_fds = nfds = 0;
+	max_fds = FD_INC_SIZE;
+	LIST_INIT (sockets);
 
 	if (!initialized) {
 		lock_init_nr (sock_lock, "lock");
-		fd_max_size = config_get_number (DC_IP_Sockets, FD_MAX_SIZE);
 		initialized = 1;
 	}
 	return (0);
@@ -491,46 +534,79 @@ int sock_fd_init (void)
 void sock_fd_final (void)
 {
 	xfree (fds);
-	xfree (fcts);
-	xfree (ud);
-	xfree (names);
-	atomic_set_w (num_fds, 0);
-	atomic_set_w (max_fds, 0);
-	fds = NULL;
+	xfree (sds);
+	mds_free (mem_blocks, 1);
+	LIST_INIT (sockets);
+	num_fds = nfds = max_fds = 0;
+}
+
+static void sock_poll_update (void)
+{
+	Sock_t		*sdp, *next;
+
+	if (nfds > max_fds) {
+		do {
+			max_fds += FD_INC_SIZE;
+			if (max_fds > fd_max_cx)
+				max_fds = fd_max_cx;
+		}
+		while (nfds > max_fds);
+		fds = xrealloc (fds, sizeof (struct pollfd) * max_fds);
+		sds = xrealloc (sds, sizeof (Sock_t *) * max_fds);
+		lock_release (poll_lock);
+		if (!fds || !sds)
+			fatal_printf ("sock_poll_update: can't extend sockets table!");
+	}
+	num_fds = 0;
+	for (sdp = LIST_HEAD (sockets); sdp; sdp = next) {
+		next = LIST_NEXT (sockets, *sdp);
+		if (sdp->state == PendingRemove) {
+			LIST_REMOVE (sockets, *sdp);
+			mds_pool_free (&mem_blocks [0], sdp);
+		}
+		else {
+			sdp->state = ActiveSocket;
+			sdp->index = num_fds;
+			sds [num_fds] = sdp;
+			fds [num_fds].fd = sdp->fd;
+			fds [num_fds].events = sdp->events;
+			fds [num_fds].revents = 0;
+			num_fds++;
+		}
+	}
+	sock_update_needed = 0;
 }
 
 /* sock_fd_add -- Add a file descriptor and associated callback function. */
 
 int sock_fd_add (int fd, short events, RSDATAFCT rx_fct, void *udata, const char *name)
 {
-	unsigned	n;
+	Sock_t		*sdp;
 
 	if (!max_fds)
-		sock_fd_init ();
+		dds_pre_init ();
+
 	lock_take (sock_lock);
-	n = atomic_get_w (num_fds);
-	if (n == atomic_get_w (max_fds)) {
-		if (max_fds >= fd_max_size) {
-			lock_release (sock_lock);
-			return (DDS_RETCODE_OUT_OF_RESOURCES);
-		}
-		lock_take (poll_lock);
-		atomic_add_w (max_fds, FD_INC_SIZE);
-		fds = xrealloc (fds, sizeof (struct pollfd) * max_fds);
-		fcts = xrealloc (fcts, sizeof (RSDATAFCT) * max_fds);
-		ud = xrealloc (ud, sizeof (void *) * max_fds);
-		lock_release (poll_lock);
-		if (!fds || !fcts || !ud)
-			fatal_printf ("rtps_fd_add: can't realloc()!");
+	sdp = mds_pool_alloc (&mem_blocks [0]);
+	if (!sdp) {
+		lock_release (sock_lock);
+		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
+	memset (sdp, 0, sizeof (Sock_t));
 	/*printf ("socket added: fd=%d, events=%d\n", fd, events);*/
-	(*fds) [n].fd = fd;
-	(*fds) [n].events = events;
-	(*fds) [n].revents = 0;
-	(*fcts) [n] = rx_fct;
-	(*ud) [n] = udata;
-	(*names) [n] = name;
-	atomic_inc_w (num_fds);
+	sdp->state = PendingAdd;
+	sdp->index = -1;
+	sdp->fd = fd;
+	sdp->events = events;
+	sdp->fct = rx_fct;
+	sdp->udata = udata;
+	sdp->name = name;
+	LIST_ADD_TAIL (sockets, *sdp);
+	nfds++;
+	sock_update_needed = 1;
+	if (!poll_active)
+		sock_poll_update ();
+
 	lock_release (sock_lock);
 	return (DDS_RETCODE_OK);
 }
@@ -539,12 +615,11 @@ int sock_fd_add (int fd, short events, RSDATAFCT rx_fct, void *udata, const char
 
 int sock_fd_valid (int fd)
 {
-	unsigned	i, n;
+	Sock_t		*sdp;
 	
 	lock_take (sock_lock);
-	n = atomic_get_w (num_fds);
-	for (i = 0; i < n; i++)
-		if ((*fds) [i].fd == fd) {
+	LIST_FOREACH (sockets, sdp)
+		if (sdp->state >= PendingAdd && sdp->fd == fd) {
 			lock_release (sock_lock);
 			return (1);
 		}
@@ -557,30 +632,16 @@ int sock_fd_valid (int fd)
 
 void sock_fd_remove (int fd)
 {
-	unsigned	i, n;
+	Sock_t		*sdp;
 
 	lock_take (sock_lock);
-	n = atomic_get_w (num_fds);
-	for (i = 0; i < n; i++)
-		if ((*fds) [i].fd == fd) {
-			lock_take (poll_lock);
-			n = atomic_get_w (num_fds);
-			if (i + 1 < n) {
-				memmove (&(*fds) [i],
-						&(*fds) [i + 1],
-						(n - i - 1) * sizeof (struct pollfd));
-				memmove (&(*fcts) [i],
-						&(*fcts) [i + 1],
-						(n - i - 1) * sizeof (RSDATAFCT));
-				memmove (&(*ud) [i],
-						&(*ud) [i + 1],
-						(n - i - 1) * sizeof (void *));
-				memmove (&(*names) [i],
-						&(*names) [i + 1],
-						(n - i - 1) * sizeof (char *));
-			}
-			atomic_dec_w (num_fds);
-			lock_release (poll_lock);
+	LIST_FOREACH (sockets, sdp)
+		if (sdp->state >= PendingAdd && sdp->fd == fd) {
+			sdp->state = PendingRemove;
+			nfds--;
+			sock_update_needed = 1;
+			if (!poll_active)
+				sock_poll_update ();
 			break;
 		}
 	lock_release (sock_lock);
@@ -590,18 +651,17 @@ void sock_fd_remove (int fd)
 
 void sock_fd_event_socket (int fd, short events, int set)
 {
-	unsigned	i, n;
+	Sock_t		*sdp;
 
 	lock_take (sock_lock);
-	n = atomic_get_w (num_fds);
-	for (i = 0; i < n; i++)
-		if ((*fds) [i].fd == fd) {
-			lock_take (poll_lock);
+	LIST_FOREACH (sockets, sdp)
+		if (sdp->state >= PendingAdd && sdp->fd == fd) {
 			if (set)
-				(*fds) [i].events |= events;
+				sdp->events |= events;
 			else
-				(*fds) [i].events &= ~events;
-			lock_release (poll_lock);
+				sdp->events &= ~events;
+			if (sdp->state == ActiveSocket)
+				fds [sdp->index].events = sdp->events;
 			break;
 		}
 	lock_release (sock_lock);
@@ -611,15 +671,12 @@ void sock_fd_event_socket (int fd, short events, int set)
 
 void sock_fd_fct_socket (int fd, RSDATAFCT fct)
 {
-	unsigned	i, n;
+	Sock_t		*sdp;
 
 	lock_take (sock_lock);
-	n = atomic_get_w (num_fds);
-	for (i = 0; i < n; i++)
-		if ((*fds) [i].fd == fd) {
-			lock_take (poll_lock);
-			(*fcts) [i] = fct;
-			lock_release (poll_lock);
+	LIST_FOREACH (sockets, sdp)
+		if (sdp->state >= PendingAdd && sdp->fd == fd) {
+			sdp->fct = fct;
 			break;
 		}
 	lock_release (sock_lock);
@@ -629,15 +686,12 @@ void sock_fd_fct_socket (int fd, RSDATAFCT fct)
 
 void sock_fd_udata_socket (int fd, void *udata)
 {
-	unsigned	i, n;
+	Sock_t		*sdp;
 
 	lock_take (sock_lock);
-	n = atomic_get_w (num_fds);
-	for (i = 0; i < n; i++)
-		if ((*fds) [i].fd == fd) {
-			lock_take (poll_lock);
-			(*ud) [i] = udata;
-			lock_release (poll_lock);
+	LIST_FOREACH (sockets, sdp)
+		if (sdp->state >= PendingAdd && sdp->fd == fd) {
+			sdp->udata = udata;
 			break;
 		}
 	lock_release (sock_lock);
@@ -647,26 +701,29 @@ void sock_fd_udata_socket (int fd, void *udata)
 
 void sock_fd_schedule (void)
 {
+	Sock_t		*sdp;
 	struct pollfd	*iop;
-	unsigned	i, n;
+	unsigned	i;
 	RHDATAFCT	fct;
 	int		fd;
 	void		*user;
 	short		events;
 
 	lock_take (sock_lock);
-	n = atomic_get_w (num_fds);
-	for (i = 0, iop = *fds; i < n; i++, iop++)
+	for (i = 0, iop = fds; i < num_fds; i++, iop++)
 		if (iop->revents) {
-			fct = (*fcts) [i];
+			sdp = sds [i];
+			if (sdp->state == PendingRemove || !sdp->fct)
+				continue;
+
+			fct = sdp->fct;
 			fd = iop->fd;
 			events = iop->revents;
-			user = (*ud) [i];
+			user = sdp->udata;
 			iop->revents = 0;
 			lock_release (sock_lock);
 			(*fct) (fd, events, user);
 			lock_take (sock_lock);
-			n = atomic_get_w (num_fds);
 		}
 	lock_release (sock_lock);
 }
@@ -676,41 +733,44 @@ void sock_fd_schedule (void)
 
 void sock_fd_poll (unsigned poll_time)
 {
+	Sock_t		*sdp;
 	struct pollfd	*iop;
 	unsigned	i, n;
 
-	lock_take (poll_lock);
-	n = atomic_get_w (num_fds);
+	/* There were changes in the pollfd table, apply them now. */
+	if (sock_update_needed)
+		sock_poll_update ();
+
+	poll_active = 1;
 	/*printf ("*"); fflush (stdout);*/
-	n_ready = poll (*fds, n, poll_time);
+	n_ready = poll (fds, num_fds, poll_time);
 	lock_release (poll_lock);
 	if (n_ready < 0) {
 		log_printf (LOG_DEF_ID, 0, "sock_fd_poll: poll() returned error: %s\r\n", strerror (errno));
+		poll_active = 0;
 		return;
 	}
 	else if (!n_ready) {
-		/* avoid starvation of other threads waiting on poll_lock.
-		 * These other threads always hold sock_lock. so locking and unlocking
-		 * sock_lock here, gives the proper synchronization.
-		 * In case no one is waiting, this is a waste of time, but without a
-		 * rewrite this is not solvable.
-		 */
-		lock_take (sock_lock);
-		lock_release (sock_lock);
+		poll_active = 0;
 		return;
 	}
-
 	lock_take (sock_lock);
-	n = atomic_get_w (num_fds);
-	for (i = 0, iop = *fds; i < n; i++, iop++) {
+	n = 0;
+	for (i = 0, iop = fds; i < num_fds; i++, iop++) {
 		if (iop->revents) {
+			sdp = sds [i];
+			if (sdp->state == PendingRemove || !sdp->fct)
+				continue;
+
 			/*dbg_printf ("sock: %u %d=0x%04x->0x%04x\r\n", i, iop->fd, iop->events, iop->revents);*/
 			dds_lock_ev ();
 			dds_ev_pending |= DDS_EV_IO;
 			dds_unlock_ev ();
+			n = 1;
 			break;
 		}
 	}
+	poll_active = n;
 	lock_release (sock_lock);
 }
 
@@ -720,14 +780,16 @@ void sock_fd_poll (unsigned poll_time)
 
 void sock_fd_dump (void)
 {
-	unsigned	i, n;
+	Sock_t		*sdp;
 
 	lock_take (sock_lock);
-	n = atomic_get_w (num_fds);
-	for (i = 0; i < n; i++) {
-		dbg_printf ("%d: [%d] %s {%s} -> ", i, (*fds) [i].fd, (*names) [i], dbg_poll_event_str ((*fds) [i].events));
-		dbg_printf ("{%s} ", dbg_poll_event_str ((*fds) [i].events));
-		dbg_printf ("Rxfct=0x%lx, U=%p\r\n", (unsigned long) ((*fcts) [i]), (*ud) [i]);
+	LIST_FOREACH (sockets, sdp) {
+		if (sdp->state != ActiveSocket)
+			continue;
+
+		dbg_printf ("%d: [%d] %s {%s} -> ", sdp->index, sdp->fd, sdp->name, dbg_poll_event_str (sdp->events));
+		dbg_printf ("{%s} ", dbg_poll_event_str (fds [sdp->index].events));
+		dbg_printf ("Rxfct=0x%lx, U=%p\r\n", (unsigned long) sdp->fct, sdp->udata);
 	}
 	lock_release (sock_lock);
 }
@@ -764,3 +826,4 @@ int sock_set_tcp_nodelay (int fd)
 }
 
 #endif
+

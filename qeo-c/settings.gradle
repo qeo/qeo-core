@@ -1,0 +1,4 @@
+include "qeo-c-core", "qeo-c", "qeo-c-json", "qeo-c-json-async", "qeo-native", "qeo-forwarder", "qeo-c-util", "qeo-openssl-engine-pkcs12", "qeo-management-client"
+rootProject.name = 'qeo-c-root'
+
+

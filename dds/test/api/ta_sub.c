@@ -42,7 +42,7 @@ static void test_qos (int enabled)
 	r = DDS_DomainParticipantFactory_set_qos (&qos);
 	fail_unless (r == DDS_RETCODE_OK);
 
-	p = DDS_DomainParticipantFactory_create_participant (0, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
+	p = DDS_DomainParticipantFactory_create_participant (1, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
 	fail_unless (p != NULL);
 	r = register_HelloWorldData_type (p);
 	fail_unless (r == DDS_RETCODE_OK);
@@ -242,7 +242,7 @@ static void test_listener (void)
 	DDS_SubscriberListener		*lp;
 	DDS_ReturnCode_t		r;
 
-	p = DDS_DomainParticipantFactory_create_participant (0, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
+	p = DDS_DomainParticipantFactory_create_participant (1, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
 	fail_unless (p != NULL);
 
 	v_printf (" - Test subscriber listener.\r\n");
@@ -314,7 +314,7 @@ static void test_aux (void)
 	DDS_ReturnCode_t		r;
 
 	v_printf (" - Test auxiliary subscriber functions.\r\n");
-	p = DDS_DomainParticipantFactory_create_participant (0, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
+	p = DDS_DomainParticipantFactory_create_participant (1, DDS_PARTICIPANT_QOS_DEFAULT, NULL, 0);
 	fail_unless (p != NULL);
 	sub = DDS_DomainParticipant_create_subscriber (p, DDS_SUBSCRIBER_QOS_DEFAULT, NULL, 0);
 	fail_unless (sub != NULL);

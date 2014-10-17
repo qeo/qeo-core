@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+    <module name="org::qeo::test">
+
+        <!-- struct representing a state containing only primitive types -->
+        <struct name="StateWithPrimitivesKeyIsBoolean" behavior="state">       
+            <doc>This struct represents a state 
+                 containing only primitive types.
+            </doc> 
+            <member name="MyBoolean" type="boolean" key="true"/>
+            <member name="MyByte" type="byte"/>
+            <member name="MyInt16" type="int16"/>
+            <member name="MyInt32" type="int32"/>
+            <member name="MyInt64" type="int64"/> 
+            <member name="MyFloat32" type="float32"/>
+            <member name="MyString" type="string"/>
+        </struct>
+    </module>
+</types>
