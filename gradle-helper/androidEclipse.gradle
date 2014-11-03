@@ -10,6 +10,7 @@ apply plugin: 'eclipse'
 eclipse {
 	ext.extraSrcDirs = []
     ext.explodeAar = false
+    ext.explodeAarList = []
   jdt {
     sourceCompatibility = 1.6
     targetCompatibility = 1.6
@@ -59,11 +60,10 @@ eclipse {
           it.appendNode('attributes').appendNode('attribute', [name: 'ignore_optional_problems', value:'true'])
         }
         provider.asNode().findAll { it.@path.endsWith("aar") }.each {
-            logger.warn("Found aar in classpath, since eclipse can't handle this you'll have to add it as a project dependency manually")
             //extract aar files in order for eclipse to be able to use them -- don't do it anymore since res folder and other stuff will be missing
-            if (explodeAar) {
-                def file = new File(it.@path)
-                logger.debug("extrating aar ${file}")
+            File file = new File(it.@path)
+            if (explodeAar || explodeAarList.contains(file.name)) {
+                logger.info("extrating aar ${file} for eclipse")
                 def toDir = "${buildDir}/exploded_bundles/${file.name}"
                 copy {
                     from zipTree(file)
@@ -71,6 +71,9 @@ eclipse {
                     include "classes.jar"
                 }
                 it.@path = "${toDir}/classes.jar"
+            }
+            else {
+                logger.warn("Found aar in classpath, since eclipse can't handle this you'll have to add it as a project dependency manually (${file.name})")
             }
         }
       }

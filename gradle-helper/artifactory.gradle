@@ -1,10 +1,8 @@
 // The stupid artifactory plugin seems to assume that everyone just applies this plugin!!!
 allprojects {
     apply plugin: 'maven'
-/* Does not work on every project. */
-//  apply from: '/licenseSummary.gradle'
-    ext.qeoReleaseVersion = "1.0.0-SNAPSHOT" //NOTE: left on 1.0.0 for this release as 1.0.1 only had the forwarder released and nothing else. To be corrected in next full release
-    ext.qeoLatestVersion = "1.0.2-SNAPSHOT"
+    ext.qeoReleaseVersion = "1.0.2-SNAPSHOT"
+    ext.qeoLatestVersion = "1.0.3-SNAPSHOT"
     ext.qeoVersion = System.getProperty('qeoVersion') ?: ext.qeoLatestVersion
     ext.qeoGroup = System.getProperty('qeoGroup') ?: "org.qeo"
     ext.qeoGroupDefault = qeoGroup

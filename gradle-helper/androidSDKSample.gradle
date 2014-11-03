@@ -242,7 +242,7 @@ task sdkSample(description: 'Create and test the SDK Sample', dependsOn: ['testS
     enabled = false
 }
 
-File apkFilePath = file("${project.buildDir}/outputs/apk/${project.name}-debug-unaligned.apk")
+File apkFilePath = file("${project.buildDir}/outputs/apk/${project.name}-debug.apk")
 
 installDebugAll {
     apk = apkFilePath
@@ -250,7 +250,7 @@ installDebugAll {
 
 artifacts {
     archives createSDKSample
-    archives file: apkFilePath, name: project.name//, classifier: 'debug' //for now only debug apk is published, so publish it as the "main" apk. maven expects at least 1 file without classifier to be delivered
+    archives file: apkFilePath, name: project.name, classifier: 'debug'
 }
 
 class DownloadFileTask extends DefaultTask {

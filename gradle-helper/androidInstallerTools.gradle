@@ -27,13 +27,13 @@ task getConnectedDevices << {
 
 //Install a truststore.p12 and corresponding policy file and url to the Qeo android service to bypass OTC prompting
 task installCertFile(dependsOn: getConnectedDevices) {
-    def qeoServiceName = "org.qeo.android.service"
-    def qeoServicePath = "/data/data/" + qeoServiceName + "/"
-    def qeoServiceFilesPath = qeoServicePath + "files/"
+    ext.qeoServiceName = "org.qeo.android.service"
     ext.jarFile = null
     def result = 0
 
     doLast {
+        def qeoServicePath = "/data/data/" + qeoServiceName + "/"
+        def qeoServiceFilesPath = qeoServicePath + "files/"
 
         if (jarFile == null) {
             // Determine path of jar file containing credentials

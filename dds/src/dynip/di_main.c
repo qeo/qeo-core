@@ -103,6 +103,11 @@ IP_Intf_t *di_intf_lookup (unsigned id)
 	return (NULL);
 }
 
+int di_intf_up (IP_Intf_t *ifp)
+{
+	return (ifp->up == 1);
+}
+
 IP_Intf_t *di_intf_new (unsigned id)
 {
 	IP_Intf_t	*ifp;

@@ -22,9 +22,12 @@
 #include <net/if.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <poll.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <linux/sockios.h>
+#include "set.h"
 #include "thread.h"
 #include "pool.h"
 #include "log.h"
@@ -86,6 +89,108 @@ void di_sys_final (void)
 	}
 }
 
+static uint32_t	*ifstate_set;
+static size_t	ifstate_nintfs;
+static int	ifstate_valid;
+
+static void di_ifstate_init (void)
+{
+	ifstate_valid = 0;
+}
+
+static void di_ifstate_get (void)
+{
+	int			s, i;
+	unsigned		index;
+	struct ifconf		ifc;
+	struct ifreq		*ifr, *r;
+	int			numif;
+	short			flags;
+	size_t			size;
+	uint32_t		*p;
+
+	/*log_printf (IP_ID, 0, "DynIP: querying interfaces.\r\n");*/
+	if ((s = socket (AF_INET, SOCK_DGRAM, 0)) < 0) {
+		perror ("socket");
+		exit (1);
+	}
+
+	/* Find minimum number of interfaces. */
+	memset (&ifc, 0, sizeof (ifc));
+	ifc.ifc_ifcu.ifcu_req = NULL;
+	ifc.ifc_len = 0;
+	if (ioctl (s, SIOCGIFCONF, &ifc) < 0) {
+		perror ("ioctl");
+		exit (2);
+	}
+
+	/* Actual required buffer size in ifc.ifc_len now. */
+	size = ifc.ifc_len;
+	do {
+		size += sizeof (struct ifreq) * 2;	/* Ask some more. */
+		if ((ifr = xmalloc (size)) == NULL) {
+			perror ("malloc");
+			exit (3);
+		}
+		ifc.ifc_len = size;
+		ifc.ifc_ifcu.ifcu_req = ifr;
+
+		if (ioctl (s, SIOCGIFCONF, &ifc) < 0) {
+			perror ("ioctl2");
+			exit (4);
+		}
+	}
+	while (ifc.ifc_len == (int) size);
+
+	/* Buffer size is large enough to get all interfaces. */
+	numif = ifc.ifc_len / sizeof (struct ifreq);
+	/*log_printf (IP_ID, 0, "%u interfaces (%d bytes total, %lu bytes each)!\r\n",
+			numif, ifc.ifc_len, (unsigned long) sizeof (struct ifreq));*/
+	size = ((numif + 31) >> 5) << 2;
+	if (size > ((ifstate_nintfs + 31) >> 5) << 2) {
+		if (ifstate_set)
+			p = xrealloc (ifstate_set, size);
+		else
+			p = xmalloc (size);
+		if (!p)
+			exit (5);
+
+		ifstate_set = p;
+	}
+	memset (ifstate_set, 0, size);
+	ifstate_nintfs = numif;
+	for (i = 0, r = ifr; i < numif; i++, r++) {
+		if (ioctl (s, SIOCGIFFLAGS, r) < 0) {
+			perror ("ioctl3");
+			exit (5);
+		}
+		flags = r->ifr_flags;
+		if (ioctl (s, SIOCGIFINDEX, r) < 0) {
+			perror ("ioctl4");
+			exit (6);
+		}
+		index = r->ifr_ifindex;
+		log_printf (IP_ID, 0, "DynIP: %s state = 0x%04x, index = %u", r->ifr_name, flags, index);
+		if ((flags & IFF_UP) != 0 &&
+		    (flags & IFF_LOOPBACK) == 0 &&
+		    (flags & (IFF_BROADCAST | IFF_POINTOPOINT)) != 0) {
+			SET_ADD (ifstate_set, index);
+			log_printf (IP_ID, 0, " :: up!");
+		}
+		log_printf (IP_ID, 0, "\r\n");
+	}
+	xfree (ifr);
+	close (s);
+}
+
+static int di_intf_active (unsigned intf)
+{
+	if (!ifstate_valid)
+		di_ifstate_get ();
+
+	return (SET_CONTAINS (ifstate_set, intf));
+}
+
 static void di_event (int fd, short revents, void *arg)
 {
 	struct sockaddr_nl	sa;
@@ -106,6 +211,7 @@ static void di_event (int fd, short revents, void *arg)
 	ARG_NOT_USED (arg)
 
 	di_evh_begin ();
+	di_ifstate_init ();
 
 	do {
 		multi = 0;
@@ -135,7 +241,7 @@ static void di_event (int fd, short revents, void *arg)
 				break;
 			}
 			if (nlmp->nlmsg_type == NLMSG_ERROR)
-				log_printf (IP_ID, 0, "Netlink event error!\r\n"); /* Should do some error handling. */
+				log_printf (IP_ID, 0, "DynIP: Netlink event error!\r\n"); /* Should do some error handling. */
 
 			if (nlmp->nlmsg_type == RTM_NEWADDR ||
 			    nlmp->nlmsg_type == RTM_DELADDR) {
@@ -153,16 +259,32 @@ static void di_event (int fd, short revents, void *arg)
 						continue;
 
 					if (rta->rta_type == IFA_LOCAL) {
-						if (nlmp->nlmsg_type == RTM_NEWADDR)
+						if (nlmp->nlmsg_type == RTM_NEWADDR) {
+							if (!di_intf_up (ifp) &&
+							    di_intf_active (ifa->ifa_index))
+								di_intf_update (ifp, 1, -1, -1);
 							di_add_addr (ifp, ifa->ifa_family, RTA_DATA (rta));
-						else if (ifp && nlmp->nlmsg_type == RTM_DELADDR)
+						}
+						else if (ifp && nlmp->nlmsg_type == RTM_DELADDR) {
 							di_remove_addr (ifp, ifa->ifa_family, RTA_DATA (rta));
+							if (di_intf_up (ifp) &&
+							    !di_intf_active (ifa->ifa_index))
+								di_intf_update (ifp, 0, -1, -1);
+						}
 					}
 					else if (rta->rta_type == IFA_ADDRESS) {
-						if (nlmp->nlmsg_type == RTM_NEWADDR)
+						if (nlmp->nlmsg_type == RTM_NEWADDR) {
+							if (!di_intf_up (ifp) &&
+							    di_intf_active (ifa->ifa_index))
+								di_intf_update (ifp, 1, -1, -1);
 							di_add_addr (ifp, ifa->ifa_family, RTA_DATA (rta));
-						else if (nlmp->nlmsg_type == RTM_DELADDR)
+						}
+						else if (ifp && nlmp->nlmsg_type == RTM_DELADDR) {
 							di_remove_addr (ifp, ifa->ifa_family, RTA_DATA (rta));
+							if (di_intf_up (ifp) &&
+							    !di_intf_active (ifa->ifa_index))
+								di_intf_update (ifp, 0, -1, -1);
+						}
 					}
 					/*else
 						printf ("RTA Type = %d\r\n", rta->rta_type);*/
@@ -179,7 +301,7 @@ static void di_event (int fd, short revents, void *arg)
 						if (!ifp)
 							continue;
 					}
-					di_intf_update (ifp, ifi->ifi_flags & IFF_RUNNING, -1, -1);
+					di_intf_update (ifp, (ifi->ifi_flags & IFF_RUNNING) != 0, -1, -1);
 				}
 				else if (ifp && nlmp->nlmsg_type == RTM_DELLINK)
 					di_intf_removed (ifp);

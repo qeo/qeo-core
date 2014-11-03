@@ -49,6 +49,10 @@ void di_intf_filter_update (void);
 
 /* An interface filter has been updated. */
 
+int di_intf_up (IP_Intf_t *ifp);
+
+/* Return a non-0 result if the current interface state is up. */
+
 
 /* 2. Functions that should be used to propagate address changes.
    -------------------------------------------------------------- */
