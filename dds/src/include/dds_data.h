@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -15,7 +15,7 @@
 /* dds_data.h -- Defines common data types as used in the DDS middleware. */
 
 #ifndef __dds_data_h_
-#define	__dds_data_h_
+#define __dds_data_h_
 
 #include "sys.h"
 #include "thread.h"
@@ -72,32 +72,32 @@ typedef enum {
 	EPB_MAX
 } BUILTIN_INDEX;
 
-#define	MAX_BUILTINS	(unsigned) EPB_MAX
+#define MAX_BUILTINS	(unsigned) EPB_MAX
 
 typedef unsigned char ProtocolVersion_t [2];
 
-#define	PROTOCOLVERSION		PROTOCOLVERSION_2_1
-#define	PROTOCOLVERSION_1_0	{ 1, 0 }
-#define	PROTOCOLVERSION_1_1	{ 1, 1 }
-#define	PROTOCOLVERSION_2_0	{ 2, 0 }
-#define	PROTOCOLVERSION_2_1	{ 2, 1 }
+#define PROTOCOLVERSION		PROTOCOLVERSION_2_1
+#define PROTOCOLVERSION_1_0	{ 1, 0 }
+#define PROTOCOLVERSION_1_1	{ 1, 1 }
+#define PROTOCOLVERSION_2_0	{ 2, 0 }
+#define PROTOCOLVERSION_2_1	{ 2, 1 }
 
 #define version_compare(v1,v2)	((v1 [0] << 8) | v1 [1]) - ((v2 [0] << 8) | v2 [1])
 /*#define version_set(v1,v2)	*((unsigned short *) v1) = *((unsigned short *) v2) */
-#define	version_set(v1,v2)	v1 [0] = v2 [0]; v1 [1] = v2 [1]
-#define	version_init(v1)	v1 [0] = 2; v1 [1] = 1
+#define version_set(v1,v2)	v1 [0] = v2 [0]; v1 [1] = v2 [1]
+#define version_init(v1)	v1 [0] = 2; v1 [1] = 1
 
 typedef unsigned char VendorId_t [2];
 
-#define	VENDORID_H_TECHNICOLOR	1
-#define	VENDORID_L_TECHNICOLOR	0x0e
+#define VENDORID_H_TECHNICOLOR	1
+#define VENDORID_L_TECHNICOLOR	0x0e
 
-#define	VENDORID_UNKNOWN	{ 0, 0 }
-#define	VENDORID_TECHNICOLOR	{ VENDORID_H_TECHNICOLOR, VENDORID_L_TECHNICOLOR }
+#define VENDORID_UNKNOWN	{ 0, 0 }
+#define VENDORID_TECHNICOLOR	{ VENDORID_H_TECHNICOLOR, VENDORID_L_TECHNICOLOR }
 
 /*#define vendor_id_set(v1,v2)	*((unsigned short *) v1) = *((unsigned short *) v2)*/
-#define	vendor_id_set(v1,v2)	memcpy (v1, v2, sizeof (VendorId_t))
-#define	vendor_id_init(v)	v [0] = VENDORID_H_TECHNICOLOR; v [1] = VENDORID_L_TECHNICOLOR
+#define vendor_id_set(v1,v2)	memcpy (v1, v2, sizeof (VendorId_t))
+#define vendor_id_init(v)	v [0] = VENDORID_H_TECHNICOLOR; v [1] = VENDORID_L_TECHNICOLOR
 
 typedef uint32_t Count_t;
 
@@ -133,20 +133,20 @@ typedef struct discovered_reader_st DiscoveredReader_t;
 */
 
 /* Entity flags/handle bits: */
-#define	EF_ENABLED	0x0001		/* Entity is locally enabled. */
-#define	EF_NOT_IGNORED	0x0002		/* Remote not ignored entity. */
-#define	EF_BUILTIN	0x0004		/* Builtin entity. */
-#define	EF_LOCAL	0x0008		/* Locally created. */
-#define	EF_REMOTE	0x0010		/* Remote entity. */
-#define	EF_INLINE_QOS	0x0020		/* Expects QoS in data. */
-#define	EF_FILTERED	0x0040		/* Content-filtered Topic. */
-#define	EF_LOCAL_COMP	0x0040		/* Local component (CDD). */
-#define	EF_MATCHED   	0x0040		/* Used by CDD to see if matching changed. */
-#define	EF_INC_TYPE   	0x0040		/* Incompatible learned type. */
-#define	EF_SUSPEND	0x0080		/* Publisher suspend. */
-#define	EF_PUBLISH	0x0080		/* Publication suspended. */
-#define	EF_ALIVE	0x0100		/* Set when data passes. */
-#define	EF_LNOTIFY	0x0200		/* Notify liveliness. */
+#define EF_ENABLED	0x0001		/* Entity is locally enabled. */
+#define EF_NOT_IGNORED	0x0002		/* Remote not ignored entity. */
+#define EF_BUILTIN	0x0004		/* Builtin entity. */
+#define EF_LOCAL	0x0008		/* Locally created. */
+#define EF_REMOTE	0x0010		/* Remote entity. */
+#define EF_INLINE_QOS	0x0020		/* Expects QoS in data. */
+#define EF_FILTERED	0x0040		/* Content-filtered Topic. */
+#define EF_LOCAL_COMP	0x0040		/* Local component (CDD). */
+#define EF_MATCHED   	0x0040		/* Used by CDD to see if matching changed. */
+#define EF_INC_TYPE   	0x0040		/* Incompatible learned type. */
+#define EF_SUSPEND	0x0080		/* Publisher suspend. */
+#define EF_PUBLISH	0x0080		/* Publication suspended. */
+#define EF_ALIVE	0x0100		/* Set when data passes. */
+#define EF_LNOTIFY	0x0200		/* Notify liveliness. */
 #define EF_NEW		0x0400		/* New while suspended. */
 #define EF_SHUTDOWN	0x0800		/* Entity closing down. */
 #define EF_CACHED  	0x1000		/* Entity in builtin cache. */
@@ -174,31 +174,31 @@ typedef struct DDS_Entity_st {
 } Entity_t;
 
 
-#define	entity_type(e)	((e)->type)
+#define entity_type(e)	((e)->type)
 
 /* Retrieve the type of an entity from the entity field. */
 
-#define	entity_writer(t) ((t) == ET_WRITER)
+#define entity_writer(t) ((t) == ET_WRITER)
 
 /* Verify if the entity is a writer. */
 
-#define	entity_reader(t) ((t) == ET_READER)
+#define entity_reader(t) ((t) == ET_READER)
 
 /* Verify if the entity is a reader. */
 
-#define	entity_handle(e) (handle_t) ((e)->handle)
+#define entity_handle(e) (handle_t) ((e)->handle)
 
 /* Retrieve the handle of an entity (always positive: 1..n). */
 
-#define	entity_flags(e)	((e)->flags)
+#define entity_flags(e) ((e)->flags)
 
 /* Retrieve the entity flags of an entity. */
 
-#define	entity_active(f) (((f) & (EF_ENABLED | EF_NOT_IGNORED)) != 0)
+#define entity_active(f) (((f) & (EF_ENABLED | EF_NOT_IGNORED)) != 0)
 
 /* Check if entity is active. */
 
-#define	entity_ignored(f) (((f) & EF_NOT_IGNORED) == 0)
+#define entity_ignored(f) (((f) & EF_NOT_IGNORED) == 0)
 
 /* Check if the entity is in ignored state. */
 
@@ -206,15 +206,15 @@ typedef struct DDS_Entity_st {
 
 /* Check if the entity is shutting down. */
 
-#define	entity_discovered(f) (((f) & EF_REMOTE) != 0)
+#define entity_discovered(f) (((f) & EF_REMOTE) != 0)
 
 /* Check if the entity was discovered. */
 
-#define	entity_cached(f) (((f) & EF_CACHED) != 0)
+#define entity_cached(f) (((f) & EF_CACHED) != 0)
 
 /* Check if the entity was put in a builtin cache. */
 
-#define	entity_local(f) (((f) & EF_LOCAL) != 0)
+#define entity_local(f) (((f) & EF_LOCAL) != 0)
 
 /* Check if the entity is local. */
 
@@ -292,20 +292,20 @@ typedef String_t	Token_t;
 /* Participant type. */
 /* ----------------- */
 
-#define	SECC_NONE	0		/* No security capabilities. */
-#define	SECC_DTLS_UDP	1		/* DTLS/UDP capability. */
-#define	SECC_TLS_TCP	2		/* TLS/TCP capability. */
-#define	SECC_DDS_SEC	4		/* DDS fine-grained security. */
+#define SECC_NONE	0		/* No security capabilities. */
+#define SECC_DTLS_UDP	1		/* DTLS/UDP capability. */
+#define SECC_TLS_TCP	2		/* TLS/TCP capability. */
+#define SECC_DDS_SEC	4		/* DDS fine-grained security. */
 
-#define	SECC_LOCAL	16		/* Local capability set. */
-#define	SECC_REMOTE	0		/* Remote capability set. */
+#define SECC_LOCAL	16		/* Local capability set. */
+#define SECC_REMOTE	0		/* Remote capability set. */
 
-#define	FWD_UDP_TO_TCP	1		/* May forward from UDP to TCP. */
-#define	FWD_TCP_TO_UDP	2		/* May forward from TCP to UDP. */
-#define	FWD_TCP_TO_TCP	4		/* May forward from TCP to TCP. */
-#define	FWD_BRIDGE	(FWD_UDP_TO_TCP | FWD_TCP_TO_UDP | FWD_TCP_TO_TCP)
+#define FWD_UDP_TO_TCP	1		/* May forward from UDP to TCP. */
+#define FWD_TCP_TO_UDP	2		/* May forward from TCP to UDP. */
+#define FWD_TCP_TO_TCP	4		/* May forward from TCP to TCP. */
+#define FWD_BRIDGE	(FWD_UDP_TO_TCP | FWD_TCP_TO_UDP | FWD_TCP_TO_TCP)
 					/* DDS-bridge function. */
-#define	FWD_ROUTER	8		/* Contains a DDS-router function. */
+#define FWD_ROUTER	8		/* Contains a DDS-router function. */
 
 typedef struct participant_proxy_st {
 	GuidPrefix_t	    guid_prefix;	/* Common GUID prefix. */
@@ -334,36 +334,42 @@ typedef struct participant_st {
 
 	/* Entity header. */
 	Entity_t	 p_entity;		/* Flags/type/handle. */
-#define	p_flags		 p_entity.flags		/* Flags. */
-#define	p_type		 p_entity.type		/* Type. */
-#define	p_handle	 p_entity.handle	/* Handle. */
+#define p_flags	 	 p_entity.flags		/* Flags. */
+#define p_type		 p_entity.type		/* Type. */
+#define p_handle	 p_entity.handle	/* Handle. */
 	Domain_t	 *p_domain;		/* Parent Domain. */
 
 	/* Participant-specific data. */
-#ifdef DDS_NATIVE_SECURITY
+#ifdef DDS_SECURITY
 	Token_t	  	 *p_id_tokens;		/* Identity token list. */
 	Token_t	  	 *p_p_tokens;		/* Permissions token list. */
+#ifdef DDS_NATIVE_SECURITY
 	AuthState_t	 p_auth_state;		/* Authentication state. */
+	int64_t		 p_last_seqnr;		/* Last handshake seqnr. */
 	unsigned	 p_crypto;		/* Participant crypto handle. */
+	LocatorList_t	 p_uc_locs;		/* Handshake locators. */
+	LocatorNode_t	 *p_uc_dreply;		/* Handshake direct reply. */
+	int		 p_ir_locs;		/* InfoReply forced locator. */
+#endif
 #endif
 	ParticipantProxy p_proxy;		/* Proxy info. */
-#define	p_guid_prefix	 p_proxy.guid_prefix	/* Common GUID prefix.*/
-#define	p_proto_version	 p_proxy.proto_version	/* RTPS protocol version. */
-#define	p_vendor_id	 p_proxy.vendor_id	/* Vendor Id. */
-#define	p_exp_il_qos	 p_proxy.exp_il_qos	/* Inline-QoS expected. */
-#define	p_no_mcast	 p_proxy.no_mcast	/* Don't use Multicast. */
-#define	p_sw_version	 p_proxy.sw_version	/* TDDS version. */
-#define	p_builtins	 p_proxy.builtins	/* Builtin endpoints. */
-#define	p_id		 p_proxy.id		/* Identity. */
-#define	p_permissions	 p_proxy.permissions	/* Permissions. */
-#define	p_sec_caps	 p_proxy.sec_caps	/* Security capabilities. */
-#define	p_sec_locs	 p_proxy.sec_locs	/* Security locators. */
-#define	p_forward	 p_proxy.forward	/* Forwarding capabilities. */
-#define	p_def_ucast	 p_proxy.def_ucast	/* Default unicasts. */
-#define	p_def_mcast	 p_proxy.def_mcast	/* Default multicasts. */
-#define	p_meta_ucast	 p_proxy.meta_ucast	/* Meta unicasts. */
-#define	p_meta_mcast	 p_proxy.meta_mcast	/* Meta multicasts. */
-#define	p_man_liveliness p_proxy.manual_liveliness /* Manual liveliness. */
+#define p_guid_prefix	 p_proxy.guid_prefix	/* Common GUID prefix.*/
+#define p_proto_version	 p_proxy.proto_version	/* RTPS protocol version. */
+#define p_vendor_id	 p_proxy.vendor_id	/* Vendor Id. */
+#define p_exp_il_qos	 p_proxy.exp_il_qos	/* Inline-QoS expected. */
+#define p_no_mcast	 p_proxy.no_mcast	/* Don't use Multicast. */
+#define p_sw_version	 p_proxy.sw_version	/* TDDS version. */
+#define p_builtins	 p_proxy.builtins	/* Builtin endpoints. */
+#define p_id		 p_proxy.id		/* Identity. */
+#define p_permissions	 p_proxy.permissions	/* Permissions. */
+#define p_sec_caps	 p_proxy.sec_caps	/* Security capabilities. */
+#define p_sec_locs	 p_proxy.sec_locs	/* Security locators. */
+#define p_forward	 p_proxy.forward	/* Forwarding capabilities. */
+#define p_def_ucast	 p_proxy.def_ucast	/* Default unicasts. */
+#define p_def_mcast	 p_proxy.def_mcast	/* Default multicasts. */
+#define p_meta_ucast	 p_proxy.meta_ucast	/* Meta unicasts. */
+#define p_meta_mcast	 p_proxy.meta_mcast	/* Meta multicasts. */
+#define p_man_liveliness p_proxy.manual_liveliness /* Manual liveliness. */
 	String_t	 *p_user_data;		/* User Data QoS. */
 	String_t	 *p_entity_name;	/* Entity name. */
 	Duration_t	 p_lease_duration;	/* Timeout to remove. */
@@ -372,10 +378,12 @@ typedef struct participant_st {
 	Timer_t		 p_timer;		/* Timeout/announce timer. */
 	Guard_t	 	 *p_liveliness;		/* Liveliness endpoints list. */
 	LocatorList_t	 p_src_locators;	/* Source locators. */
+	LocatorKind_t	 p_kinds;		/* Supported locator kinds. */
 	Property_t	 *p_properties;		/* Properties. */
 	Endpoint_t	 *p_builtin_ep [MAX_BUILTINS]; /* Builtin endpoints. */
 	int		 p_alive;		/* Last alive time. */
 	Ticks_t		 p_local;		/* Local source timestamp. */
+	int64_t		 p_dt;			/* Delta-T for NTP timestamps.*/
 } Participant_t;
 
 
@@ -512,17 +520,17 @@ struct endpoint_st {
 
 struct discovered_writer_st {
 	Endpoint_t	dw_ep;			/* Endpoint data. */
-#define	dw_flags	dw_ep.entity.flags	/* Flags. */
+#define dw_flags	dw_ep.entity.flags	/* Flags. */
 #define dw_type		dw_ep.entity.type	/* Type. */
 #define dw_handle	dw_ep.entity.handle	/* Handle. */
-#define	dw_participant	dw_ep.u.participant	/* Participant. */
-#define	dw_entity_id	dw_ep.entity_id		/* Entity Id. */
+#define dw_participant	dw_ep.u.participant	/* Participant. */
+#define dw_entity_id	dw_ep.entity_id		/* Entity Id. */
 #define dw_topic	dw_ep.topic		/* Topic pointer. */
 #define dw_qos		dw_ep.qos		/* Writer QoS parameters. */
 #define dw_ucast	dw_ep.ucast		/* Unicast Locator list. */
 #define dw_mcast	dw_ep.mcast		/* Multicast Locator list. */
 #define dw_next		dw_ep.next		/* Topic endpoints chain. */
-#define	dw_rtps		dw_ep.rtps		/* RTPS.RemoteWriter_t * */
+#define dw_rtps		dw_ep.rtps		/* RTPS.RemoteWriter_t * */
 #ifdef DDS_TYPECODE
 	unsigned char	*dw_tc;			/* Discovered Typecode. */
 #endif
@@ -530,17 +538,17 @@ struct discovered_writer_st {
 
 struct discovered_reader_st {
 	Endpoint_t	dr_ep;			/* Endpoint data. */
-#define	dr_flags	dr_ep.entity.flags	/* Flags. */
+#define dr_flags	dr_ep.entity.flags	/* Flags. */
 #define dr_type		dr_ep.entity.type	/* Type. */
 #define dr_handle	dr_ep.entity.handle	/* Handle. */
-#define	dr_participant	dr_ep.u.participant	/* Participant. */
-#define	dr_entity_id	dr_ep.entity_id		/* Entity Id. */
+#define dr_participant	dr_ep.u.participant	/* Participant. */
+#define dr_entity_id	dr_ep.entity_id		/* Entity Id. */
 #define dr_topic	dr_ep.topic		/* Topic pointer. */
 #define dr_qos		dr_ep.qos		/* Reader QoS parameters. */
 #define dr_ucast	dr_ep.ucast		/* Unicast Locator list. */
 #define dr_mcast	dr_ep.mcast		/* Multicast Locator list. */
 #define dr_next		dr_ep.next		/* Topic endpoints chain. */
-#define	dr_rtps		dr_ep.rtps		/* RTPS.RemoteReader_t * */
+#define dr_rtps		dr_ep.rtps		/* RTPS.RemoteReader_t * */
 #ifdef DDS_TYPECODE
 	unsigned char	*dr_tc;			/* Discovered Typecode. */
 #endif
@@ -574,9 +582,9 @@ struct local_endpoint_st {
 
 /* Use the ENC_DATA() macro to check for encrypted payload data. */
 #ifdef DDS_NATIVE_SECURITY
-#define	ENC_DATA(lep)	((lep)->payload_prot && (lep)->crypto_type >= DDS_CRYPT_AES128_HMAC_SHA1)
+#define ENC_DATA(lep)	((lep)->payload_prot && (lep)->crypto_type >= DDS_CRYPT_AES128_HMAC_SHA1)
 #else
-#define	ENC_DATA(lep)	0
+#define ENC_DATA(lep)	0
 #endif
 
 typedef struct inc_qos_st {
@@ -598,35 +606,35 @@ struct DDS_DataReader_st {
 
 	/* Entity and Endpoint-specific data. */
 	LocalEndpoint_t	r_lep;			/* Local Endpoint data. */
-#define	r_ep		r_lep.ep		/* Common Endpoint data. */
-#define	r_flags		r_lep.ep.entity.flags	/* Flags. */
+#define r_ep		r_lep.ep		/* Common Endpoint data. */
+#define r_flags		r_lep.ep.entity.flags	/* Flags. */
 #define r_type		r_lep.ep.entity.type	/* Type. */
 #define r_handle	r_lep.ep.entity.handle	/* Handle. */
-#define	r_subscriber	r_lep.ep.u.subscriber	/* Subscriber. */
-#define	r_entity_id	r_lep.ep.entity_id	/* Entity Id. */
+#define r_subscriber	r_lep.ep.u.subscriber	/* Subscriber. */
+#define r_entity_id	r_lep.ep.entity_id	/* Entity Id. */
 #define r_topic		r_lep.ep.topic		/* Topic pointer. */
 #define r_qos		r_lep.ep.qos		/* Reader QoS parameters. */
 #define r_ucast		r_lep.ep.ucast		/* Unicast Locator list. */
 #define r_mcast		r_lep.ep.mcast		/* Multicast Locator list. */
 #define r_next		r_lep.ep.next		/* Topic endpoints chain. */
-#define	r_rtps		r_lep.ep.rtps		/* RTPS.READER * */
+#define r_rtps		r_lep.ep.rtps		/* RTPS.READER * */
 
 	/* DCPS-specific data. */
-#define	r_cache		r_lep.cache		/* History Cache. */
-#define	r_status	r_lep.status		/* DDS Status bits. */
-#define	r_mask		r_lep.mask		/* DDS Mask bits. */
+#define r_cache		r_lep.cache		/* History Cache. */
+#define r_status	r_lep.status		/* DDS Status bits. */
+#define r_mask		r_lep.mask		/* DDS Mask bits. */
 #define r_conditions	r_lep.conditions	/* Status conditions. */
-#define	r_guard		r_lep.guard		/* Reader guards. */
-#define	r_access_prot	r_lep.access_prot	/* Use access control. */
-#define	r_disc_prot	r_lep.disc_prot		/* Use secure discovery. */
-#define	r_submsg_prot	r_lep.submsg_prot	/* Encrypt submessages. */
-#define	r_payload_prot	r_lep.payload_prot	/* Encrypt payload. */
-#define	r_crypto_type	r_lep.crypto_type	/* Encryption type. */
-#define	r_crypto	r_lep.crypto		/* Reader crypto handle. */
+#define r_guard		r_lep.guard		/* Reader guards. */
+#define r_access_prot	r_lep.access_prot	/* Use access control. */
+#define r_disc_prot	r_lep.disc_prot		/* Use secure discovery. */
+#define r_submsg_prot	r_lep.submsg_prot	/* Encrypt submessages. */
+#define r_payload_prot	r_lep.payload_prot	/* Encrypt payload. */
+#define r_crypto_type	r_lep.crypto_type	/* Encryption type. */
+#define r_crypto	r_lep.crypto		/* Reader crypto handle. */
 #ifdef RW_LOCKS
 #define r_lock		r_lep.lock		/* Use endpoint lock. */
 #elif defined (RW_TOPIC_LOCK)
-#define	r_lock		r_topic->lock		/* Use topic lock. */
+#define r_lock		r_topic->lock		/* Use topic lock. */
 #else
 #define r_lock		r_subscriber->lock	/* Use subscriber lock. */
 #endif
@@ -650,36 +658,36 @@ struct DDS_DataWriter_st {
 
 	/* Entity and Endpoint-specific data. */
 	LocalEndpoint_t	w_lep;			/* Endpoint data. */
-#define	w_ep		w_lep.ep		/* Common Endpoint data. */
-#define	w_flags		w_lep.ep.entity.flags	/* Flags. */
+#define w_ep		w_lep.ep		/* Common Endpoint data. */
+#define w_flags		w_lep.ep.entity.flags	/* Flags. */
 #define w_type		w_lep.ep.entity.type	/* Type. */
 #define w_handle	w_lep.ep.entity.handle	/* Handle. */
-#define	w_fh		w_lep.ep.fh		/* Flags/Type/Handle. */
-#define	w_publisher	w_lep.ep.u.publisher	/* Publisher. */
-#define	w_entity_id	w_lep.ep.entity_id	/* Entity Id. */
+#define w_fh		w_lep.ep.fh		/* Flags/Type/Handle. */
+#define w_publisher	w_lep.ep.u.publisher	/* Publisher. */
+#define w_entity_id	w_lep.ep.entity_id	/* Entity Id. */
 #define w_topic		w_lep.ep.topic		/* Topic pointer. */
 #define w_qos		w_lep.ep.qos		/* Reader QoS parameters. */
 #define w_ucast		w_lep.ep.ucast		/* Unicast Locator list. */
 #define w_mcast		w_lep.ep.mcast		/* Multicast Locator list. */
 #define w_next		w_lep.ep.next		/* Topic endpoints chain. */
-#define	w_rtps		w_lep.ep.rtps		/* RTPS.WRITER * */
+#define w_rtps		w_lep.ep.rtps		/* RTPS.WRITER * */
 
 	/* DCPS-specific data. */
-#define	w_cache		w_lep.cache		/* History Cache. */
-#define	w_status	w_lep.status		/* DDS Status bits. */
-#define	w_mask		w_lep.mask		/* DDS Mask bits. */
-#define	w_condition	w_lep.conditions	/* Status condition. */
-#define	w_guard		w_lep.guard		/* Writer guards. */
-#define	w_access_prot	w_lep.access_prot	/* Use access control. */
-#define	w_disc_prot	w_lep.disc_prot		/* Use secure discovery. */
-#define	w_submsg_prot	w_lep.submsg_prot	/* Encrypt submessages. */
-#define	w_payload_prot	w_lep.payload_prot	/* Encrypt payload. */
-#define	w_crypto_type	w_lep.crypto_type	/* Encryption type. */
-#define	w_crypto	w_lep.crypto		/* Writer crypto handle. */
+#define w_cache		w_lep.cache		/* History Cache. */
+#define w_status	w_lep.status		/* DDS Status bits. */
+#define w_mask		w_lep.mask		/* DDS Mask bits. */
+#define w_condition	w_lep.conditions	/* Status condition. */
+#define w_guard		w_lep.guard		/* Writer guards. */
+#define w_access_prot	w_lep.access_prot	/* Use access control. */
+#define w_disc_prot	w_lep.disc_prot		/* Use secure discovery. */
+#define w_submsg_prot	w_lep.submsg_prot	/* Encrypt submessages. */
+#define w_payload_prot	w_lep.payload_prot	/* Encrypt payload. */
+#define w_crypto_type	w_lep.crypto_type	/* Encryption type. */
+#define w_crypto	w_lep.crypto		/* Writer crypto handle. */
 #ifdef RW_LOCKS
 #define w_lock		w_lep.lock		/* Use endpoint lock. */
 #elif defined (RW_TOPIC_LOCK)
-#define	w_lock		w_topic->lock		/* Use topic lock. */
+#define w_lock		w_topic->lock		/* Use topic lock. */
 #else
 #define w_lock		w_publisher->lock	/* Use publisher lock. */
 #endif
@@ -769,8 +777,11 @@ struct DDS_DomainParticipant_st {
 	Timer_t		  auto_liveliness;	/* Default liveliness timer. */
 #endif
 	Duration_t	  resend_per;		/* Resend period. */
-	LocatorKind_t	  kinds;		/* Supported locator types. */
 	LocatorList_t	  dst_locs;		/* Destination locators. */
+#ifdef RTPS_SPDP_BCAST
+	LocatorList_t	  udpv4_bc_spdp;	/* SPDP IPv4 broadcast. */
+	Timer_t		  bc_timer;		/* Periodic broadcast timer. */
+#endif
 	PrefixList_t	  prefixes;		/* Participant prefix info. */
 	Participant_t	  **relays;		/* Local relay nodes. */
 	unsigned	  nr_relays;		/* Current # of relay nodes. */

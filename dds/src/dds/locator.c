@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -150,6 +150,60 @@ void locator_release (Locator_t *lp)
 	lock_release (loc_lock);
 }
 
+static LocatorNode_t *locator_new_node (LocatorKind_t       kind,
+					const unsigned char *addr,
+			    		uint32_t            port)
+{
+	LocSearchData	data;
+	LocatorNode_t	**npp, *np;
+	int		is_new;
+
+	data.kind = kind;
+	data.addr = addr;
+	data.port = port;
+
+	npp = sl_insert (&loc_list, &data, &is_new, loc_cmp);
+	if (!npp) {
+		warn_printf ("locator_new_node: not enough memory for node!");
+		return (NULL);
+	}	
+	if (is_new) {
+		np = mds_pool_alloc (&mem_blocks [MB_LOCATOR]);
+		if (!np) {
+			warn_printf ("locator_new_node: not enough memory for locator data!");
+#ifdef LIST_DELETE_NODE
+			sl_delete_node (&loc_list, npp);
+#else
+			sl_delete (&loc_list, &data, loc_cmp);
+#endif
+			return (NULL);
+		}
+		np->users = 1;
+		np->locator.kind = kind;
+		np->locator.port = port;
+		memcpy (np->locator.address, addr, sizeof (np->locator.address));
+		memset (&np->locator.scope_id, 0, 8);
+		*npp = np;
+	}
+	else {
+		np = *npp;
+		np->users++;
+	}
+	return (np);
+}
+
+LocatorNode_t *locator_new (LocatorKind_t       kind,
+			    const unsigned char *addr,
+			    uint32_t            port)
+{
+	LocatorNode_t	*np;
+
+	lock_take (loc_lock);
+	np = locator_new_node (kind, addr, port);	
+	lock_release (loc_lock);
+	return (np);
+}
+
 /* locator_list_add -- Add a locator to a locator list specifying its
 		       components. */
 
@@ -162,48 +216,22 @@ LocatorNode_t *locator_list_add (LocatorList_t       *list,
 				 unsigned            flags,
 				 unsigned            sproto)
 {
-	LocSearchData	data;
-	LocatorNode_t	**npp, *np;
+	LocatorNode_t	*np;
 	LocatorRef_t	*rp, *p;
-	int		is_new;
-
-	data.kind = kind;
-	data.addr = addr;
-	data.port = port;
 
 	lock_take (loc_lock);
-	npp = sl_insert (&loc_list, &data, &is_new, loc_cmp);
-	if (!npp) {
-		warn_printf ("locator_list_add: not enough memory for list node!");
+	np = locator_new_node (kind, addr, port);
+	if (!np) {
 		lock_release (loc_lock);
 		return (NULL);
 	}
-	if (is_new) {
-		np = mds_pool_alloc (&mem_blocks [MB_LOCATOR]);
-		if (!np) {
-			warn_printf ("locator_list_add: not enough memory for locator node!");
-#ifdef LIST_DELETE_NODE
-			sl_delete_node (&loc_list, npp);
-#else
-			sl_delete (&loc_list, &data, loc_cmp);
-#endif
-			lock_release (loc_lock);
-			return (NULL);
-		}
-		np->users = 0;
-		np->locator.kind = kind;
-		np->locator.port = port;
-		memcpy (np->locator.address, addr, sizeof (np->locator.address));
+	if (np->users == 1) {
 		np->locator.scope_id = scope_id;
 		np->locator.scope = scope;
 		np->locator.flags = flags;
 		np->locator.sproto = sproto;
-		np->locator.intf = 0;
-		np->locator.handle = 0;
-		*npp = np;
 	}
 	else {
-		np = *npp;
 		if (np->locator.scope_id != scope_id ||
 		    (np->locator.scope && scope && np->locator.scope != scope) ||
 		    /*(np->locator.flags && flags && 
@@ -229,6 +257,7 @@ LocatorNode_t *locator_list_add (LocatorList_t       *list,
 		/* Check if already in list. */
 		for (rp = *list; rp; rp = rp->next)
 			if (rp->data == np) {	/* Already there! */
+				np->users--;
 				lock_release (loc_lock);
 				return (0);
 			}
@@ -239,20 +268,12 @@ LocatorNode_t *locator_list_add (LocatorList_t       *list,
 	rp = mds_pool_alloc (&mem_blocks [MB_LOCREF]);
 	if (!rp) {
 		warn_printf ("locator_list_add: not enough memory for locator reference!\r\n");
-		if (is_new) {
-			mds_pool_free (&mem_blocks [MB_LOCATOR], np);
-#ifdef LIST_DELETE_NODE
-			sl_delete_node (&loc_list, npp);
-#else
-			sl_delete (&loc_list, &data, loc_cmp);
-#endif
-		}
 		lock_release (loc_lock);
+		locator_unref (np);
 		return (NULL);
 	}
 	rp->next = NULL;
 	rp->data = np;
-	np->users++;
  	lock_release (loc_lock);
 	if (*list) {
 		for (p = *list; p->next; p = p->next)
@@ -401,6 +422,15 @@ static void locator_free_node (LocatorNode_t *np)
 	mds_pool_free (&mem_blocks [MB_LOCATOR], np);
 }
 
+/* locator_ref -- Add an extra reference to a locator node. */
+
+void locator_ref (LocatorNode_t *np)
+{
+	lock_take (loc_lock);
+	np->users++;
+	lock_release (loc_lock);
+}
+
 /* locator_unref -- Unreference and delete if necessary a locator node. */
 
 void locator_unref (LocatorNode_t *np)
@@ -418,7 +448,7 @@ void locator_list_delete_list (LocatorList_t *list)
 	LocatorNode_t	*np;
 	LocatorRef_t	*rp;
 
-	if (!list)
+	if (!list || !*list)
 		return;
 
 	lock_take (loc_lock);

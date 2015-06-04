@@ -185,7 +185,7 @@ endif
 	$($(COMPONENT_FROM_TARGET)_$(E_FROM_TARGET)_LIBRARIAN) rv $@ $(filter %.o, $^) $(LOANED)
 	$(CAT) $(patsubst %.a,%.lst,$(filter %.a, $(THIS_A_LDDEPS))) /dev/null >> $(patsubst %.a,%.lst,$@)
 	$(CAT) $(patsubst %.a,%.lst,$(filter %.a, $(THIS_A_LDDEPS))) /dev/null | $(filter $(LIBRARY_PATH_FLAVOUR)=%,$($(COMPONENT_FROM_TARGET)_$(E_FROM_TARGET)_LIBRARIAN)) $(xargs) -r $(filter-out $(LIBRARY_PATH_FLAVOUR)=%,$($(COMPONENT_FROM_TARGET)_$(E_FROM_TARGET)_LIBRARIAN)) rv $@ 
-    # PRAETP: You have to be careful if you are archiving files with identical names. Based on how xargs works this will work or not.
+    # You have to be careful if you are archiving files with identical names. Based on how xargs works this will work or not.
     # It is best to avoid this alltogether (if possible). If you are archive files with identical names in 'one' ar statement, this will be accepted.
     # If you split this over multiple 'ar -r' statements, this won't work.
     # I found this out the hard way when building a big .a for iOS.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -260,6 +260,14 @@ Endpoint_t *endpoint_lookup (const Participant_t *pp, const EntityId_t *id);
 
 /* Lookup an endpoint of a participant. */
 
+Endpoint_t *endpoint_first (const Participant_t *pp);
+
+/* Lookup the first endpoint of a participant. */
+
+Endpoint_t *endpoint_next (const Participant_t *pp, const EntityId_t *id);
+
+/* Lookup the successor endpoint of a participant. */
+
 Endpoint_t *endpoint_create (Participant_t    *pp,
 			     void             *parent,
 			     const EntityId_t *id,
@@ -278,6 +286,12 @@ Endpoint_t *endpoint_from_guid (const Domain_t *dp, GUID_t *guid);
 
 /* Lookup an endpoint via its GUID. */
 
+Endpoint_t *endpoint_from_name (const Participant_t *p,
+				const char *topic,
+				const char *type,
+				int reader);
+
+/* Lookup an endpoint via its name. */
 
 Reader_t *reader_ptr (DDS_DataReader r, int lock, DDS_ReturnCode_t *ret);
 
@@ -401,7 +415,7 @@ void topic_dump (Domain_t *dp, const char *name, unsigned flags);
 
 /* Dump the topic contents. */
 
-#ifdef DDS_SECURITY
+#if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
 
 void token_dump (unsigned indent, DDS_Token *tp, unsigned nusers, int pem);
 

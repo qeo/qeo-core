@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -66,5 +66,9 @@ void spdp_remote_participant_enable (Domain_t      *dp,
 				     unsigned      secret);
 
 /* Finally, a remote participant is successfully authenticated. */
+
+void spdp_remote_participant_disable (Participant_t *pp);
+
+/* Disable a remote participant in order to rehandshake. */
 
 #endif /* !__disc_spdp_h_ */

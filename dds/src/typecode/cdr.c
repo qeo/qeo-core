@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -819,7 +819,7 @@ static size_t cdr_unmarshall_container (char                            *dst,
 							/* Key data requested. */
 							memcpy (&dcp, &dst [offset2], sizeof (char *));
 							if (!dcp) {
-								dcp = malloc (cstrlen);
+								dcp = Alloc (cstrlen);
 								if (!dcp)
 									return (0);
 							}

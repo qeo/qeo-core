@@ -1,0 +1,23 @@
+//The artifactory.gradle file will be used as a helper function in order to use the functionality of artifactory.
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidInstallerTools.gradle'
+
+//creation of the apk artifacts
+def qeoAndroidConfigDebug = file('build/outputs/apk/qeo-android-debugconfig-debug.apk')
+
+android.noDeviceTests = true //no device tests for this project
+
+dependencies {
+    compile project.latestSupportV4
+}
+
+installDebugAll {
+    apk = qeoAndroidConfigDebug
+}
+
+
+// publish the apk to artifactory
+artifacts {
+    archives file: qeoAndroidConfigDebug, name: project.name, classifier: 'debug', builtBy:assembleDebug
+}
+

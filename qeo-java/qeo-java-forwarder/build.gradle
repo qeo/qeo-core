@@ -1,0 +1,404 @@
+import java.util.concurrent.Semaphore;
+
+/*
+ Hack alert !!!
+ We are redefining the buildDir from gradle to output.
+ As "./build/" is already used for the middleware build system.
+ So we decided to use the output directory of that system.
+ Keep this line on top of the others!
+ */
+project.buildDir = "output/gradle"
+// ext.findbugsHtml = true //enable this to genereate findbugs html instead of xml for local development. don't push this!
+
+//apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidNdk.gradle'
+
+configurations {
+    nativeAndroidDebug
+    nativeAndroidRelease
+    nativeHost
+}
+
+//Set JDK source/target to version 6
+sourceCompatibility=1.6
+targetCompatibility=1.6
+
+eclipse {
+    jdt {
+        //set JDK source/target in eclipse to version 6
+        sourceCompatibility = 1.6
+        targetCompatibility = 1.6
+    }
+    classpath {
+        //Set eclipse properties to use JDK 6 JVM for compilation
+        containers.clear()
+        containers.add('org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.6')
+
+        //Set native library for tests
+        file.withXml {
+            provider -> provider.asNode().findAll { it.@path.contains("src/test/java") }.each {
+                it.appendNode('attributes').appendNode('attribute', [name: 'org.eclipse.jdt.launching.CLASSPATH_ATTR_LIBRARY_PATH_ENTRY', value:'qeo-java/output/gradle/binary/i386/Linux/debug'])
+            }
+        }
+    }
+}
+
+task javah {
+    dependsOn classes
+
+    // Generate the headers from the main sourceSet
+    ext.sourceSet = sourceSets.main
+    ext.sourceFiles = sourceSet.java.matching{
+        include 'org/qeo/forwarder/internal/jni/**.java'
+        exclude '**/package-info.java'
+    }
+    // Generate them
+    ext.destDir = new File(buildDir, 'javah')
+
+    inputs.files sourceFiles
+    outputs.dir destDir
+
+    String cmdDir = "";
+    if (System.env.JAVA_HOME) {
+        cmdDir = System.env.JAVA_HOME + "/bin/"
+    }
+
+    doFirst {
+        ext.destDir.mkdir()
+        // Calculate the classpath
+        FileCollection classpath = sourceSet.compileClasspath + project.files(sourceSet.output.classesDir)
+        // Generate the class definitions
+        def classes = []
+        sourceFiles.visit {
+            if (it.relativePath.isFile()) {
+                classes.add(it.path.replaceAll(/\.java$/,'').replaceAll('/','.'))
+            }
+        }
+
+        project.exec {
+            commandLine("${cmdDir}javah", '-jni', '-classpath', classpath.asPath, '-d', destDir, *classes)
+        }
+    }
+}
+
+//task generateLdver {
+//    dependsOn javah
+//    
+//    def ldverFile = file(new File('api/symbols/libqeoJNI.ldver'))
+//    inputs.dir files("${buildDir}/javah")
+//    outputs.file ldverFile
+//
+//    def exportedSymbols = new ByteArrayOutputStream()
+//
+//    doFirst {
+//        project.exec {
+//            executable "$System.env.SHELL"
+//            args '-c', 'cat ' + buildDir + '/javah/*.h | grep JNIEXPORT | sed \'s/(.*//;s/.* //;s/^/\t/;s/$/;/\' | sort'
+//
+//            standardOutput = exportedSymbols
+//        }
+//    }
+//    doLast {
+//        ldverFile.text  = "qeo_jni_0.1 {\nglobal:\n\tJNI_OnLoad;\n"
+//        ldverFile.text += exportedSymbols.toString();
+//        ldverFile.text += "local:\n\t*;\n};\n"
+//    }
+//}
+
+def runMake(Object[] args) {
+    exec {
+        commandLine("make", "-f", "Makefile_component", "JNI=1", *args)
+    }
+}
+
+//define all directories that are used in c compilations here
+//failing to add them here will result in incorrect incremental compilations
+def cInputDirs = files(
+    "src/main/c",
+    "${buildDir}/javah",
+    "../../qeo-c/qeo-forwarder/src",
+    "../../qeo-c/qeo-forwarder/api",
+    "../../qeo-c/qeo-forwarder/Makefile_component",
+/*    "../../qeo-c-util/src",
+    "../../qeo-c-util/api",
+    "../../qeo-c-util/Makefile_component",
+    "../../dds/src",
+    "../../dds/api",
+    "../../dds/Makefile_component",
+    "../../openssl/openssl-1.0.1c.tar.gz",
+    "../../openssl/Makefile_component",
+    "../../openssl/patches",
+    "../../qeo-openssl-engine-pkcs12/src",
+    "../../qeo-openssl-engine-pkcs12/api",
+    "../../qeo-openssl-engine-pkcs12/Makefile_component",
+    "../../qeo-management-client/src",
+    "../../qeo-management-client/api",
+    "../../qeo-management-client/Makefile_component",*/
+)
+
+// This task generates the binaries for Host (both debug and release).
+task generateBinariesHost {
+    dependsOn javah //, generateLdver
+    def binBuildDir = file("$buildDir/binary/")
+    def args = ["DESTDIR=$binBuildDir"]
+    def osArch = System.getProperty("os.arch")
+    def osName = System.getProperty("os.name")
+    osName = osName.replaceAll(" ", "")
+    inputs.dir cInputDirs
+    outputs.dir "${binBuildDir}/${osArch}/${osName}"
+/*    outputs.dir "output/qeoJNI/HOSTLINUX"
+    outputs.dir "output/dds/HOSTLINUX"
+    outputs.dir "output/jansson/HOSTLINUX"
+    outputs.dir "output/openssl/HOSTLINUX"
+    outputs.dir "output/qeo-c/HOSTLINUX"
+    outputs.dir "output/qeo-c-util/HOSTLINUX"
+    outputs.dir "output/qeo-openssl-engine-pkcs12/HOSTLINUX"
+    outputs.dir "output/qeo-management-client/HOSTLINUX"*/
+    doLast() {
+        Semaphore sem = new Semaphore(0);
+        Exception ex = null;
+        Runnable rDebug = new Runnable() {
+            public void run() {
+                // debug
+                try {
+                    runMake("libdir=${osArch}/${osName}/debug", "dds_LOG_FILE=1", "DEBUG=1", *args, "recursive_install")
+                } catch (Exception e) {
+                    ex = e;
+                }
+                sem.release();
+            }
+        }
+        Runnable rRelease = new Runnable() {
+            public void run() {
+                // release
+                try {
+                    runMake("libdir=${osArch}/${osName}", *args, "qeo-java-forwarder.tgz")
+                    copy {
+                        from tarTree(project(":qeo-java").file('output/qeo-java-forwarder_HOSTLINUX.tgz'))
+                        into binBuildDir
+                    }
+                } catch (Exception e) {
+                    ex = e;
+                }
+                sem.release();
+            }
+        }
+        if (System.properties['qeo.parallelBuild.enabled'] == null || System.properties['qeo.parallelBuild.enabled'] == "true") {
+            //parallel build enabled (default)
+            logger.info("Building in parallel (use -Dqeo.parallelBuild.enabled=false to disable)")
+            new Thread(rDebug).start();
+            Thread.sleep(2000); //make can give a conflict during startup, so delay the 2nd process a bit
+            new Thread(rRelease).start();
+            sem.acquire(2);
+            if (ex != null) {    
+                throw ex
+            }
+        }
+        else {
+            //parallel build disabled
+            rDebug.run();
+            if (ex != null) {    
+                throw ex
+            }
+            rRelease.run();
+            if (ex != null) {    
+                throw ex
+            }
+        }
+    }
+}
+
+
+// This task generates the binaries for Android (release only).
+/*task generateBinariesAndroidRelease {
+    dependsOn javah, generateLdver
+    def binBuildDir = file("$buildDir/binary/")
+    // NOTE: We use the .tgz target here in order for the build system to strip the binaries.
+    //       After building the .tgz is extracted into the correct place.
+    def args = ["DESTDIR=$binBuildDir", "ANDROID_NDK=${androidNdkLocation}", "ANDROID_GCCVER=${androidGccVersion}", "ANDROID_API=${androidNdkApi}", "qeoJNI.tgz"]
+    def osArch = System.getProperty("os.arch")
+    def osName = System.getProperty("os.name")
+    osName = osName.replaceAll(" ", "")
+    inputs.dir cInputDirs
+    outputs.dir "${binBuildDir}/android"
+    doLast() {
+        Semaphore sem = new Semaphore(0);
+        Runnable rArm = new Runnable() {
+            public void run() {
+                //Android ARMv6
+                runMake("libdir=android/armeabi", "E=GOOG_ARMANDROID", *args)
+                copy {
+                    from tarTree('output/qeoJNI_GOOG_ARMANDROID.tgz')
+                    into binBuildDir
+                }
+                sem.release();
+            }
+        }
+        Runnable rX86 = new Runnable() {
+            public void run() {
+                //Android x86
+                runMake("libdir=android/x86", "E=GOOG_X86ANDROID", *args)
+                copy {
+                    from tarTree('output/qeoJNI_GOOG_X86ANDROID.tgz')
+                    into binBuildDir
+                }
+                sem.release();
+            }
+        }
+        if (System.properties['qeo.parallelBuild.enabled'] == null || System.properties['qeo.parallelBuild.enabled'] == "true") {
+            //parallel build enabled (default)
+            logger.info("Building in parallel (use -Dqeo.parallelBuild.enabled=false to disable)")
+            new Thread(rArm).start();
+            Thread.sleep(2000); //make can give a conflict during startup, so delay the 2nd process a bit
+            new Thread(rX86).start();
+            sem.acquire(2);
+        }
+        else {
+            //parallel build disabled
+            rArm.run();
+            rX86.run();
+        }
+    }
+}*/
+
+// This task generates the binaries for Android (debug only).
+task generateBinariesAndroidDebug {
+    dependsOn javah //, generateLdver
+    def binBuildDir = file("$buildDir/binary/")
+    def args = ["DESTDIR=$binBuildDir", "dds_LOG_FILE=1", "DEBUG=1", "ANDROID_NDK=${androidNdkLocation}", "ANDROID_GCCVER=${androidGccVersion}", "ANDROID_API=${androidNdkApi}", "recursive_install"]
+    def osArch = System.getProperty("os.arch")
+    def osName = System.getProperty("os.name")
+    osName = osName.replaceAll(" ", "")
+    inputs.dir cInputDirs
+    outputs.dir "${binBuildDir}/android-debug"
+    doLast() {
+        Semaphore sem = new Semaphore(0);
+        Exception ex = null;
+        Runnable rArm = new Runnable() {
+            public void run() {
+                //Android ARMv6 - debug
+                try {
+                    runMake("libdir=android-debug/armeabi", "E=GOOG_ARMANDROID", *args)
+                } catch (Exception e) {
+                    ex = e;
+                }
+                sem.release();
+            }
+        }
+        Runnable rX86 = new Runnable() {
+            public void run() {
+                //Android x86 - debug
+                try {
+                    runMake("libdir=android-debug/x86", "E=GOOG_X86ANDROID", *args)
+                } catch (Exception e) {
+                    ex = e;
+                }
+                sem.release();
+            }
+        }
+        if (System.properties['qeo.parallelBuild.enabled'] == null || System.properties['qeo.parallelBuild.enabled'] == "true") {
+            //parallel build enabled (default)
+            logger.info("Building in parallel (use -Dqeo.parallelBuild.enabled=false to disable)")
+            new Thread(rArm).start();
+            Thread.sleep(2000); //make can give a conflict during startup, so delay the 2nd process a bit
+            new Thread(rX86).start();
+            sem.acquire(2);
+            if (ex != null) {    
+                throw ex
+            }
+        }
+        else {
+            //parallel build disabled
+            rArm.run();
+            if (ex != null) {    
+                throw ex
+            }
+            rX86.run();
+            if (ex != null) {    
+                throw ex
+            }
+        }
+    }
+}
+
+//// Define the native jar.
+//// This is the jar with the binary shared objects (both debug and release)
+//task jarNativeHost(type: Jar) {
+//    dependsOn generateBinariesHost
+//    def osArch = System.getProperty("os.arch")
+//    def osName = System.getProperty("os.name")
+//    osName = osName.replaceAll(" ", "")
+//    from (fileTree("$buildDir/binary/")) {
+//        include "${osArch}/${osName}/**/*JNI.so*"
+//        into 'native'
+//        rename '(\\.\\d+)*$', ''
+//    }
+//    classifier 'native-host'
+//}
+//project.tasks.assemble.dependsOn(jarNativeHost)
+//
+//// This is the jar with the binary shared objects for MIPS (both debug and release)
+//task jarNativeMips(type: Jar) {
+//    dependsOn generateBinariesMips
+//    def osArch = System.getProperty("os.arch")
+//    def osName = System.getProperty("os.name")
+//    osName = osName.replaceAll(" ", "")
+//    from (fileTree("$buildDir/binary/")) {
+//        include "mips/Linux/**/*JNI.so*"
+//        into 'native'
+//        rename '(\\.\\d+)*$', ''
+//    }
+//    classifier 'native-mips'
+//}
+//
+////this is the jar with native files for Android (release only)
+//task jarNativeAndroidRelease(type: Jar) {
+//    dependsOn generateBinariesAndroidRelease
+//    from (fileTree("$buildDir/binary/android/")) {
+//        include '*/*JNI.so*'
+//        into 'lib'
+//        rename '(\\.\\d+)*$', ''
+//    }
+//    classifier 'native-android'
+//}
+
+//this is the jar with native files for Android (debug only)
+task jarNativeAndroidDebug(type: Jar) {
+    dependsOn generateBinariesAndroidDebug
+    from (fileTree("$buildDir/binary/android-debug/")) {
+        include '*/libqeoforwarder.so*'
+        include '*/libqeojavaforwarder.so*'
+        include '*/libminiupnpc.so*'
+        into 'lib'
+        rename '(\\.\\d+)*$', ''
+    }
+
+    classifier 'native-android-debug'
+}
+
+clean.doFirst {
+    project.delete "output"
+}
+
+dependencies {
+    compile project(':qeo-java')
+//    testCompile 'junit:junit:3.8.2'
+}
+
+// Also publish the jarTests
+artifacts {
+
+    //put native libraries both in archives configuration as it's own
+    //the own configuration is needed for other projects to be able to depend on that specific configuration
+    //the archives configuration is needed for the uploadOverlay task to work
+//    archives             jarNativeHost
+//    nativeHost           jarNativeHost
+//    archives             jarNativeAndroidRelease
+//    nativeAndroidRelease jarNativeAndroidRelease
+    archives             jarNativeAndroidDebug
+    nativeAndroidDebug   jarNativeAndroidDebug
+//    archives jarNativeMips
+}
+

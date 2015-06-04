@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -192,6 +192,15 @@ typedef struct _CMOCK_qeocore_reader_policy_update_CALL_INSTANCE
 
 } CMOCK_qeocore_reader_policy_update_CALL_INSTANCE;
 
+typedef struct _CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE
+{
+  UNITY_LINE_TYPE LineNumber;
+  qeo_retcode_t ReturnVal;
+  qeocore_reader_t* Expected_reader;
+  bool Expected_on;
+
+} CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE;
+
 typedef struct _CMOCK_qeocore_writer_open_CALL_INSTANCE
 {
   UNITY_LINE_TYPE LineNumber;
@@ -357,6 +366,11 @@ static struct MockapiInstance
   CMOCK_qeocore_reader_policy_update_CALLBACK qeocore_reader_policy_update_CallbackFunctionPointer;
   int qeocore_reader_policy_update_CallbackCalls;
   CMOCK_MEM_INDEX_TYPE qeocore_reader_policy_update_CallInstance;
+  int qeocore_reader_bgns_notify_IgnoreBool;
+  qeo_retcode_t qeocore_reader_bgns_notify_FinalReturn;
+  CMOCK_qeocore_reader_bgns_notify_CALLBACK qeocore_reader_bgns_notify_CallbackFunctionPointer;
+  int qeocore_reader_bgns_notify_CallbackCalls;
+  CMOCK_MEM_INDEX_TYPE qeocore_reader_bgns_notify_CallInstance;
   int qeocore_writer_open_IgnoreBool;
   qeocore_writer_t* qeocore_writer_open_FinalReturn;
   CMOCK_qeocore_writer_open_CALLBACK qeocore_writer_open_CallbackFunctionPointer;
@@ -498,6 +512,11 @@ void Mockapi_Verify(void)
   UNITY_TEST_ASSERT(CMOCK_GUTS_NONE == Mock.qeocore_reader_policy_update_CallInstance, cmock_line, "Function 'qeocore_reader_policy_update' called less times than expected.");
   if (Mock.qeocore_reader_policy_update_CallbackFunctionPointer != NULL)
     Mock.qeocore_reader_policy_update_CallInstance = CMOCK_GUTS_NONE;
+  if (Mock.qeocore_reader_bgns_notify_IgnoreBool)
+    Mock.qeocore_reader_bgns_notify_CallInstance = CMOCK_GUTS_NONE;
+  UNITY_TEST_ASSERT(CMOCK_GUTS_NONE == Mock.qeocore_reader_bgns_notify_CallInstance, cmock_line, "Function 'qeocore_reader_bgns_notify' called less times than expected.");
+  if (Mock.qeocore_reader_bgns_notify_CallbackFunctionPointer != NULL)
+    Mock.qeocore_reader_bgns_notify_CallInstance = CMOCK_GUTS_NONE;
   if (Mock.qeocore_writer_open_IgnoreBool)
     Mock.qeocore_writer_open_CallInstance = CMOCK_GUTS_NONE;
   UNITY_TEST_ASSERT(CMOCK_GUTS_NONE == Mock.qeocore_writer_open_CallInstance, cmock_line, "Function 'qeocore_writer_open' called less times than expected.");
@@ -587,6 +606,8 @@ void Mockapi_Destroy(void)
   Mock.qeocore_reader_take_CallbackCalls = 0;
   Mock.qeocore_reader_policy_update_CallbackFunctionPointer = NULL;
   Mock.qeocore_reader_policy_update_CallbackCalls = 0;
+  Mock.qeocore_reader_bgns_notify_CallbackFunctionPointer = NULL;
+  Mock.qeocore_reader_bgns_notify_CallbackCalls = 0;
   Mock.qeocore_writer_open_CallbackFunctionPointer = NULL;
   Mock.qeocore_writer_open_CallbackCalls = 0;
   Mock.qeocore_writer_enable_CallbackFunctionPointer = NULL;
@@ -1233,10 +1254,7 @@ qeocore_reader_t* qeocore_reader_open(const qeo_factory_t* factory, qeocore_type
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'qeocore_reader_open' called with unexpected value for argument 'factory'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_type), (void*)(type), sizeof(qeocore_type_t), cmock_line, "Function 'qeocore_reader_open' called with unexpected value for argument 'type'.");
-  if (cmock_call_instance->Expected_topic_name == NULL)
-    { UNITY_TEST_ASSERT_NULL(topic_name, cmock_line, "Expected NULL. Function 'qeocore_reader_open' called with unexpected value for argument 'topic_name'."); }
-  else
-    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_topic_name, topic_name, 1, cmock_line, "Function 'qeocore_reader_open' called with unexpected value for argument 'topic_name'."); }
+  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_topic_name, topic_name, cmock_line, "Function 'qeocore_reader_open' called with unexpected value for argument 'topic_name'.");
   UNITY_TEST_ASSERT_EQUAL_INT(cmock_call_instance->Expected_flags, flags, cmock_line, "Function 'qeocore_reader_open' called with unexpected value for argument 'flags'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_listener), (void*)(listener), sizeof(qeocore_reader_listener_t), cmock_line, "Function 'qeocore_reader_open' called with unexpected value for argument 'listener'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_rc), (void*)(rc), sizeof(qeo_retcode_t), cmock_line, "Function 'qeocore_reader_open' called with unexpected value for argument 'rc'.");
@@ -1656,6 +1674,62 @@ void qeocore_reader_policy_update_StubWithCallback(CMOCK_qeocore_reader_policy_u
   Mock.qeocore_reader_policy_update_CallbackFunctionPointer = Callback;
 }
 
+qeo_retcode_t qeocore_reader_bgns_notify(qeocore_reader_t* reader, bool on)
+{
+  UNITY_LINE_TYPE cmock_line = TEST_LINE_NUM;
+  CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE*)CMock_Guts_GetAddressFor(Mock.qeocore_reader_bgns_notify_CallInstance);
+  Mock.qeocore_reader_bgns_notify_CallInstance = CMock_Guts_MemNext(Mock.qeocore_reader_bgns_notify_CallInstance);
+  if (Mock.qeocore_reader_bgns_notify_IgnoreBool)
+  {
+    if (cmock_call_instance == NULL)
+      return Mock.qeocore_reader_bgns_notify_FinalReturn;
+    memcpy(&Mock.qeocore_reader_bgns_notify_FinalReturn, &cmock_call_instance->ReturnVal, sizeof(qeo_retcode_t));
+    return cmock_call_instance->ReturnVal;
+  }
+  if (Mock.qeocore_reader_bgns_notify_CallbackFunctionPointer != NULL)
+  {
+    return Mock.qeocore_reader_bgns_notify_CallbackFunctionPointer(reader, on, Mock.qeocore_reader_bgns_notify_CallbackCalls++);
+  }
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeocore_reader_bgns_notify' called more times than expected.");
+  cmock_line = cmock_call_instance->LineNumber;
+  UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_reader), (void*)(reader), sizeof(qeocore_reader_t), cmock_line, "Function 'qeocore_reader_bgns_notify' called with unexpected value for argument 'reader'.");
+  UNITY_TEST_ASSERT_EQUAL_INT(cmock_call_instance->Expected_on, on, cmock_line, "Function 'qeocore_reader_bgns_notify' called with unexpected value for argument 'on'.");
+  return cmock_call_instance->ReturnVal;
+}
+
+void CMockExpectParameters_qeocore_reader_bgns_notify(CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE* cmock_call_instance, qeocore_reader_t* reader, bool on)
+{
+  cmock_call_instance->Expected_reader = reader;
+  cmock_call_instance->Expected_on = on;
+}
+
+void qeocore_reader_bgns_notify_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo_retcode_t cmock_to_return)
+{
+  CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE));
+  CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
+  Mock.qeocore_reader_bgns_notify_CallInstance = CMock_Guts_MemChain(Mock.qeocore_reader_bgns_notify_CallInstance, cmock_guts_index);
+  cmock_call_instance->LineNumber = cmock_line;
+  cmock_call_instance->ReturnVal = cmock_to_return;
+  Mock.qeocore_reader_bgns_notify_IgnoreBool = (int)1;
+}
+
+void qeocore_reader_bgns_notify_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_reader_t* reader, bool on, qeo_retcode_t cmock_to_return)
+{
+  CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE));
+  CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeocore_reader_bgns_notify_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
+  Mock.qeocore_reader_bgns_notify_CallInstance = CMock_Guts_MemChain(Mock.qeocore_reader_bgns_notify_CallInstance, cmock_guts_index);
+  cmock_call_instance->LineNumber = cmock_line;
+  CMockExpectParameters_qeocore_reader_bgns_notify(cmock_call_instance, reader, on);
+  memcpy(&cmock_call_instance->ReturnVal, &cmock_to_return, sizeof(qeo_retcode_t));
+}
+
+void qeocore_reader_bgns_notify_StubWithCallback(CMOCK_qeocore_reader_bgns_notify_CALLBACK Callback)
+{
+  Mock.qeocore_reader_bgns_notify_CallbackFunctionPointer = Callback;
+}
+
 qeocore_writer_t* qeocore_writer_open(const qeo_factory_t* factory, qeocore_type_t* type, const char* topic_name, int flags, const qeocore_writer_listener_t* listener, qeo_retcode_t* rc)
 {
   UNITY_LINE_TYPE cmock_line = TEST_LINE_NUM;
@@ -1676,10 +1750,7 @@ qeocore_writer_t* qeocore_writer_open(const qeo_factory_t* factory, qeocore_type
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'qeocore_writer_open' called with unexpected value for argument 'factory'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_type), (void*)(type), sizeof(qeocore_type_t), cmock_line, "Function 'qeocore_writer_open' called with unexpected value for argument 'type'.");
-  if (cmock_call_instance->Expected_topic_name == NULL)
-    { UNITY_TEST_ASSERT_NULL(topic_name, cmock_line, "Expected NULL. Function 'qeocore_writer_open' called with unexpected value for argument 'topic_name'."); }
-  else
-    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_topic_name, topic_name, 1, cmock_line, "Function 'qeocore_writer_open' called with unexpected value for argument 'topic_name'."); }
+  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_topic_name, topic_name, cmock_line, "Function 'qeocore_writer_open' called with unexpected value for argument 'topic_name'.");
   UNITY_TEST_ASSERT_EQUAL_INT(cmock_call_instance->Expected_flags, flags, cmock_line, "Function 'qeocore_writer_open' called with unexpected value for argument 'flags'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_listener), (void*)(listener), sizeof(qeocore_writer_listener_t), cmock_line, "Function 'qeocore_writer_open' called with unexpected value for argument 'listener'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_rc), (void*)(rc), sizeof(qeo_retcode_t), cmock_line, "Function 'qeocore_writer_open' called with unexpected value for argument 'rc'.");

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -139,7 +139,10 @@ void dump_openssl_error_stack(const char* msg)
   }
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'dump_openssl_error_stack' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_msg, msg, cmock_line, "Function 'dump_openssl_error_stack' called with unexpected value for argument 'msg'.");
+  if (cmock_call_instance->Expected_msg == NULL)
+    { UNITY_TEST_ASSERT_NULL(msg, cmock_line, "Expected NULL. Function 'dump_openssl_error_stack' called with unexpected value for argument 'msg'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_msg, msg, 1, cmock_line, "Function 'dump_openssl_error_stack' called with unexpected value for argument 'msg'."); }
 }
 
 void CMockExpectParameters_dump_openssl_error_stack(CMOCK_dump_openssl_error_stack_CALL_INSTANCE* cmock_call_instance, const char* msg)

@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <include file="qeo_types.xml"/>
+  <module name="com::technicolor::recommendations">
+	<struct name="RecommendationInfo" behavior="state">
+		<member name="id" type="string" key="true">
+			<doc>The unique ID for this recommendation as provided by the recommendation server.</doc>
+		</member>
+		<member name="type" type="int32">
+			<doc>The type of this recommendation:
+				- 0 for an application</doc>
+		</member>
+		<member name="name" type="string">
+			<doc>The name of this recommendation.</doc>
+		</member>
+		<member name="description" type="string">
+			<doc>The description of this recommendation.</doc>
+		</member>
+		<member name="icon" type="byte" sequenceMaxLength="-1">
+		        <doc>The icon for this recommendation.</doc>
+		</member>
+		<member name="url" type="string">
+			<doc>The URL from which this recommendation can be acquired.</doc>
+		</member>
+	</struct>
+	<struct name="Recommendation" behavior="state">
+		<member name="recommendationInfoId" type="string" key="true">
+			<doc>The ID of the RecommendationInfo that contains the description of this recommendation.</doc>
+		</member>
+                <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId" key="true">
+			<doc>The deviceID of the device to which this recommendation is targeted.</doc>
+		</member>
+		<member name="score" type="int32">
+			<doc>A score for this recommendation. The higher the score, the better the recommendation.</doc>
+		</member>
+	</struct>
+  </module>
+</types>

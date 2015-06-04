@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2014 - Qeo LLC
+# Copyright (c) 2015 - Qeo LLC
 #
 # The source code form of this Qeo Open Source Project component is subject
 # to the terms of the Clear BSD license.
@@ -19,7 +19,7 @@ echo '/* Auto generated file - '$(date)' - tools/build_ldver.sh */
 dds_0.1 {
 global:'
 
-grep DDS_EXPORT api/headers/dds/* api/headers/msecplug/* |cut -d' ' -f2- | sed "s/.*[ \*]\([dD][dD][sS]_[^ ]*\) *(.*$/\t\1;/g" | grep -v DDS_EXPORT | sort 
+grep DDS_EXPORT api/headers/dds/* api/headers/msecplug/* api/headers/nsecplug/* |cut -d' ' -f2- | sed "s/.*[ \*]\([dD][dD][sS]_[^ ]*\) *(.*$/\t\1;/g" | grep -v DDS_EXPORT | sort | uniq
 
 echo '	JNI_OnLoad;'
 echo '	init_engine_fs;'

@@ -1,0 +1,19 @@
+ifneq ($($(sample-qgauge-c-writer_INCLUDED)),1)
+
+override COMPONENT := sample-qgauge-c-writer
+
+sample-qgauge-c-writer_PARTS_INSTALL := qgauge-c-writer@$$(bindir/)qgauge-c-writer:755
+sample-qgauge-c-writer_DEPS          := qeo-c
+
+include $(projectdir/)build/Makefile_component_top
+
+sample-qgauge-c-writer.PROGRAMS = qgauge-c-writer
+
+sample-qgauge-c-writer.qgauge-c-writer_LDADD         := $(qeo-c_LIBS) -lrt
+sample-qgauge-c-writer.qgauge-c-writer_LOCALDEFINES  := $(qeo-c_CFLAGS) -Wall -Werror
+sample-qgauge-c-writer.qgauge-c-writer_LOCALINCLUDES := $(qeo-c_INCLUDES)
+sample-qgauge-c-writer.qgauge-c-writer_SRCS          := $(addprefix src/, main.c qeo_types.c QGauge_NetStatMessage.c)
+
+include $(projectdir/)build/Makefile_component_bot
+
+endif

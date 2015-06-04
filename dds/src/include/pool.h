@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -47,6 +47,9 @@ typedef struct pool_alloc_fcts {
 
 extern PoolAllocFcts mm_fcts;
 
+#define	Alloc(s)	(mm_fcts.alloc_)(s)
+#define	Realloc(p,s)	(mm_fcts.realloc_)(p,s)
+#define	Free(p)		(mm_fcts.free_)(p)
 
 void pool_pre_init (void);
 
@@ -62,9 +65,9 @@ void pool_post_final (void);
 
 #ifdef STD_ALLOC
 
-#define	xmalloc	 mm_fcts.alloc_
-#define	xrealloc mm_fcts.realloc_
-#define	xfree	 mm_fcts.free_
+#define	xmalloc	 Alloc
+#define	xrealloc Realloc
+#define	xfree	 Free
 
 #else /* !STD_ALLOC */
 

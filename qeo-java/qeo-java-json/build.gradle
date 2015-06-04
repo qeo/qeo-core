@@ -1,0 +1,99 @@
+apply plugin: 'java'
+apply plugin: 'eclipse'
+
+// ext.findbugsHtml = true //enable this to genereate findbugs html instead of xml for local development. don't push this!
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/findbugs.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+
+
+//Set JDK source/target to version 6
+sourceCompatibility=1.6
+targetCompatibility=1.6
+
+eclipse {
+    jdt {
+        //set JDK source/target in eclipse to version 6
+        sourceCompatibility = 1.6
+        targetCompatibility = 1.6
+    }
+    classpath {
+        //Set eclipse properties to use JDK 6 JVM for compilation
+        containers.clear()
+        containers.add('org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.6')
+
+        //Set native library for tests
+        file.withXml {
+            provider -> provider.asNode().findAll { it.@path.contains("src/test/java") }.each {
+                it.appendNode('attributes').appendNode('attribute', [name: 'org.eclipse.jdt.launching.CLASSPATH_ATTR_LIBRARY_PATH_ENTRY', value:'qeo-java/output/gradle/binary-host/debug/i386/Linux'])
+            }
+        }
+    }
+}
+
+//Task to generate test sources.
+//Some files from qeo-java are needed, so merge them
+task generateTestSrc(type:Copy) {
+    from('../qeo-java/src/test/java') {
+        exclude '**/*Test.java'
+        exclude '**/end2endtest/**'
+        exclude '**/javaonly/**'
+	}
+    from('src/test/java')
+    into("$buildDir/testCompileSrc")
+
+}
+
+compileTestJava {
+    dependsOn generateTestSrc
+    source = generateTestSrc.destinationDir
+}
+
+test {
+    def osArch = System.getProperty("os.arch")
+    def osName = System.getProperty("os.name")
+    environment << ["TDDS_RTPS_MODE": "disabled"]
+    jvmArgs "-Djava.library.path=../qeo-java/output/gradle/binary-host/debug/${osArch}/${osName}"
+    testLogging {
+        info {
+            // set options for log level INFO
+            events "started", "skipped", "failed", "passed", "standard_out", "standard_error"
+        }
+    }
+}
+
+
+
+// javaSources
+task jarJavaSources(type: Jar) {
+	classifier = 'sources'
+	from sourceSets.main.allSource
+}
+
+task javadocPub(type: Javadoc, dependsOn: classes) {
+    source = sourceSets.main.allJava
+    destinationDir = new File(project.docsDir, 'javadocPub')
+    exclude 'org/qeo/json/internal/**'
+    classpath += files(sourceSets.main.output.classesDir)
+	classpath += configurations.compile
+}
+
+// javaDoc
+task jarJavaDoc(type: Jar, dependsOn:javadocPub) {
+    classifier = 'javadoc'
+    from javadocPub.destinationDir
+}
+
+artifacts {
+    archives jarJavaSources
+    archives jarJavaDoc
+}
+
+dependencies {
+    compile project(':qeo-java-core')
+    testCompile project(':qeo-java')
+    testCompile (group: 'junit', name: 'junit', version: '3.8.2+')
+    compile (group: 'org.json', name: 'json', version: '20090211')
+
+}
+

@@ -30,6 +30,101 @@ afterEvaluate {
     compileReleaseJava.options.compilerArgs = ['-Xlint:all', '-Werror']
 }
 
+if (hasProperty("gradleSample") && getProperty("gradleSample")) {
+    //gradle based sample
+
+    task writeSdkBuildGradle(type: Generate) {
+        outputFile = file("${buildDir}/sdkBuild.gradle")
+        content = "\n" +
+                "//set Qeo SDK version\n" +
+                "def qeoVersion = \"" + version.replaceAll("-SNAPSHOT", "") + "\"\n" +
+                "//set Qeo SDK location\n" +
+                "def qeoSdk = \"../../../\"\n" +
+                "\n\n" +
+                "buildscript {\n" +
+                "    repositories {\n" +
+                "        jcenter()\n" +
+                "    }\n" +
+                "    dependencies {\n" +
+                "        classpath 'com.android.tools.build:gradle:1.2.3'\n" +
+                "    }\n" +
+                "}\n" +
+                "\n" +
+                "repositories {\n" +
+                "    jcenter()\n" +
+                "    flatDir {\n" +
+                "        dirs \"\${qeoSdk}/android/embedded-service\"\n" +
+                "        dirs \"\${qeoSdk}/android/lib\"\n" +
+                "    }\n" +
+                "}\n" +
+                "\n" +
+                "apply plugin: 'com.android.application'\n"+
+                "\n" +
+                "android {\n" +
+                "    compileSdkVersion ${androidSdkVersion}\n" +
+                "    buildToolsVersion '${androidBuildToolsVersion}'\n" +
+                "\n" +
+                "    defaultConfig {\n" +
+                "        targetSdkVersion ${androidSdkVersion}\n" +
+                "    }\n" +
+                "    sourceSets {\n" +
+                "        //SourceDir for generated code from QDM\n" +
+                "        main.java.srcDir 'src/qdm/java'\n" +
+                "    }\n" +
+                "}\n" +
+                "dependencies {\n" +
+                "    //qeo-android\n" +
+                "    compile (group: 'org.qeo', name: 'qeo-android', version: qeoVersion, ext: 'aar')\n" +
+                "    //embedded qeo-android-service core parts\n" +
+                "    //uncomment the debug classifier to use debug libraries.\n" +
+                "    compile (group: 'org.qeo', name: 'qeo-android-service-core', version: qeoVersion, ext: 'aar'/*, classifier: 'debug'*/)\n" +
+                "    //embedded qeo-android-service UI elements. This is optional and can be left out if the UI is overridden.\n" +
+                "    compile (group: 'org.qeo', name: 'qeo-android-service-embedded', version: qeoVersion, ext: 'aar')\n" +
+                "}\n" +
+                "//apply dependencies for qeo-android-service-core\n" +
+                "apply from: \"\${qeoSdk}/android/embedded-service/qeo-android-service-core-dependencies.gradle\"\n" +
+                "//apply dependencies for qeo-android-service-embedded\n" +
+                "apply from: \"\${qeoSdk}/android/embedded-service/qeo-android-service-embedded-dependencies.gradle\"\n" +
+                "\n"
+    }
+
+    task writeSdkManifest(type: ManifestCleanup) {
+        inputFile = file("AndroidManifest.xml")
+        outputFile = file("${buildDir}/sdkAndroidManifest.xml")
+    }
+
+    task finalizeSDKSample(type: Copy) {
+        dependsOn writeSdkBuildGradle
+        dependsOn writeSdkManifest
+        into("src/main/java") {
+            from "src"
+        }
+        into("src/main") {
+            from "."
+            include "assets/**"
+            include "res/**"
+        }
+        into("src/main") {
+            from writeSdkManifest
+            rename "sdkAndroidManifest.xml", "AndroidManifest.xml"
+        }
+        from writeSdkBuildGradle
+        rename "sdkBuild.gradle", "build.gradle"
+        afterEvaluate {
+            dependsOn generateTypes
+        }
+        doFirst {
+            into("src/qdm/java") {
+                from generateTypes.typesDir
+            }
+        }
+        into SDKSampleDir
+    }
+
+}
+else {
+    //eclipse based sample
+
 // We do an after evaluate, as accessing the sourceSets of other projects
 // is not possible otherwise
 afterEvaluate {
@@ -206,14 +301,6 @@ finalizeSDKSample.doLast {
     assert (project.qeoVersion == manifestVersion)
 }
 
-/**
- * Create the final zip containing the sample as delivered to artifactory
- */
-task createSDKSample(type: Zip, description: 'Create the Qeo SDK Sample zip file.', dependsOn: ['finalizeSDKSample']) {
-    group = SDKSampleGroup
-    classifier = 'SDKSample'
-    from SDKSampleDir
-}
 
 /**
  * Clone the git repo for testing the sample to the build directory
@@ -241,6 +328,16 @@ task sdkSample(description: 'Create and test the SDK Sample', dependsOn: ['testS
     group = SDKSampleGroup
     enabled = false
 }
+}
+
+/**
+ * Create the final zip containing the sample as delivered to artifactory
+ */
+task createSDKSample(type: Zip, description: 'Create the Qeo SDK Sample zip file.', dependsOn: ['finalizeSDKSample']) {
+    group = SDKSampleGroup
+    classifier = 'SDKSample'
+    from SDKSampleDir
+}
 
 File apkFilePath = file("${project.buildDir}/outputs/apk/${project.name}-debug.apk")
 
@@ -250,7 +347,7 @@ installDebugAll {
 
 artifacts {
     archives createSDKSample
-    archives file: apkFilePath, name: project.name, classifier: 'debug'
+    archives file: apkFilePath, name: project.name, classifier: 'debug', builtBy: assembleDebug
 }
 
 class DownloadFileTask extends DefaultTask {
@@ -266,3 +363,70 @@ class DownloadFileTask extends DefaultTask {
      destinationFile.bytes = new URL(url).bytes
   }
 }
+
+class Generate extends DefaultTask {
+    @Input
+    String content
+
+    @OutputFile
+    File outputFile
+
+    @TaskAction
+    void generate() {
+        def file = getOutputFile()
+        file.text = content
+    }
+}
+
+class ManifestCleanup extends DefaultTask {
+    @Input
+    File inputFile
+
+    @OutputFile
+    File outputFile
+
+    @TaskAction
+    void doClean() {
+        def root = new XmlParser().parse(inputFile)
+        visit(root)
+        outputFile.withPrintWriter { out ->
+            def printer = new XmlNodePrinter(out)
+            printer.preserveWhitespace = true
+            printer.print(root)
+        }
+
+    }
+
+    boolean visit(node) {
+        def toDelete = []
+        boolean deleteNode = false;
+        node.attributes().each { k,v ->
+            String key;
+            if (k instanceof groovy.xml.QName) {
+                key = "${k.prefix}:${k.localPart}"
+            }
+            else {
+                key = k
+            }
+            if (node.name() == "meta-data" && key == "android:name" && v.startsWith("org.qeo")) {
+                deleteNode = true; //delete this node
+            }
+        }
+        if (deleteNode) {
+            return true;
+        }
+
+        def nodeToDelete = []
+        node.children().each { child ->
+            if (visit(child)) {
+                //node must be deleted
+                nodeToDelete.add(child)
+            }
+        }
+        nodeToDelete.each {
+            node.remove(it)
+        }
+        return false;
+    }
+}
+

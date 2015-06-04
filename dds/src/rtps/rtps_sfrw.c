@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -181,7 +181,7 @@ int sfw_send_heartbeat (WRITER *wp, int alive)
 		     rrp->rr_tstate == RRTS_ANNOUNCING)) {
 			nreaders++;
 			drp = (DiscoveredReader_t *) rrp->rr_endpoint;
-			if (rrp->rr_no_mcast)
+			if (rrp->rr_no_mcast || !drp->dr_participant->p_local)
 				no_mcast = 1;
 			xrrp = rrp;
 			if (rrp->rr_changes.nchanges) {
@@ -205,6 +205,7 @@ int sfw_send_heartbeat (WRITER *wp, int alive)
 
 				rtps_msg_add_heartbeat_frag (rrp,
 							     drp,
+							     RME_MCAST,
 							     &rp->u.c.change->c_seqnr,
 							     rp->fragments->total);
 				if (!--n)
@@ -233,7 +234,7 @@ int sfw_send_heartbeat (WRITER *wp, int alive)
 			snr_min = min_mc;
 		if (SEQNR_LT (max_mc, snr_max))
 			snr_max = max_mc;
-		rtps_msg_add_heartbeat (xrrp, drp,
+		rtps_msg_add_heartbeat (xrrp, drp, RME_MCAST,
 				(alive) ? SMF_FINAL | SMF_LIVELINESS : 0,
 				&snr_min, &snr_max);
 		
@@ -253,7 +254,7 @@ int sfw_send_heartbeat (WRITER *wp, int alive)
 				q_seqnr_info (rrp->rr_changes, min, max);
 				/*log_printf (RTPS_ID, 0, "Q: min: %u.%u, max: %u.%u!\r\n", min.high, min.low, max.high, max.low);*/
 				rtps_msg_add_heartbeat (rrp,
-						(DiscoveredReader_t *) rrp->rr_endpoint,
+						(DiscoveredReader_t *) rrp->rr_endpoint, 0,
 						(alive) ? SMF_FINAL | SMF_LIVELINESS : 0,
 						&min, &max);
 				if (wp->backoff > BACKOFF_RESET_RL && !info_reply_rxed ()) {
@@ -375,8 +376,8 @@ static void sfw_rel_send_alive (RemReader_t *rrp)
 	if (SEQNR_GT (snr_min, snr_max)) {
 		snr_max = snr_min;
 		rtps_msg_add_heartbeat (rrp,
-					(DiscoveredReader_t *) rrp->rr_endpoint, 
-					SMF_FINAL | SMF_LIVELINESS,
+					(DiscoveredReader_t *) rrp->rr_endpoint,
+					0, SMF_FINAL | SMF_LIVELINESS,
 					&snr_min, &snr_max);
 		return;
 	}
@@ -394,8 +395,8 @@ static void sfw_rel_send_alive (RemReader_t *rrp)
 	}
 #endif
 	rtps_msg_add_heartbeat (rrp,
-				(DiscoveredReader_t *) rrp->rr_endpoint, 
-				0, &snr_min, &snr_max);
+				(DiscoveredReader_t *) rrp->rr_endpoint,
+				0, 0, &snr_min, &snr_max);
 	if (wp->rh_timer) {
 		HEARTBEAT_TMR_STOP (wp, wp->rh_timer);
 		if (wp->backoff < 7)
@@ -521,7 +522,7 @@ static void sfw_rel_start (RemReader_t *rrp)
 #ifdef RTPS_INIT_HEARTBEAT
 	if (!rrp->rr_unsent_changes) {
 		rrp->rr_writer->backoff = 0;
-		rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, SMF_FINAL, &snr_min, &snr_min);
+		rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, 0, SMF_FINAL, &snr_min, &snr_min);
 	}
 	else {
 #else
@@ -674,7 +675,7 @@ static unsigned seqnr_delta (SequenceNumber_t *snr1, SequenceNumber_t *snr2)
 static int sfw_rel_send_data (RemReader_t *rrp)
 {
 	CCREF			*rp, *next_rp;
-	GuidPrefix_t		*prefix;
+	Participant_t		*pp;
 	EntityId_t		*eid;
 	unsigned		delta, delta_next, n_urgent = 0;
 	int			error, gap_present = 0;
@@ -728,6 +729,7 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 				if (gap_present) {
 					rtps_msg_add_gap (rrp,
 						  (DiscoveredReader_t *) rrp->rr_endpoint,
+						  0,
 						  &gap_start, 
 						  &gap_base, n_gap_bits, gap_bits,
 						  rrp->rr_writer->rh_timer != NULL);
@@ -811,17 +813,16 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 #ifdef RTPS_FRAGMENTS
 				nfrags = rtps_frag_burst;
 #endif
-				if (drp && drp->dr_participant) {
-					prefix = &drp->dr_participant->p_guid_prefix;
+				if (drp && (pp = drp->dr_participant) != NULL)
 					eid = &drp->dr_entity_id;
-				}
 				else {
-					prefix = NULL;
+					pp = NULL;
 					eid = NULL;
 				}
 				error = rtps_msg_add_data (rrp,
-							   prefix,
+							   pp,
 							   eid,
+							   RME_MCAST,
 							   rp->u.c.change,
 							   rp->u.c.hci,
 							   !next_rp &&
@@ -878,6 +879,7 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 					/* Send existing gap. */
 					error = rtps_msg_add_gap (rrp,
 						  (DiscoveredReader_t *) rrp->rr_endpoint,
+						  0,
 						  &gap_start, 
 						  &gap_base, n_gap_bits, gap_bits,
 						  rrp->rr_writer->rh_timer != NULL);
@@ -913,6 +915,7 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 				if (gap_present) {
 					rtps_msg_add_gap (rrp,
 						  (DiscoveredReader_t *) rrp->rr_endpoint,
+						  0,
 						  &gap_start, 
 						  &gap_base, n_gap_bits, gap_bits,
 						  rrp->rr_writer->rh_timer != NULL);
@@ -930,6 +933,7 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 				if (gap_present) {
 					rtps_msg_add_gap (rrp,
 						  (DiscoveredReader_t *) rrp->rr_endpoint,
+						  0,
 						  &gap_start, 
 						  &gap_base, n_gap_bits, gap_bits,
 						  rrp->rr_writer->rh_timer != NULL);
@@ -945,6 +949,7 @@ static int sfw_rel_send_data (RemReader_t *rrp)
 	if (gap_present)
 		rtps_msg_add_gap (rrp,
 				  (DiscoveredReader_t *) rrp->rr_endpoint,
+				  0,
 				  &gap_start, 
 				  &gap_base, n_gap_bits, gap_bits,
 				  1);
@@ -1136,7 +1141,8 @@ static void sfw_rel_reset (RemReader_t *rrp)
 #ifdef RTPS_INIT_HEARTBEAT
 	if (!rrp->rr_unsent_changes) {
 		rrp->rr_writer->backoff = 0;
-		rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, SMF_FINAL, &snr_min, &snr_max);
+		rtps_msg_add_heartbeat (rrp, (DiscoveredReader_t *) rrp->rr_endpoint, 0, 
+							SMF_FINAL, &snr_min, &snr_max);
 	}
 #endif
 #ifdef RTPS_W_WAIT_ALIVE
@@ -1322,6 +1328,7 @@ static void sfw_rel_acknack (RemReader_t *rrp, AckNackSMsg *ap, int final)
 				SET_ADD (gap_bits, i);
 		rtps_msg_add_gap (rrp,
 				  (DiscoveredReader_t *) rrp->rr_endpoint,
+				  0,
 				  &max, &max, n_gap_bits, gap_bits, 1);
 	}
 
@@ -1527,7 +1534,7 @@ static void sfw_rel_nackfrag (RemReader_t *rrp, NackFragSMsg *np)
 {
 	CCREF			*rp;
 	FragInfo_t		*fip;
-	GuidPrefix_t		*prefix;
+	Participant_t		*pp;
 	EntityId_t		*eid;
 	SequenceNumber_t	snr;
 	unsigned		i, nf, start, n;
@@ -1587,12 +1594,10 @@ static void sfw_rel_nackfrag (RemReader_t *rrp, NackFragSMsg *np)
 
 	/* Sample found.  Send all requested fragments. */
 	nf = start = 0;
-	if (rrp->rr_endpoint && rrp->rr_endpoint->u.participant) {
-		prefix = &rrp->rr_endpoint->u.participant->p_guid_prefix;
+	if (rrp->rr_endpoint && (pp = rrp->rr_endpoint->u.participant) != NULL)
 		eid = &rrp->rr_endpoint->entity_id;
-	}
 	else {
-		prefix = NULL;
+		pp = NULL;
 		eid = NULL;
 	}
 	for (i = np->frag_nr_state.base, n = 0;
@@ -1608,8 +1613,9 @@ static void sfw_rel_nackfrag (RemReader_t *rrp, NackFragSMsg *np)
 			/* Send all fragments in [start..(start+nf)] */
 			/*log_printf (RTPS_ID, 0, "==> Sending fragments: %u*%u!\r\n", start, nf);*/
 			error = rtps_msg_add_data (rrp,
-						   prefix,
+						   pp,
 						   eid,
+						   RME_MCAST,
 						   rp->u.c.change,
 						   rp->u.c.hci,
 						   1,
@@ -1624,8 +1630,9 @@ static void sfw_rel_nackfrag (RemReader_t *rrp, NackFragSMsg *np)
 		/* Send all fragments in [start..(start+nf)] */
 		/*log_printf (RTPS_ID, 0, "==> Sending fragments: %u*%u!\r\n", start, nf);*/
 		rtps_msg_add_data (rrp,
-				   prefix,
+				   pp,
 				   eid,
+				   RME_MCAST,
 				   rp->u.c.change,
 				   rp->u.c.hci,
 				   1,

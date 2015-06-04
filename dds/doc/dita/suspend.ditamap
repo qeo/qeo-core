@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE map PUBLIC "-//OASIS//DTD DITA Map//EN" "map.dtd">
+<map>
+    <title>Suspend/Resume handling in Technicolor DDS</title>
+    <topicref href="suspend.dita"/>
+    <topicref href="activities.dita"/>
+    <topicref href="bgns.dita"/>
+    <topicref href="notif-cfg.dita"/>
+</map>

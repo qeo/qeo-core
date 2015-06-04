@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -425,7 +425,7 @@ static void sfr_fragment (RemWriter_t     *rwp,
 		size = ts->ts_mkeysize;
 		if (!size || !ts->ts_fksize) {
 			size = DDS_KeySizeFromMarshalled (walk, ts,
-							all_key, NULL);
+							  all_key, NULL);
 			if (!size) {
 				frtrc_printf ("sfr_fragment: incorrect size!");
 				goto cleanup;
@@ -599,8 +599,10 @@ static void sfr_rel_data (RemWriter_t         *rwp,
 #ifdef RTPS_FRAGMENTS
 	           || fragp
 #endif
-		           )
+		           ) {
+		h = 0;
 		hci = NULL;
+	}
 	else if (ep->multi_inst) {
 		hci = hc_lookup_hash (ep->endpoint->cache, hp, key, keylen,
 					  &h, 1, ooo, &cause);

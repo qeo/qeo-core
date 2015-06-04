@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -26,6 +26,7 @@
 #include "debug.h"
 #include "error.h"
 #include "log.h"
+#include "ctrace.h"
 #include "sock.h"
 #include "ri_data.h"
 #include "ri_tcp.h"
@@ -40,6 +41,46 @@
 /*#define TRACE_WRITE_OPS	** Trace write()/send() calls */
 /*#define TRACE_SERVER		** Trace server side operations (listen, accept ...) */
 /*#define TRACE_CLIENT		** Trace client side operations (connect, ...) */
+#endif
+
+#ifdef CTRACE_USED
+
+enum {
+	TCPS_CLEAN, 
+	TCPS_TX_FRAG, TCPS_TX_CHUNK, TCPS_TX_COMPL, 
+	TCPS_RX_FRAG, TCPS_RX_CHUNK, TCPS_RX_BADMSG, TCPS_RX_NOMEM, 
+	TCPS_RX_COMPL, TCPS_RX_MSG, TCPS_NEW_MSG,
+	TCPS_SK_ACT,
+	TCPS_DO_CON, TCPS_SYS_CON, TCPS_CON_ERR, TCPS_CON_WAIT, TCPS_CON_OK,
+	TCPS_WCON_EV, TCPS_CON_COMPL,
+	TCPS_CLOSE_PEND,
+	TCPS_PFMSG_EV, TCPS_NEW_CX,
+	TCPS_SERVER_EV, TCPS_FD_NOMEM, TCPS_BAD_KIND,
+	TCPS_SERVE, TCPS_BIND_FAIL, TCPS_LISTEN_FAIL, TCPS_SERVER_ACT,
+	TCPS_CON_ENQ,
+	TCPS_DISC,
+	TCPS_WMSG, TCPS_W_CHUNK, TCPS_MSG_NOMEM, TCPS_BUF_NOMEM,
+	TCPS_W_PEND, TCPS_W_ERR, TCPS_W_OK
+};
+
+static const char *tcps_fct_str [] = {
+	"Cleanup",
+	"TxFrag", "write", "TxCompl",
+	"RxFrag", "read", "RxBadMsg", "RxNoMem",
+	"RxCompl", "RxMsg", "NewMsg",
+	"SKAct",
+	"DoCon", "connect", "ConErr", "ConWait", "ConOk",
+	"WConEv", "ConCompl",
+	"ClosePend",
+	"PendFirstMsgEv", "NewCx",
+	"ServerEv", "FDNoMem", "BadKind",
+	"StartServer", "BindFail", "ListenFail", "ServerAct",
+	"ConEnq",
+	"Disc",
+	"WMsg", "send", "MsgNoMem", "BufNoMem",
+	"WritePend", "WriteErr", "WriteOk"
+};
+
 #endif
 
 typedef struct tcp_data_st {
@@ -116,18 +157,26 @@ static void trace_call (const char *op, int res, int fd)
 
 static void tcp_cleanup_ctx (IP_CX *cxp)
 {
-	sock_fd_remove_socket (cxp->fd);
-	cxp->cx_state = CXS_CLOSED;
-	cxp->stream_cb->on_close (cxp); /* This fd most probably became unusable. */
+	ctrc_printd (TCPS_ID, TCPS_CLEAN, &cxp->fd, sizeof (cxp->fd));
+	if (cxp->stream_cb && cxp->stream_cb->on_close)
+		cxp->stream_cb->on_close (cxp); /* This fd most probably became unusable. */
+	else if (cxp->fd_owner) {
+		close (cxp->fd);
+		sock_fd_remove_socket (cxp->fd);
+		cxp->cx_state = CXS_CLOSED;
+		cxp->fd_owner = 0;
+		cxp->fd = 0;
+	}
 }
 
 /* Write/send (the next part of) a msg (fragment). */
 static void tcp_write_message_fragment (IP_CX *cxp)
 {
-	ssize_t		n;
+	ssize_t		n, max;
 	unsigned char	*sp;
 	TCP_DATA	*dp;
 
+	ctrc_printd (TCPS_ID, TCPS_TX_FRAG, &cxp->fd, sizeof (cxp->fd));
 	if ((dp = cxp->sproto) == NULL) {
 		warn_printf ("tcp_write_message_fragment: no TCP context!");
 		return;
@@ -142,25 +191,24 @@ static void tcp_write_message_fragment (IP_CX *cxp)
 	}
 	sp = dp->send_msg->buffer + dp->send_msg->used;
 	while (dp->send_msg->used < dp->send_msg->size) {
+		max = dp->send_msg->size - dp->send_msg->used;
 
 #ifdef __APPLE__
 		/* Apple does not support MSG_NOSIGNAL, therefore we set the equivalent Apple-specific 
 		   socket option SO_NOSIGPIPE. */
-		n = send (cxp->fd, sp, dp->send_msg->size - dp->send_msg->used, 0);
+		n = send (cxp->fd, sp, max, 0);
 #else
 		/* We're using send() here iso write() so that we can indicate to the kernel *not* to send
 		   a SIGPIPE in case the other already closed this connection. A return code of -1 and ERRNO
 		   to EPIPE is given instead */
-		n = send (cxp->fd, sp, dp->send_msg->size - dp->send_msg->used, MSG_NOSIGNAL);
+		n = send (cxp->fd, sp, max, MSG_NOSIGNAL);
 #endif
-		trace_write (n, cxp->fd, dp->send_msg->size - dp->send_msg->used);
-#ifdef MSG_TRACE
-		if (cxp->trace)
-			rtps_ip_trace (cxp->handle, 'T',
-				       &cxp->locator->locator,
-				       cxp->dst_addr, cxp->dst_port,
-				       dp->send_msg->size - dp->send_msg->used);
-#endif
+		ctrc_begind (TCPS_ID, TCPS_TX_CHUNK, &cxp->fd, sizeof (cxp->fd));
+		ctrc_contd (&max, sizeof (max));
+		ctrc_contd (&n, sizeof (n));
+		ctrc_endd ();
+
+		trace_write (n, cxp->fd, max);
 		if (n < 0) {
 			if (ERRNO == EINTR)
 				continue; /* immediately try again */
@@ -168,7 +216,7 @@ static void tcp_write_message_fragment (IP_CX *cxp)
 			if ((ERRNO == EAGAIN) || (ERRNO == EWOULDBLOCK))
 				return; /* Wait for poll() to indicate that we can write another chunk. */
 
-			perror ("tcp_write_message_fragment");
+			/*perror ("tcp_write_message_fragment");*/
 			log_printf (RTPS_ID, 0, "%s: error sending data on [%d] (%s).\r\n",
 					__FUNCTION__, cxp->fd, strerror (ERRNO));
 			xfree (dp->send_msg->buffer);
@@ -180,7 +228,6 @@ static void tcp_write_message_fragment (IP_CX *cxp)
 		dp->send_msg->used += n;
 		sp += n;
 	}
-
 	xfree (dp->send_msg->buffer);
 	xfree (dp->send_msg);
 	dp->send_msg = NULL;
@@ -188,6 +235,8 @@ static void tcp_write_message_fragment (IP_CX *cxp)
 	log_printf (RTPS_ID, 0, "TLS: POLLOUT = 0 [%d]\r\n", cxp->fd);
 #endif
 	sock_fd_event_socket (cxp->fd, POLLOUT, 0);
+
+	ctrc_printd (TCPS_ID, TCPS_TX_COMPL, &cxp->fd, sizeof (cxp->fd));
 
 	if (cxp->stream_cb->on_write_completed)
 		cxp->stream_cb->on_write_completed (cxp);
@@ -207,6 +256,7 @@ static void tcp_write_message_fragment (IP_CX *cxp)
 static int tcp_receive_message_fragment (int fd, TCP_MSG *msg)
 {
 	unsigned char	*dp;
+	size_t		max;
 	ssize_t		n;
 	uint32_t	l;
 
@@ -215,6 +265,11 @@ static int tcp_receive_message_fragment (int fd, TCP_MSG *msg)
 		msg->used = 0;
 		msg->size = sizeof (CtrlHeader);
 	}
+	ctrc_begind (TCPS_ID, TCPS_RX_FRAG, &fd, sizeof (fd));
+	ctrc_contd (&msg->used, sizeof (msg->used));
+	ctrc_contd (&msg->size, sizeof (msg->size));
+	ctrc_endd ();
+
 	if (msg->used < sizeof (CtrlHeader))
 		/* (Still) reading the msg header */
 		dp = (unsigned char*) &msg->header + msg->used;
@@ -225,14 +280,22 @@ static int tcp_receive_message_fragment (int fd, TCP_MSG *msg)
     continue_reading:
 
 	while (msg->used < msg->size) {
-		n = read (fd, dp, msg->size - msg->used);
-		trace_read (n, fd, msg->size - msg->used);
+		max = msg->size - msg->used;
+		n = read (fd, dp, max);
+
+		ctrc_begind (TCPS_ID, TCPS_RX_CHUNK, &fd, sizeof (fd));
+		ctrc_contd (&max, sizeof (max));
+		ctrc_contd (&n, sizeof (n));
+		ctrc_endd ();
+
+		trace_read (n, fd, max);
 		if (n < 0) {
 			if (ERRNO == EINTR)
 				goto continue_reading;
+
 			if ((ERRNO == EAGAIN) || (ERRNO == EWOULDBLOCK))
 				return (0); /* try again later */
-			perror ("tcp_receive_message_fragment()");
+			/*perror ("tcp_receive_message_fragment()");*/
 			log_printf (RTPS_ID, 0, "TCP: error reading from connection [%d] (%s)!\r\n", fd, strerror (ERRNO));
 			return (-1);
 		}
@@ -244,26 +307,34 @@ static int tcp_receive_message_fragment (int fd, TCP_MSG *msg)
 	}
 	if (!msg->buffer) {
 		/* Just received a CtrlHeader - see what else is needed? */
-		if (ctrl_protocol_valid (&msg->header))
-			msg->size += msg->header.length;
+		if (ctrl_protocol_valid (&msg->header)
+#ifdef TCP_SUSPEND
+		 || bgcp_protocol_valid (&msg->header)
+#endif
+		 				      )
+			msg->size += TTOHS (msg->header.length);
 		else if (protocol_valid (&msg->header)) {
 			memcpy (&l, &msg->header.msg_kind, sizeof (l));
+			l = TTOHL (l);
 			msg->size += l;
 		}
 		else {
 			/* Data not recognized as either a RTPS nor a RPSC message */
+			ctrc_printd (TCPS_ID, TCPS_RX_BADMSG, &fd, sizeof (fd));
 			msg->size = msg->used = 0;
 			return (-1);
 		}
 		msg->buffer = xmalloc (msg->size);
 		if (!msg->buffer) {
 			msg->size = msg->used = 0;
+			ctrc_printd (TCPS_ID, TCPS_RX_NOMEM, &fd, sizeof (fd));
 			return (-1);
 		}
 		memcpy (msg->buffer, &msg->header, sizeof (CtrlHeader));
 		dp = msg->buffer + msg->used;
 		goto continue_reading;
 	}
+	ctrc_printd (TCPS_ID, TCPS_RX_COMPL, &fd, sizeof (fd));
 	return (0);
 }
 
@@ -272,10 +343,11 @@ static void tcp_receive_message (IP_CX *cxp)
 	TCP_MSG		*recv_msg;
 	TCP_DATA	*dp;
 
-	if ((dp = cxp->sproto) == NULL) {
-		warn_printf ("tcp_receive_message: no TCP context!");
+	if ((dp = cxp->sproto) == NULL || !cxp->fd) {
+		warn_printf ("tcp_receive_message: no TCP context for fd:%u!", cxp->fd);
 		return;
 	}
+	ctrc_printd (TCPS_ID, TCPS_RX_MSG, &cxp->fd, sizeof (cxp->fd));
 	if (!dp->recv_msg) {
 
 		/* Prepare for receiving messages */
@@ -295,6 +367,7 @@ static void tcp_receive_message (IP_CX *cxp)
 	if (dp->recv_msg->used == dp->recv_msg->size) {
 		recv_msg = dp->recv_msg;
 		dp->recv_msg = NULL;
+		ctrc_printd (TCPS_ID, TCPS_NEW_MSG, &cxp->fd, sizeof (cxp->fd));
 		cxp->stream_cb->on_new_message (cxp, recv_msg->buffer, recv_msg->size);
 		xfree (recv_msg->buffer);
 		xfree (recv_msg);
@@ -308,6 +381,10 @@ static void tcp_socket_activity (SOCKET fd, short revents, void *arg)
 	socklen_t	sz;
 	int		handle;
 
+	ctrc_begind (TCPS_ID, TCPS_SK_ACT, &fd, sizeof (fd));
+	ctrc_contd (&revents, sizeof (revents));
+	ctrc_endd ();
+
 	trace_poll_events (fd, revents, arg);
 # if 0
 	if (!cxp->fd_owner)
@@ -318,7 +395,7 @@ static void tcp_socket_activity (SOCKET fd, short revents, void *arg)
 # endif
 	if ((revents & (POLLERR | POLLNVAL)) != 0) {
 		sz = sizeof (err);
-		r = getsockopt(cxp->fd, SOL_SOCKET, SO_ERROR, &err, &sz);
+		r = getsockopt (cxp->fd, SOL_SOCKET, SO_ERROR, &err, &sz);
 		if ((r == -1) || err)  {
 			log_printf (RTPS_ID, 0, "POLLERR | POLLNVAL [%d]: %d %s\r\n", cxp->fd, err, strerror (err));
 			tcp_cleanup_ctx (cxp);
@@ -423,6 +500,7 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 						       (hp->locator.address [13] << 16) |
 						       (hp->locator.address [14] << 8) |
 						        hp->locator.address [15]);
+			ctrc_printd (TCPS_ID, TCPS_DO_CON, hp->locator.address + 12, 4);
 		}
 #ifdef DDS_IPV6
 		else if ((hp->locator.kind & LOCATOR_KINDS_IPv6) != 0) {
@@ -431,6 +509,7 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 			sa_v6.sin6_port = htons (hp->locator.port);
 			sa = (struct sockaddr *) &sa_v6;
 			len = sizeof (sa_v6);
+			ctrc_printd (TCPS_ID, TCPS_DO_CON, hp->locator.address, 16);
 		}
 #endif
 		else {
@@ -448,7 +527,7 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 		trace_client ("socket", fd, -1);
 		if (fd < 0) {
 			xfree (dp);
-			perror ("tcp_do_connect: socket()");
+			/*perror ("tcp_do_connect: socket()");*/
 			log_printf (RTPS_ID, 0, "tcp_do_connect: socket() failed - errno = %d.\r\n", ERRNO);
 			return (-2);
 		}
@@ -468,6 +547,11 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 		events = POLLIN | POLLPRI | POLLHUP | POLLNVAL;
 		for (;;) {
 			r = connect (fd, sa, len);
+
+			ctrc_begind (TCPS_ID, TCPS_SYS_CON, &fd, sizeof (fd));
+			ctrc_contd (&r, sizeof (r));
+			ctrc_endd ();
+
 			trace_client ("connect", r, fd);
 			if (r == -1) {
 				err = ERRNO;
@@ -475,7 +559,8 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 					continue;
 
 				if (err != EINPROGRESS) {
-					perror ("tcp_do_connect: connect()");
+					ctrc_printd (TCPS_ID, TCPS_CON_ERR, &fd, sizeof (fd));
+					/*perror ("tcp_do_connect: connect()");*/
 					log_printf (RTPS_ID, 0, "tcp_do_connect: connect() failed - errno = %d.\r\n", err);
 					close (fd);
 					trace_server ("close", r, fd);
@@ -487,12 +572,14 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 					log_printf (RTPS_ID, 0, "TCP: connecting to server [%d] ...\r\n", fd);
 					p->cxp->cx_state = CXS_CONNECT;
 					sock_fd_add_socket (fd, events | POLLOUT, tcp_wait_connect_complete, p, "DDS.TCP-C");
+					ctrc_printd (TCPS_ID, TCPS_CON_WAIT, &fd, sizeof (fd));
 					return (-1);
 				}
 			}
 			else {
 				log_printf (RTPS_ID, 0, "TCP: connected to server [%d]\r\n", fd);
 				p->cxp->cx_state = CXS_OPEN;
+				ctrc_printd (TCPS_ID, TCPS_CON_OK, &fd, sizeof (fd));
 				sock_fd_add_socket (fd, events, tcp_socket_activity, p->cxp, "DDS.TCP-C");
 			}
 			break;
@@ -510,6 +597,10 @@ static void tcp_wait_connect_complete (SOCKET fd, short revents, void *arg)
 	socklen_t	s;
 	int		err, r;
 	socklen_t	sz;
+
+	ctrc_begind (TCPS_ID, TCPS_WCON_EV, &fd, sizeof (fd));
+	ctrc_contd (&revents, sizeof (revents));
+	ctrc_endd ();
 
 	trace_poll_events (fd, revents, arg);
 
@@ -546,6 +637,7 @@ static void tcp_wait_connect_complete (SOCKET fd, short revents, void *arg)
 				    POLLIN | POLLPRI | POLLHUP | POLLNVAL,
 				    tcp_socket_activity,
 				    cxp, "DDS.TCP-H");
+		ctrc_printd (TCPS_ID, TCPS_CON_COMPL, &fd, sizeof (fd));
 		cxp->stream_cb->on_connected (cxp);
 	}
 	while (0);
@@ -577,6 +669,7 @@ static void tcp_close_pending_connection (TCP_FD *pp)
 	if (tmr_active (&pp->timer))
 		tmr_stop (&pp->timer);
 
+	ctrc_printd (TCPS_ID, TCPS_CLOSE_PEND, &pp->fd, sizeof (pp->fd));
 	sock_fd_remove_socket (pp->fd);
 	r = close (pp->fd);
 	trace_server ("close", r, pp->fd);
@@ -601,6 +694,10 @@ static void tcp_pending_first_message (SOCKET fd, short revents, void *arg)
 	TCP_DATA	*dp;
 	int		err, r;
 	socklen_t	sz;
+
+	ctrc_begind (TCPS_ID, TCPS_PFMSG_EV, &fd, sizeof (fd));
+	ctrc_contd (&revents, sizeof (revents));
+	ctrc_endd ();
 
 	trace_poll_events (fd, revents, arg);
 
@@ -650,6 +747,8 @@ static void tcp_pending_first_message (SOCKET fd, short revents, void *arg)
 	}
 	if (dp->recv_msg->used != dp->recv_msg->size)
 		return; /* message (still) incomplete */
+
+	ctrc_printd (TCPS_ID, TCPS_NEW_CX, &pp->fd, sizeof (pp->fd));
 
 	cxp = pp->parent->stream_cb->on_new_connection (pp, dp->recv_msg->buffer, dp->recv_msg->size);
 	xfree (dp->recv_msg->buffer);
@@ -714,6 +813,13 @@ static void tcp_server_accept (SOCKET fd, short revents, void *arg)
 	usleep (TCP_ACCEPT_DELAY_MS * 1000);
 #endif
 	r = accept (fd, caddr, &size);
+
+	ctrc_begind (TCPS_ID, TCPS_SERVER_EV, &fd, sizeof (fd));
+	ctrc_contd (&revents, sizeof (revents));
+	ctrc_contd (caddr, size);
+	ctrc_contd (&r, sizeof (r));
+	ctrc_endd ();
+
 	trace_server ("accept", r, fd);
 	if (r < 0) {
 		perror ("tcp_server_accept: accept()");
@@ -728,11 +834,13 @@ static void tcp_server_accept (SOCKET fd, short revents, void *arg)
 	/* Create a new pending TCP connection. */
 	pp = xmalloc (sizeof (TCP_FD));
 	if (!pp) {
+		ctrc_printd (TCPS_ID, TCPS_FD_NOMEM, &r, sizeof (r));
 		close (r); /* bad reuse of variable in error case */
 		trace_server ("close", 0, r);
 		log_printf (RTPS_ID, 0, "TCP(S): allocation failure!\r\n");
 		return;
 	}
+	memset (pp, 0, sizeof (TCP_FD));
 	pp->fd = r;
 	if (scxp->locator->locator.kind == LOCATOR_KIND_TCPv4) {
 		a4 = ntohl (peer_addr.sin_addr.s_addr);
@@ -750,6 +858,7 @@ static void tcp_server_accept (SOCKET fd, short revents, void *arg)
 	}
 #endif
 	else {
+		ctrc_printd (TCPS_ID, TCPS_BAD_KIND, &r, sizeof (r));
 		r = close (pp->fd);
 		trace_server ("close", r, pp->fd);
 		xfree (pp);
@@ -785,6 +894,11 @@ static int tcp_start_server (IP_CX *scxp)
 	size_t			size;
 	int			fd, r;
 	unsigned		family;
+
+#ifdef CTRACE_USED
+	log_fct_str [TCPS_ID] = tcps_fct_str;
+#endif
+	ctrc_printd (TCPS_ID, TCPS_SERVE, &scxp->locator->locator.port, sizeof (scxp->locator->locator.port));
 
 #ifdef DDS_IPV6
 	if (scxp->locator->locator.kind == LOCATOR_KIND_TCPv4) {
@@ -822,6 +936,7 @@ static int tcp_start_server (IP_CX *scxp)
 	r = bind (fd, sa, size);
 	trace_server ("bind", r, fd);
 	if (r) {
+		ctrc_printd (TCPS_ID, TCPS_BIND_FAIL, &fd, sizeof (fd));
 		perror ("tcp_start_server: bind()");
 		log_printf (RTPS_ID, 0, "tcp_start_server: bind() failed - errno = %d.\r\n", ERRNO);
 		r = close (fd);
@@ -831,12 +946,14 @@ static int tcp_start_server (IP_CX *scxp)
 	r = listen (fd, 32);
 	trace_server ("listen", r, fd);
 	if (r) {
+		ctrc_printd (TCPS_ID, TCPS_LISTEN_FAIL, &fd, sizeof (fd));
 		perror ("tcp_start_server: listen()");
 		log_printf (RTPS_ID, 0, "tcp_start_server: listen() failed - errno = %d.\r\n", ERRNO);
 		r = close (fd);
 		trace_server ("close", r, fd);
 		return (-1);
 	}
+	ctrc_printd (TCPS_ID, TCPS_SERVER_ACT, &fd, sizeof (fd));
 
 	/* Set socket as non-blocking. */
 	sock_set_socket_nonblocking (scxp->fd);
@@ -900,6 +1017,8 @@ int tcp_connect_enqueue (IP_CX *cxp, unsigned port, TCP_CON_FCT fct)
 	unsigned char		*ap;
 	Locator_t		l;
 	int			r;
+
+	ctrc_printd (TCPS_ID, TCPS_CON_ENQ, &port, sizeof (port));
 
 	/* Find a matching connect() address record in the existing pending
 	   addresses list. */
@@ -974,6 +1093,9 @@ int tcp_connect_enqueue (IP_CX *cxp, unsigned port, TCP_CON_FCT fct)
 
 static int tcp_connect (IP_CX *cxp, unsigned port)
 {
+#ifdef CTRACE_USED
+	log_fct_str [TCPS_ID] = tcps_fct_str;
+#endif
 	trc_con2 ("tcp_connect(cxp=%p, port=%u);\r\n", (void *) cxp, port);
 	return (tcp_connect_enqueue (cxp, port, tcp_do_connect));
 }
@@ -983,6 +1105,8 @@ static void tcp_disconnect (IP_CX *cxp)
 	TCP_CON_REQ_ST	*next_p = NULL;
 	TCP_DATA	*dp;
 	int		r;
+
+	ctrc_printd (TCPS_ID, TCPS_DISC, &cxp->fd, sizeof (cxp->fd));
 
 	trc_con1 ("tcp_disconnect(%p);\r\n", (void *) cxp);
 	if (cxp->cx_state == CXS_CONREQ || cxp->cx_state == CXS_CONNECT)
@@ -995,6 +1119,7 @@ static void tcp_disconnect (IP_CX *cxp)
 			trace_server ("close", r, cxp->fd);
 		}
 		while (r == -1 && ERRNO == EINTR);
+		cxp->cx_state = CXS_CLOSED;
 		cxp->fd = 0;
 		cxp->fd_owner = 0;
 		dp = cxp->sproto;
@@ -1029,9 +1154,17 @@ static WR_RC tcp_write_msg (IP_CX *cxp, unsigned char *msg, size_t len)
 	ssize_t		n;
 	size_t		left;
 	unsigned char	*sp = msg;
-	TCP_DATA	*dp = cxp->sproto;
+	TCP_DATA	*dp = (cxp) ? cxp->sproto : NULL;
 	TCP_MSG		**send_msg;
 	int		err;
+
+	ctrc_begind (TCPS_ID, TCPS_WMSG, &cxp->fd, sizeof (cxp->fd));
+	ctrc_contd (&msg, sizeof (msg));
+	ctrc_contd (&len, sizeof (len));
+	ctrc_endd ();
+
+	if (!cxp || !msg || !len)
+		return (WRITE_OK);
 
 	if (!dp) {
 		dp = xmalloc (sizeof (TCP_DATA));
@@ -1057,14 +1190,13 @@ static WR_RC tcp_write_msg (IP_CX *cxp, unsigned char *msg, size_t len)
 		   to EPIPE is given instead */
 		n = send (cxp->fd, sp, left, MSG_NOSIGNAL);
 #endif
+		ctrc_begind (TCPS_ID, TCPS_W_CHUNK, &cxp->fd, sizeof (cxp->fd));
+		ctrc_contd (&sp, sizeof (sp));
+		ctrc_contd (&left, sizeof (left));
+		ctrc_contd (&n, sizeof (n));
+		ctrc_endd ();
+
 		trace_write (n, cxp->fd, left);
-#ifdef MSG_TRACE
-		if (cxp->trace)
-			rtps_ip_trace (cxp->handle, 'T',
-				       &cxp->locator->locator,
-				       cxp->dst_addr, cxp->dst_port,
-				       left);
-#endif
 		if (n < 0) {
 			err = ERRNO;
 			if (err == EINTR)
@@ -1075,11 +1207,13 @@ static WR_RC tcp_write_msg (IP_CX *cxp, unsigned char *msg, size_t len)
 				send_msg = &dp->send_msg;
 				/* Make arrangements for fragmented write */
 				*send_msg = xmalloc (sizeof (TCP_MSG));
-				if (!*send_msg)
+				if (!*send_msg) {
+					ctrc_printd (TCPS_ID, TCPS_MSG_NOMEM, &cxp->fd, sizeof (cxp->fd));
 					return (WRITE_ERROR);
-
+				}
 				(*send_msg)->buffer = xmalloc (left);
 				if (!(*send_msg)->buffer) {
+					ctrc_printd (TCPS_ID, TCPS_BUF_NOMEM, &cxp->fd, sizeof (cxp->fd));
 					xfree (*send_msg);
 					*send_msg = NULL;
 					return (WRITE_ERROR);
@@ -1090,10 +1224,12 @@ static WR_RC tcp_write_msg (IP_CX *cxp, unsigned char *msg, size_t len)
 #ifdef TRACE_POLL_EVENTS
 				log_printf (RTPS_ID, 0, "TLS: POLLOUT = 1 [%d]\r\n", cxp->fd);
 #endif
+				ctrc_printd (TCPS_ID, TCPS_W_PEND, &cxp->fd, sizeof (cxp->fd));
 				sock_fd_event_socket (cxp->fd, POLLOUT, 1);
 				return (WRITE_PENDING);
 			}
-			perror ("tcp_write_msg");
+			ctrc_printd (TCPS_ID, TCPS_W_ERR, &cxp->fd, sizeof (cxp->fd));
+			/*perror ("tcp_write_msg");*/
 			log_printf (RTPS_ID, 0, "%s: error sending data on [%d] (%s).\r\n",
 					__FUNCTION__, cxp->fd, strerror (ERRNO));
 			return (WRITE_ERROR);
@@ -1101,6 +1237,7 @@ static WR_RC tcp_write_msg (IP_CX *cxp, unsigned char *msg, size_t len)
 		left -= n;
 		sp += n;
 	}
+	ctrc_printd (TCPS_ID, TCPS_W_OK, &cxp->fd, sizeof (cxp->fd));
 	return (WRITE_OK);
 }
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">UITestApp</string>
+    <string name="startQeo">Start Qeo</string>
+    <string name="stopQeo">Stop Qeo</string>
+    <string name="initQeo">InitQeo called</string>
+    <string name="qeoReady">Qeo Ready</string>
+
+</resources>

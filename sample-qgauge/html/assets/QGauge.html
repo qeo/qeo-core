@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <title>QGauge reader the html version</title>
+
+  <script type="text/javascript" src="d3.v3.min.js"></script> <!-- The marvelous d3 binds data received from Qeo to the html and svg DOM -->
+  <script type="text/javascript" src="qeo.js"></script> <!-- Qeo library -->
+  <script type="text/javascript" src="qeo_types.js"></script> <!-- generated core Qeo types -->
+  <script type="text/javascript" src="QGauge_NetStatMessage.js"></script> <!-- generated for org::qeo::sample::gauge::NetStatMessage -->
+  <script type="text/javascript" src="qeo_DeviceInfo.js"></script> <!-- generated for org::qeo::system::DeviceInfo -->
+  <style type="text/css">
+svg{
+    font-family: Arial, sans-serif;
+}
+
+svg g.paths path {
+    fill: none;
+}
+
+svg g.axis{
+    font-size: 8px;
+}
+
+.axis line{
+    fill: none;
+    stroke: #000;
+    shape-rendering: crispEdges;
+}
+
+svg .x.axis .domain {
+    display: none;
+}
+
+  </style>
+  <script type='text/javascript'>//<![CDATA[
+window.onload = function(){
+    "use strict";
+
+    // The different graphs to show
+    var types = {
+        bytesIn : { title: "Bytes Received" },
+        bytesOut : { title: "Bytes Sent" },
+        packetsIn : { title: "Packets Received" },
+        packetsOut : { title: "Packets Sent" }
+    };
+
+    // Basic for every graph
+    var height = 80;
+    var width = 320;
+    var margin = {top: 5, right: 0, bottom: 14, left: 0};
+    var timeWindow = 10000;
+
+    // d3 specific scales
+    var x = d3.time.scale()
+        .range([0, width]);
+    var y = d3.scale.linear()
+        .range([height, 0]);
+    var colors = d3.scale.category10();
+    var xAxis = d3.svg.axis()
+        .scale(x)
+        .orient("bottom")
+        .tickFormat(d3.time.format("%X"))
+        .ticks(5)
+        .tickSize(2);
+
+    // Redraw all graphs
+    function redraw(data) {
+        // Calculate domain x axis
+        var xDomain = d3.extent(data, function(d) { return d.timestamp; });
+        xDomain[0] = new Date(Math.max(xDomain[0], xDomain[1] - timeWindow));
+        x.domain(xDomain);
+
+        if(0 === (xDomain[0] - xDomain[1])) {
+            // Time domain is still empty.
+            // Return now as we will otherwise see some nasty NaN's popping up.
+            return;
+        }
+
+        // Order the data according to device and interface
+        var data = d3.nest()
+            .key(function(d) { return d.deviceId.upper.toString(32) + " " + d.deviceId.lower.toString(32); })
+            .key(function(d) { return d.ifName; })
+            .entries(data);
+
+        // Select and or create the graphs for all devices
+        var devices = d3.select("#graph").selectAll("div.device").data(data);
+        var newDevice = devices.enter().append("div")
+            .attr("class", "device");
+        // Show user friendly name of device when available.
+        newDevice.append("h1").text(function(d) {
+            var d = devinfo[d.key];
+            if (d == undefined) {
+                return d.key;
+            }
+            return d.userFriendlyName;
+        });
+
+        // For every type of graph
+        for (var type in types) {
+            // When the graph did not yet exists, create it
+            var newTypeDiv = newDevice.append("div")
+                .attr("class", type);
+            newTypeDiv.append("h2").text(types[type].title);
+            var newSvg = newTypeDiv.append("svg")
+                .attr("height", height + margin.top + margin.bottom)
+                .attr("width", width + margin.left + margin.right);
+            newSvg.append("defs").append("svg:clipPath")
+                .attr("id", function(d) { return "clip" + d.key + type; })
+                .append("rect")
+                .attr("height", height)
+                .attr("width", width);
+            newSvg.append("g")
+                .attr("class", "paths")
+                .attr("clip-path", function(d) { return "url(#clip" + d.key + type + ")"; })
+                .attr("transform", "translate(" + margin.left + ", " +  margin.top + ")");
+            newSvg.append("g").attr("class", "x axis")
+                .attr("transform", "translate(" + margin.left + ", " + (height + margin.top) + ")");
+            newSvg.append("g").attr("class", "y axis");
+
+            // Will draw lines for every interface.
+            var line = d3.svg.line()
+                .interpolate("monotone")
+                .x(function(d) { return x(d.timestamp); })
+                .y(function(d) { return y(d[type]); });
+
+            // Start drawing
+            devices.select("div."+type+" svg").each(function(d) {
+                var svg = d3.select(this);
+
+                y.domain([0, d3.max(d.values, function(d) {
+                    return d3.max(d.values, function(d) {
+                        return d[type];
+                    });
+                })]);
+
+                // Bind interface data
+                var paths = svg.select("g.paths").selectAll("path").data(function(d) {return d.values;});
+
+                // Draw axis and lines
+                paths.enter().append("path")
+                    .style("stroke", function(d,i) { return colors(i); });
+                paths.datum(function(d) { return d.values; })
+                    .attr("d", line);
+                svg.select("g.x.axis").call(xAxis);
+            });
+        }
+    }
+
+    // Contains all the data samples ever received
+    var data = [];
+    // Contains the latest samples received for an interface
+    var latest = {};
+
+    // Notification callback to be called for every new sample
+    function notify(intf) {
+        var key = intf.deviceId.upper + "-" + intf.deviceId.lower + "-" + intf.ifName;
+
+        // Override the timestamp with the current date (arival time), so all timestamps are lined up.
+        // Otherwise it will become difficult compare different dates for different devices.
+        intf.timestamp = new Date();
+        for(var type in types) {
+            intf[type] = +intf[type];
+        }
+
+        var prev = latest[key];
+        if(latest[key] !== undefined) {
+            // Create diff
+            var diff = {
+                deviceId : intf.deviceId,
+                ifName : intf.ifName,
+                timestamp : intf.timestamp,
+            }
+
+            var diffTime = (intf.timestamp - prev.timestamp) / 1000;
+            for(type in types) {
+                diff[type] = (intf[type] - prev[type]) / diffTime;
+            }
+
+            // Push diff in data array
+            data.push(diff);
+        }
+        latest[key] = intf;
+    }
+
+    // Contains all DeviceInfo samples ever received
+    var devinfo = [];
+
+    // Notification callback to be called for every new DeviceInfo sample
+    function notifyDeviceInfo(d) {
+        var key = d.deviceId.upper.toString(32) + " " + d.deviceId.lower.toString(32);
+        devinfo[key] = d;
+    }
+
+
+    // Redraw graphs 4 times a second
+    setInterval(function() {redraw(data);}, 250);
+
+    // The Qeo manifest needed for this reader
+    var manifest = {
+        meta: { appname: "qguage", version: "1" },
+        application: {
+          "org::qeo::sample::gauge::NetStatMessage": "r",
+          "org::qeo::system::DeviceInfo": "r"
+        }
+    };
+
+    // Create Factory
+    Qeo.createFactory({manifest: manifest}).then(function(factory){
+            // Return the promise which will create the readers, so all errors are handled in the same error callback.
+            return factory.createStateChangeReader("org::qeo::sample::gauge::NetStatMessage", {on:{data:notify}}).then(function(){
+                return factory.createStateChangeReader("org::qeo::system::DeviceInfo", {on:{data:notifyDeviceInfo}});
+            });
+        },function(error){
+            console.error(error);
+        });
+
+    // Clean up Qeo resources on 'unload' as described in DE2813
+    window.addEventListener('unload', function() {Qeo.cleanup();});
+}//]]>  
+  </script>
+
+
+</head>
+<body>
+  <body>
+    <div id="graph">
+    </div>
+</body>
+
+</body>
+
+
+</html>
+

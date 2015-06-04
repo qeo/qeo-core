@@ -1,0 +1,76 @@
+
+String cleanVersion(def dep) {
+    String ver = dep.version
+    if (dep.group.startsWith("org.qeo")) {
+        ver = ver.replaceAll("-SNAPSHOT", "")
+    }
+    return ver
+}
+
+
+String fetchDependencies(Configuration conf, Set<String> ignore) {
+    String deps = ""
+    conf.dependencies.each {
+        if (it instanceof ProjectDependency) {
+            def d = it.dependencyProject
+            def ver = cleanVersion(d)
+            if (ignore.contains("${d.group}:${d.name}".toString())) {
+                return
+            }
+            deps += "    compile (group: \"${d.group}\", name: \"${d.name}\", version: \"${ver}\""
+            if (d.hasProperty("defaultExtension")) {
+                deps += ", ext: \"${d.defaultExtension}\""
+            }
+            deps += ")\n"
+            deps += fetchDependencies(d.configurations.compile, ignore)
+        }
+        else if (it instanceof ExternalModuleDependency) {
+            String ver = cleanVersion(it)
+            if (ignore.contains("${it.group}:${it.name}".toString())) {
+                return
+            }
+            deps += "    compile (group: \"${it.group}\", name: \"${it.name}\", version: \"${ver}\""
+            boolean aar = false
+            it.artifacts.each { art ->
+                if ("${art.extension}" == "aar") {
+                    aar = true
+                }
+            }
+            if (aar) {
+                deps += ", ext: \"aar\""
+            }
+            deps += ")"
+            if (!it.excludeRules.isEmpty()) {
+                deps += " {\n"
+                it.excludeRules.each { ex ->
+                    deps += "        exclude (group: \"${ex.group}\")\n"
+                }
+                deps += "    }"
+            }
+            deps += "\n"
+        }
+        else {
+            logger.warn("Unknown dependency type: ${it}")
+        }
+    }
+    return deps
+}
+
+task dependencyList() {
+    ext.out = file("${buildDir}/${project.name}-dependencies.gradle")
+    ext.dependencies = []
+    ext.ignore = new HashSet()
+    dependencies.add(configurations.compile)
+    doLast {
+        mkdir buildDir
+        out.delete()
+        out.createNewFile()
+        out.text += "//dependencies for ${project.name} version " + version.replaceAll("-SNAPSHOT", "") + "\n"
+        out.text += "dependencies {\n"
+        dependencies.each {
+            out.text += fetchDependencies(it, ignore)
+        }
+        out.text += "}\n\n"
+    }
+}
+

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -159,7 +159,7 @@ DDS_InstanceHandle_t DDS_DynamicDataWriter_register_instance_w_timestamp (
 	if (!drp || drp->magic != DD_MAGIC)
 		return (DDS_HANDLE_NIL);
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_register_instance (dw, drp->ddata, 1, &ftime));
 }
 
@@ -201,7 +201,7 @@ DDS_ReturnCode_t DDS_DynamicDataWriter_unregister_instance_w_timestamp (
 	if (drp && drp->magic != DD_MAGIC)
 		return (DDS_RETCODE_BAD_PARAMETER);
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_unregister_instance (dw, (drp) ? drp->ddata : NULL, 1, h, &ftime, NULL));
 }
 
@@ -247,7 +247,7 @@ DDS_ReturnCode_t DDS_DynamicDataWriter_unregister_instance_w_timestamp_directed 
 	if (drp && drp->magic != DD_MAGIC)
 		return (DDS_RETCODE_BAD_PARAMETER);
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_unregister_instance (dw, (drp) ? drp->ddata : NULL, 1, h, &ftime, dests));
 }
 
@@ -347,7 +347,7 @@ DDS_ReturnCode_t DDS_DynamicDataWriter_write_w_timestamp (
 	if (!drp || drp->magic != DD_MAGIC)
 		return (DDS_RETCODE_BAD_PARAMETER);
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_write (dw, drp->ddata, 1, h, &ftime, NULL));
 }
 
@@ -393,7 +393,7 @@ DDS_ReturnCode_t DDS_DynamicDataWriter_write_w_timestamp_directed (
 	if (!drp || drp->magic != DD_MAGIC)
 		return (DDS_RETCODE_BAD_PARAMETER);
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_write (dw, drp->ddata, 1, h, &ftime, dests));
 }
 
@@ -434,7 +434,7 @@ DDS_ReturnCode_t DDS_DynamicDataWriter_dispose_w_timestamp (
 	if (drp && drp->magic != DD_MAGIC)
 		return (DDS_RETCODE_BAD_PARAMETER);
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_dispose (dw, (drp) ? drp->ddata : NULL, 1, h, &ftime, NULL));
 }
 
@@ -480,7 +480,7 @@ DDS_ReturnCode_t DDS_DynamicDataWriter_dispose_w_timestamp_directed (
 	if (drp && drp->magic != DD_MAGIC)
 		return (DDS_RETCODE_BAD_PARAMETER);
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_dispose (dw, (drp) ? drp->ddata : NULL, 1, h, &ftime, dests));
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -557,7 +557,7 @@ static CDR_TypeSupport *CDR_DynamicType_register_struct (const DDS_TypeSupport_m
 
 static int dump_meta_type (Skiplist_t *lp, void *np, void *arg)
 {
-	const DDS_TypeSupport *ts, **tsp = (const DDS_TypeSupport **) np;
+	const DDS_TypeSupport ts, *tsp = (const DDS_TypeSupport *) np;
 
 	ARG_NOT_USED (lp)
 	ARG_NOT_USED (arg)
@@ -570,7 +570,7 @@ static int dump_meta_type (Skiplist_t *lp, void *np, void *arg)
 
 static int meta_cmp (const void *np, const void *data)
 {
-	const DDS_TypeSupport	   *ts, **tsp = (const DDS_TypeSupport **) np;
+	DDS_TypeSupport		   ts, *tsp = (DDS_TypeSupport *) np;
 	const DDS_TypeSupport_meta *meta_ts = (const DDS_TypeSupport_meta *) data;
 
 	ts = *tsp;
@@ -583,12 +583,12 @@ static int meta_cmp (const void *np, const void *data)
 			       type support based on the meta type support
 			       array. */
 
-DDS_TypeSupport *DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
+DDS_TypeSupport DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 {
 	CDR_TypeSupport *ts;
-	DDS_TypeSupport *dds_ts;
+	DDS_TypeSupport dds_ts;
 #ifdef META_LIST
-	DDS_TypeSupport **np;
+	DDS_TypeSupport *np;
 	int		is_new;
 #endif
 	const DDS_TypeSupport_meta *mp = tc;
@@ -596,7 +596,7 @@ DDS_TypeSupport *DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 	int		dynamic = 0, dyn_keys = 0, fksize = 1;
 #ifndef CDR_ONLY
 	unsigned	count_1, count_2;
-	unsigned long	bytes_1, bytes_2;
+	size_t		bytes_1, bytes_2;
 #endif
 	DDS_ReturnCode_t error;
 
@@ -644,9 +644,10 @@ DDS_TypeSupport *DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 	ts = CDR_DynamicType_register_struct (&tc, &dynamic, &dyn_keys,
 						     &fksize, 1, 0);
 	if (!ts) {
-		DDS_TypeSupport rm;
+		struct DDS_TypeSupport_st rm;
+
 		rm.ts_meta = tc;
-		*np=&rm;
+		*np = &rm;
 #ifdef META_LIST
 		sl_delete (&meta_types, tc, meta_cmp);
 #endif
@@ -657,7 +658,7 @@ DDS_TypeSupport *DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 	}
 
 	ts->refcnt++;
-	dds_ts = xmalloc (sizeof (DDS_TypeSupport));
+	dds_ts = xmalloc (sizeof (TypeSupport_t));
 	if (!dds_ts) {
 		CDR_DynamicType_free (ts);
 #ifndef CDR_ONLY
@@ -665,7 +666,7 @@ DDS_TypeSupport *DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 #endif
 		return (NULL);
 	}
-	memset (dds_ts, 0, sizeof (DDS_TypeSupport));
+	memset (dds_ts, 0, sizeof (TypeSupport_t));
 	dds_ts->ts_name = mp->name;
 	dds_ts->ts_prefer = MODE_CDR;
 	dds_ts->ts_keys = mp->flags & TSMFLAG_KEY;
@@ -676,7 +677,7 @@ DDS_TypeSupport *DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 	if (dyn_keys)
 		dds_ts->ts_mkeysize = 0;
 	else
-		dds_ts->ts_mkeysize = cdr_marshalled_size (4, NULL, ts, 1, 1, &error);
+		dds_ts->ts_mkeysize = cdr_marshalled_size (CDR_DOFS, NULL, ts, 1, 1, &error);
 	dds_ts->ts_meta = mp;
 	dds_ts->ts_users = 1;
 #ifndef CDR_ONLY
@@ -684,7 +685,7 @@ DDS_TypeSupport *DDS_DynamicType_register (const DDS_TypeSupport_meta *tc)
 	log_printf (DDS_ID, 0, "DDS: DynamicType_register(%s): %u blocks, %lu bytes\r\n",
 				mp->name,
 				count_2 - count_1,
-				bytes_2 - bytes_1);
+				(unsigned long) (bytes_2 - bytes_1));
 #endif
 #ifdef META_LIST
 	*np = dds_ts;
@@ -733,6 +734,7 @@ static void CDR_DynamicType_free (CDR_TypeSupport *ts)
 }
 
 #ifndef CDR_ONLY
+
 /* DDS__SampleFree -- Free the dynamically allocated memory used up by a sample.
                       Only use this if the allocated memory isn't consecutive. */
 
@@ -782,7 +784,7 @@ static void DDS__SampleFree (void *sample, const CDR_TypeSupport *ts,
                      metadata. Only use this if the allocated memory isn't
                      consecutive. */
 
-void DDS_SampleFree (void *sample, const DDS_TypeSupport *ts, int full, void (*free)(void *p))
+void DDS_SampleFree (void *sample, const DDS_TypeSupport ts, int full, void (*free)(void *p))
 {
 	ctrc_printd (DCPS_ID, 2, sample, sizeof (sample));
 	prof_start (tc_sample_free);
@@ -794,15 +796,16 @@ void DDS_SampleFree (void *sample, const DDS_TypeSupport *ts, int full, void (*f
 
 	prof_stop (tc_sample_free, 1);
 }
+
 #endif
 
 /* DDS_DynamicType_free -- Free the resources associated with a type. */
 
-void DDS_DynamicType_free (DDS_TypeSupport *ts)
+void DDS_DynamicType_free (DDS_TypeSupport ts)
 {
 	TS_MODE		mode;
 #ifdef META_LIST
-	DDS_TypeSupport **np;
+	DDS_TypeSupport *np;
 #endif
 
 	prof_start (tc_dtype_free);
@@ -856,14 +859,19 @@ void DDS_DynamicType_free (DDS_TypeSupport *ts)
 	prof_stop (tc_dtype_free, 1);
 }
 
+DDS_ReturnCode_t DDS_TypeSupport_delete (DDS_TypeSupport ts)
+{
+	DDS_DynamicType_free (ts);
+	return (DDS_RETCODE_OK);
+}
 
 #ifdef DDS_DEBUG
 
 /* DDS_DynamicType_dump_type -- Dump typecode data for visual analysis. */
 
-void DDS_TypeSupport_dump_type (unsigned              indent, 
-				const DDS_TypeSupport *ts,
-				unsigned              flags)
+void DDS_TypeSupport_dump_type (unsigned            indent, 
+				const TypeSupport_t *ts,
+				unsigned            flags)
 {
 	static const char *mode_str [] = {
 		"CDR", "PL_CDR", "XML", "RAW"
@@ -893,12 +901,12 @@ void DDS_TypeSupport_dump_type (unsigned              indent,
 
 /* DDS_DynamicType_dump_data -- Dump a data sample. */
 
-void DDS_TypeSupport_dump_data (unsigned              indent,
-				const DDS_TypeSupport *ts,
-				const void            *data,
-				int                   native,
-				int                   dynamic,
-				int                   field_names)
+void DDS_TypeSupport_dump_data (unsigned            indent,
+				const TypeSupport_t *ts,
+				const void          *data,
+				int                 native,
+				int                 dynamic,
+				int                 field_names)
 {
 	ARG_NOT_USED (dynamic)
 	ARG_NOT_USED (field_names)
@@ -917,14 +925,13 @@ void DDS_TypeSupport_dump_data (unsigned              indent,
 }
 
 #endif
-
 #ifdef META_LIST
 	
 /* dds_cleanup_type -- Cleanup a registered type. */
 
 int dds_cleanup_type (Skiplist_t *list, void *node, void *args)
 {
-	DDS_TypeSupport	   *ts, **tsp = (DDS_TypeSupport **) node;
+	TypeSupport_t	   *ts, **tsp = (TypeSupport_t **) node;
 
 	ARG_NOT_USED (list)
 	ARG_NOT_USED (args)
@@ -983,10 +990,10 @@ int dds_typesupport_init (void)
 
 /* DDS_MarshalledDataSize -- Return the buffer size for marshalled data. */
 
-size_t DDS_MarshalledDataSize (const void            *sample,
-			       int                   dynamic,
-			       const DDS_TypeSupport *ts,
-			       DDS_ReturnCode_t      *ret)
+size_t DDS_MarshalledDataSize (const void          *sample,
+			       int                 dynamic,
+			       const TypeSupport_t *ts,
+			       DDS_ReturnCode_t    *ret)
 {
 	size_t	length;
 
@@ -999,7 +1006,7 @@ size_t DDS_MarshalledDataSize (const void            *sample,
 
 	switch (ts->ts_prefer) {
 		case MODE_CDR:
-			length = cdr_marshalled_size (4, sample, ts->ts_cdr, 0, 0, ret);
+			length = cdr_marshalled_size (CDR_DOFS, sample, ts->ts_cdr, 0, 0, ret);
 			if (!length)
 				return (0);
 			break;
@@ -1022,10 +1029,10 @@ size_t DDS_MarshalledDataSize (const void            *sample,
 /* DDS_MarshallData -- Marshall payload data using the proper type support coding
 		       for either local (in-device.*/
 
-DDS_ReturnCode_t DDS_MarshallData (void                  *buffer,
-			           const void            *data,
-				   int                   dynamic,
-			           const DDS_TypeSupport *ts)
+DDS_ReturnCode_t DDS_MarshallData (void                *buffer,
+			           const void          *data,
+				   int                 dynamic,
+			           const TypeSupport_t *ts)
 {
 	unsigned char	*dp = buffer;
 	DDS_ReturnCode_t ret;
@@ -1040,7 +1047,7 @@ DDS_ReturnCode_t DDS_MarshallData (void                  *buffer,
 			if (!ts->ts_cdr)
 				return (DDS_RETCODE_BAD_PARAMETER);
 
-			ret = cdr_marshall (dp + 4, 4, data, ts->ts_cdr, 0, 0, 0);
+			ret = cdr_marshall (dp + 4, CDR_DOFS, data, ts->ts_cdr, 0, 0, 0);
 			if (ret)
 				return (ret);
 
@@ -1069,12 +1076,12 @@ DDS_ReturnCode_t DDS_MarshallData (void                  *buffer,
 
 /* DDS_UnmarshalledDataSize -- Return the buffer size needed for marshalled data. */
 
-size_t DDS_UnmarshalledDataSize (DBW                   data,
-			         const DDS_TypeSupport *ts,
-			         DDS_ReturnCode_t      *error)
+size_t DDS_UnmarshalledDataSize (DBW                 data,
+			         const TypeSupport_t *ts,
+			         DDS_ReturnCode_t    *error)
 {
-	unsigned char	*dp;
-	unsigned	type;
+	const unsigned char	*dp;
+	unsigned		type;
 
 	if (!ts || data.length < 8) {
 		if (error)
@@ -1091,7 +1098,7 @@ size_t DDS_UnmarshalledDataSize (DBW                   data,
 		int swap = (type & 1) ^ ENDIAN_CPU;
 
 		if (ts->ts_cdr)
-			return (cdr_unmarshalled_size (data.data, 4, ts->ts_cdr,
+			return (cdr_unmarshalled_size (data.data, CDR_DOFS, ts->ts_cdr,
 							       0, 0, swap, error));
 		else if (error)
 			*error = DDS_RETCODE_UNSUPPORTED;
@@ -1116,14 +1123,14 @@ size_t DDS_UnmarshalledDataSize (DBW                   data,
 /* DDS_UnmarshallData -- Unmarshall payload data using the proper type support
 		         package. */
 
-DDS_ReturnCode_t DDS_UnmarshallData (void                  *buffer,
-				     DBW                   *data,
-				     const DDS_TypeSupport *ts)
+DDS_ReturnCode_t DDS_UnmarshallData (void                *buffer,
+				     DBW                 *data,
+				     const TypeSupport_t *ts)
 {
-	int		 swap;
-	unsigned char	 *dp;
-	unsigned	 type;
-	DDS_ReturnCode_t ret = DDS_RETCODE_OK;
+	int		 	swap;
+	const unsigned char	*dp;
+	unsigned	 	type;
+	DDS_ReturnCode_t 	ret = DDS_RETCODE_OK;
 
 	dp = data->data;
 	type = dp [0] << 8 | dp [1];
@@ -1134,7 +1141,7 @@ DDS_ReturnCode_t DDS_UnmarshallData (void                  *buffer,
 
 	if ((type >> 1) == MODE_CDR) {
 		if (ts->ts_cdr)
-			ret = cdr_unmarshall (buffer, DBW_PTR (*data), 4,
+			ret = cdr_unmarshall (buffer, DBW_PTR (*data), CDR_DOFS,
 					      ts->ts_cdr, 0, 0, swap);
 		else
 			ret = DDS_RETCODE_UNSUPPORTED;
@@ -1157,10 +1164,10 @@ DDS_ReturnCode_t DDS_UnmarshallData (void                  *buffer,
 /* DDS_KeySizeFromNativeData -- Returns the total size of the key fields from
 				a native data sample. */
 
-size_t DDS_KeySizeFromNativeData (const unsigned char   *data,
-				  int                   dynamic,
-				  const DDS_TypeSupport *ts,
-				  DDS_ReturnCode_t      *error)
+size_t DDS_KeySizeFromNativeData (const unsigned char *data,
+				  int                 dynamic,
+				  const TypeSupport_t *ts,
+				  DDS_ReturnCode_t    *error)
 {
 	size_t	l;
 
@@ -1182,7 +1189,7 @@ size_t DDS_KeySizeFromNativeData (const unsigned char   *data,
 	}
 	switch (ts->ts_prefer) {
 		case MODE_CDR:
-			l = cdr_marshalled_size (4, data, ts->ts_cdr, 1, 0, error);
+			l = cdr_marshalled_size (CDR_DOFS, data, ts->ts_cdr, 1, 0, error);
 			prof_stop (tc_k_s_nat, 1);
 			return (l);
 #ifndef CDR_ONLY
@@ -1206,15 +1213,17 @@ size_t DDS_KeySizeFromNativeData (const unsigned char   *data,
 /* DDS_KeyFromNativeData -- Extract the key fields from a non-marshalled native
 			    data sample (data). */
 
-DDS_ReturnCode_t DDS_KeyFromNativeData (unsigned char         *key,
-					const void            *data,
-					int                   dynamic,
-					const DDS_TypeSupport *ts)
+DDS_ReturnCode_t DDS_KeyFromNativeData (unsigned char       *key,
+					const void          *data,
+					int                 dynamic,
+					int                 secure,
+					const TypeSupport_t *ts)
 {
 	int			swap, msize;
 	DDS_ReturnCode_t	ret;
 
 	ARG_NOT_USED (dynamic)
+	ARG_NOT_USED (secure)
 
 	prof_start (tc_k_g_nat);
 
@@ -1231,7 +1240,7 @@ DDS_ReturnCode_t DDS_KeyFromNativeData (unsigned char         *key,
 				swap = 0;
 				msize = 0;
 			}
-			ret = cdr_marshall (key, 4, data, ts->ts_cdr, 1, msize, swap);
+			ret = cdr_marshall (key, CDR_DOFS, data, ts->ts_cdr, 1, msize, swap);
 			prof_stop (tc_k_g_nat, 1);
 			return (ret);
 #ifndef CDR_ONLY
@@ -1249,15 +1258,17 @@ DDS_ReturnCode_t DDS_KeyFromNativeData (unsigned char         *key,
 
 /* DDS_KeyToNativeData -- Copy the key fields to a native data sample. */
 
-DDS_ReturnCode_t DDS_KeyToNativeData (void                  *data,
-				      int                   dynamic,
-				      const void            *key,
-				      const DDS_TypeSupport *ts)
+DDS_ReturnCode_t DDS_KeyToNativeData (void                *data,
+				      int                 dynamic,
+				      int                 secure,
+				      const void          *key,
+				      const TypeSupport_t *ts)
 {
 	DDS_ReturnCode_t ret;
 	int		 swap, msize;
 
 	ARG_NOT_USED (dynamic)
+	ARG_NOT_USED (secure)
 
 	prof_start (tc_k_p_nat);
 	switch (ts->ts_prefer) {
@@ -1270,7 +1281,7 @@ DDS_ReturnCode_t DDS_KeyToNativeData (void                  *data,
 				swap = 0;
 				msize = 0;
 			}
-			ret = cdr_unmarshall (data, key, 4, ts->ts_cdr, 1,
+			ret = cdr_unmarshall (data, key, CDR_DOFS, ts->ts_cdr, 1,
 								msize, swap);
 			prof_stop (tc_k_p_nat, 1);
 			break;
@@ -1284,15 +1295,15 @@ DDS_ReturnCode_t DDS_KeyToNativeData (void                  *data,
 /* DDS_KeySizeFromMarshalled -- Returns the total size of the key fields
 				in a marshalled data sample. */
 
-size_t DDS_KeySizeFromMarshalled (DBW                   data,
-				  const DDS_TypeSupport *ts,
-				  int                   key,
-				  DDS_ReturnCode_t      *error)
+size_t DDS_KeySizeFromMarshalled (DBW                 data,
+				  const TypeSupport_t *ts,
+				  int                 key,
+				  DDS_ReturnCode_t    *error)
 {
-	unsigned char	*dp;
-	unsigned	type;
-	int		swap;
-	size_t		l;
+	const unsigned char	*dp;
+	unsigned		type;
+	int			swap;
+	size_t			l;
 
 	prof_start (tc_k_s_marsh);
 	if (!ts || !ts->ts_keys) {
@@ -1312,7 +1323,7 @@ size_t DDS_KeySizeFromMarshalled (DBW                   data,
 	swap = (type & 1) ^ ENDIAN_CPU;
 	if ((type >> 1) == MODE_CDR) {
 		if (ts->ts_cdr) {
-			l = cdr_key_size (data.data, 4, ts->ts_cdr, key, 0, swap, error);
+			l = cdr_key_size (data.data, CDR_DOFS, ts->ts_cdr, key, 0, swap, error);
 			prof_stop (tc_k_s_marsh, 1);
 			return (l);
 		}
@@ -1332,7 +1343,7 @@ size_t DDS_KeySizeFromMarshalled (DBW                   data,
 #endif
 	else if ((type >> 1) == MODE_RAW)
 		if (ts->ts_cdr) {
-			l = cdr_marshalled_size (4, data.data, ts->ts_cdr, 1, 0, error);
+			l = cdr_marshalled_size (CDR_DOFS, data.data, ts->ts_cdr, 1, 0, error);
 			prof_stop (tc_k_s_marsh, 1);
 			return (l);
 		}
@@ -1346,15 +1357,18 @@ size_t DDS_KeySizeFromMarshalled (DBW                   data,
 
 /* DDS_KeyFromMarshalled -- Extract the key fields from marshalled key/data. */
 
-DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char         *dst,
-					DBW                   data,
-					const DDS_TypeSupport *ts,
-					int                   key)
+DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char       *dst,
+					DBW                 data,
+					const TypeSupport_t *ts,
+					int                 key,
+					int                 secure)
 {
-	unsigned char	*dp;
-	unsigned	type;
-	int		swap, iswap, msize;
-	DDS_ReturnCode_t ret;
+	const unsigned char	*dp;
+	unsigned		type;
+	int			swap, iswap, msize;
+	DDS_ReturnCode_t	ret;
+
+	ARG_NOT_USED (secure)
 
 	prof_start (tc_k_g_marsh);
 	if (!ts || !ts->ts_keys || data.length < 8)
@@ -1368,12 +1382,12 @@ DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char         *dst,
 		if (ts->ts_cdr) {
 			if (ts->ts_mkeysize && ts->ts_mkeysize <= 16) {
 				swap = (type & 1) ^ ENDIAN_BIG;
-				ret = cdr_key_fields (dst, 4, data.data, 4, 
+				ret = cdr_key_fields (dst, CDR_DOFS, data.data, CDR_DOFS, 
 					       ts->ts_cdr, key, 1, swap, iswap);
 			}
 			else {
 				swap = (type & 1) ^ ENDIAN_CPU;
-				ret = cdr_key_fields (dst, 4, data.data, 4,
+				ret = cdr_key_fields (dst, CDR_DOFS, data.data, CDR_DOFS,
 					       ts->ts_cdr, key, 0, swap, iswap);
 			}
 			prof_stop (tc_k_g_marsh, 1);
@@ -1404,7 +1418,7 @@ DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char         *dst,
 				swap = 0;
 				msize = 0;
 			}
-			ret = cdr_marshall (dst, 4, data.data, ts->ts_cdr, 1, msize, swap);
+			ret = cdr_marshall (dst, CDR_DOFS, data.data, ts->ts_cdr, 1, msize, swap);
 			prof_stop (tc_k_g_marsh, 1);
 			return (ret);
 		}
@@ -1417,15 +1431,16 @@ DDS_ReturnCode_t DDS_KeyFromMarshalled (unsigned char         *dst,
 
 #ifndef CDR_ONLY
 
-#define	KEY_HSIZE	4	/* Assume same alignment for the MD5 checksum
+#define	KEY_HSIZE CDR_DOFS	/* Assume same alignment for the MD5 checksum
 				   data as for transported key fields. */
 
 /* DDS_HashFromKey -- Calculate the hash value from a key. */
 
-DDS_ReturnCode_t DDS_HashFromKey (unsigned char         hash [16],
-				  const unsigned char   *key,
-				  size_t                key_size,
-				  const DDS_TypeSupport *ts)
+DDS_ReturnCode_t DDS_HashFromKey (unsigned char       hash [16],
+				  const unsigned char *key,
+				  size_t              key_size,
+				  int                 secure,
+				  const TypeSupport_t *ts)
 {
 	MD5_CONTEXT		mdc;
 	unsigned char		*dp;
@@ -1435,8 +1450,9 @@ DDS_ReturnCode_t DDS_HashFromKey (unsigned char         hash [16],
 #ifdef MAX_KEY_BUFFER
 	unsigned char		key_buffer [MAX_KEY_BUFFER];
 #endif
-
 	DDS_ReturnCode_t	ret;
+
+	ARG_NOT_USED (secure)
 
 	prof_start (tc_h_key);
 	if (ts->ts_mkeysize && ts->ts_mkeysize <= 16) {
@@ -1456,7 +1472,7 @@ DDS_ReturnCode_t DDS_HashFromKey (unsigned char         hash [16],
 	else if (ts->ts_mkeysize)
 		n = ts->ts_mkeysize;
 	else {
-		n = cdr_key_size (key, 4, ts->ts_cdr, 1, 1, swap, &ret);
+		n = cdr_key_size (key, CDR_DOFS, ts->ts_cdr, 1, 1, swap, &ret);
 		if (!n)
 			return (ret);
 	}
@@ -1474,7 +1490,7 @@ DDS_ReturnCode_t DDS_HashFromKey (unsigned char         hash [16],
 #ifdef MAX_KEY_BUFFER
 		}
 #endif
-		ret = cdr_key_fields (dp, KEY_HSIZE, key, 4, ts->ts_cdr,
+		ret = cdr_key_fields (dp, KEY_HSIZE, key, CDR_DOFS, ts->ts_cdr,
 								1, 1, swap, 0);
 		if (ret) {
 #ifdef MAX_KEY_BUFFER

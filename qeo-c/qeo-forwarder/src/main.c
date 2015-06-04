@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -46,6 +46,11 @@ static void syntax(const char *app)
     printf("  -u DELAY:PERIOD:PERIOD  delay for initial UPnP-IGD discovery (in ms, default = 2000),\n");
     printf("                          period for requerying the public IP (in sec, default = 300),\n");
     printf("                          period for port map lease (in sec, default = 3600),\n");
+    printf("  -n                      disable notification service\n");
+    printf("  -f                      disable forwarding service\n");
+    printf("                          (-a is mandatory when -f is used)\n");
+    printf("  -r DELAY                When factory creation fails, retry again with a delay of DELAY\n");
+    printf("  -m PATH                 disable portmap on the gateway and write public port to PATH\n");
     exit(1);
 }
 
@@ -82,14 +87,15 @@ static bool str2int(const char *str,
 static void parse_args(int argc, char **argv)
 {
     int c;
+    bool forwarding_disabled = false;
+    bool address_set = false;
 
-    while ((c = getopt (argc, argv, "a:hp:l:u:")) != -1) {
+    while ((c = getopt (argc, argv, "a:hp:l:nfu:r:m:")) != -1) {
         switch (c) {
             case 'a': {
                 /* -a IP : public address */
                 const char *colon;
                 int port;
-                bool ok = false;
 
                 colon = strchr(optarg, ':');
                 if (NULL != colon) {
@@ -101,12 +107,12 @@ static void parse_args(int argc, char **argv)
                             strncpy(ip, optarg, len);
                             ip[len] = '\0';
                             forwarder_config_public_locator(ip, port);
-                            ok = true;
+                            address_set = true;
                             free(ip);
                         }
                     }
                 }
-                if (!ok) {
+                if (!address_set) {
                     fail("invalid IP:PORT '%s'", optarg);
                 }
                 break;
@@ -133,6 +139,17 @@ static void parse_args(int argc, char **argv)
                 }
                 break;
             }
+            case 'n': {
+                /* -n : disable notication service */
+                forwarder_disable_notification_service();
+                break;
+            }
+            case 'f': {
+                /* -f : disable forwarding service */
+                forwarder_disable_forwarding_service();
+                forwarding_disabled = true;
+                break;
+            }
             case 'u': {
                 /* -u DELAY:PERIOD : UPnP timings */
                 const char *colon1, *colon2;
@@ -156,11 +173,32 @@ static void parse_args(int argc, char **argv)
                 }
                 break;
             }
+            case 'r': {
+                /* -r: retry on failed remote registration */
+                int delay;
+
+                if (str2int(optarg, 0, &delay)) {
+                    forwarder_retry_on_failed_remote_registration(delay);
+                }
+                else {
+                    fail("invalid RETRYTIME '%s'", optarg);
+                }
+                break;
+            }
+            case 'm': {
+                /* -m: disable portmap */
+                forwarder_disable_portmap(optarg);
+                break;
+            }
             case 'h':
             default:
                 syntax(argv[0]);
                 break;
         }
+    }
+    if (forwarding_disabled && !address_set) {
+        syntax(argv[0]);
+        fail("option -a necessary");
     }
 }
 

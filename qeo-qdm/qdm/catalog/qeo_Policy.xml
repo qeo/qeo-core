@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+	<module name="org::qeo::system">
+		<struct name="Policy" behavior="state">
+		    <doc>The currently enforced policy</doc>
+			<member name="seqnr" type="int64" key="true">
+				<doc>Policy Sequence Nr.</doc>
+			</member>
+			<member name="content" type="string">
+				<doc>Policy content.</doc>
+			</member>
+		</struct>
+	</module>
+</types> 

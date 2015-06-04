@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -49,7 +49,7 @@
 
 #ifdef SIMPLE_DISCOVERY
 
-/*#define PSMP_TRACE_MSG	** PSMP handshake message tracing if defined. */
+#define PSMP_TRACE_MSG		/* PSMP handshake message tracing if defined. */
 /*#define PSMP_RTPS_TRACE	** PSMP endpoint tracing on RTPS if defined. */
 /*#define PSMP_TRACE_HS		** PSMP creation, deletion, getting, ... of Handshakes. */
 
@@ -76,12 +76,12 @@ typedef enum {
 
 #define PSMP_V_RETRY_TO		200	/* Identity validation retry timeout (ms). */
 #define PSMP_CLEANUP_TO		40000	/* Cleanup handshake context timeout (ms). */
-#define PSMP_HS_REQ_TO		1000	/* Waiting before resending request message (ms). */
-#define PSMP_REQ_RETRY_TO	900	/* Retry handshake request timeout (ms). (Non handshake protocol required) */
-#define PSMP_REPLY_RETRY_TO	900	/* Retry handshake reply timeout (ms).  (Non handshake protocol required) */
-#define PSMP_WAIT_REQ_TO	4000	/* Wait initial handshake Request (ms). */
-#define PSMP_WAIT_MSG_TO	1000	/* Waiting before sending next handshake message (i.e. reply msg) (ms). */
-#define PSMP_WAIT_FAILED_TO	5000	/* Time for an ignored participant to timeout and retry handshake. */
+#define PSMP_HS_REQ_TO		500	/* Waiting before first request message (ms). */
+#define PSMP_REQ_RETRY_TO	1800	/* Retry handshake request timeout (ms). (Non handshake protocol required) */
+#define PSMP_REPLY_RETRY_TO	1800	/* Retry handshake reply timeout (ms).  (Non handshake protocol required) */
+#define PSMP_WAIT_REQ_TO	2000	/* Wait initial handshake Request (ms). */
+#define PSMP_WAIT_MSG_TO	3000	/* Waiting before sending next handshake message (i.e. reply msg) (ms). */
+#define PSMP_WAIT_FAILED_TO	10000	/* Time for an ignored participant to timeout and retry handshake. */
 
 #define	PSMP_MAX_BACKOFF	3	/* Max. power for backoff. */
 
@@ -101,7 +101,6 @@ struct psmp_handshake_st {
 	unsigned		backoff;	/* Backoff value. */
 	int64_t			transaction;	/* Transaction number. */
 	int64_t			tx_seqnr;	/* Tx handshake sequence number. */
-	int64_t			last_seqnr;	/* Last handshake sequence number. */
 	int64_t			last_rel;	/* Last transaction number. */
 	int			initiator;	/* Handshake initiator. */
 	int			rehandshake;	/* Rehandshake i.o. first time. */
@@ -109,6 +108,7 @@ struct psmp_handshake_st {
 };
 
 static IpspHandshake_t	*handshakes;
+static const char whandshake_str [] = "WaitHandshake";
 
 #ifdef PSMP_TRACE_MSG
 
@@ -197,7 +197,6 @@ static IpspHandshake_t *psmp_handshake_get (Domain_t      *dp,
 		p->backoff = 0;
 		p->transaction = 0;
 		p->tx_seqnr = 0;
-		p->last_seqnr = 0;
 		p->last_rel = 0;
 		p->initiator = 0;
 		p->next = handshakes;
@@ -315,6 +314,9 @@ static void psmp_handshake_send (IpspHandshake_t *p)
 	DDS_InstanceHandle_t		h;
 	int				error;
 
+	if (!p->tx_hs_token)
+		return;
+
 	memset (&msg, 0, sizeof (msg));
 	msg.message_class_id = GMCLASSID_SECURITY_AUTH_HANDSHAKE;
 	DDS_SEQ_INIT_PTR (msg.message_data, *p->tx_hs_token);
@@ -387,9 +389,9 @@ static int psmp_handshake_ok (IpspHandshake_t *p, int immediate, int send_final)
 	log_printf (SPDP_ID, 0, "PSMP: authorized participant! %s\r\n", guid_prefix_str (&p->peer->p_guid_prefix, buf));
 	p->peer->p_permissions = perm;
 	p->peer->p_auth_state = AS_OK;
-	if (p->rehandshake)
+	/*if (p->rehandshake)
 		DDS_Security_topics_reevaluate (p->domain, p->peer->p_handle, "*");
-	else
+	else*/
 		spdp_remote_participant_enable (p->domain, p->peer, p->handle);
 #ifdef DDS_QEO_TYPES
 	policy_updater_participant_start_timer (p->domain, p->peer, ((PSMP_CLEANUP_TO + 5000) / TMR_UNIT_MS));
@@ -426,12 +428,10 @@ static void psmp_handshake_request (IpspHandshake_t *p)
 			break;
 		case AS_PENDING_HANDSHAKE_MSG:
 			p->transaction = p->tx_seqnr;
-			psmp_handshake_send (p);
-			psmp_state (p, IHSS_W_MSG);
 			p->retries = MAX_REQ_RETRIES;
 			p->backoff = 0;
 			tmr_start_lock (&p->timer,
-					PSMP_HS_REQ_TO / TMR_UNIT_MS,
+					fastrandn (PSMP_HS_REQ_TO / TMR_UNIT_MS) + 20,
 					(uintptr_t) p,
 					psmp_timeout,
 					&p->domain->lock);
@@ -547,7 +547,7 @@ static void psmp_handshake_process (IpspHandshake_t *p)
 		case AS_OK:
 			tmr_stop (&p->timer);
 #ifdef DDS_QEO_TYPES
-			policy_updater_participant_start_timer (p->domain, p->peer, (5000 / TMR_UNIT_MS));
+			policy_updater_participant_start_timer (p->domain, p->peer, ((PSMP_CLEANUP_TO + 5000) / TMR_UNIT_MS));
 #endif
 			psmp_handshake_ok (p, 1, 0);
 			break;
@@ -591,13 +591,11 @@ static void psmp_handshake_process (IpspHandshake_t *p)
 	}
 }
 
-#define	WHANDSHAKE_STR	"WaitHandshake"
-
 static DDS_HandshakeToken *psmp_hs_init_token (void)
 {
 	DDS_HandshakeToken *token;
 
-	token = DDS_DataHolder__alloc (WHANDSHAKE_STR);
+	token = DDS_DataHolder__alloc (whandshake_str);
 	return (token);
 }
 
@@ -678,14 +676,40 @@ static void rvri_to (IpspHandshake_t *p)
 	}
 }
 
+static void psmp_send_first_req (IpspHandshake_t *p)
+{
+	unsigned	n;
+
+	p->peer->p_last_seqnr = 1;
+	psmp_handshake_send (p);
+	psmp_state (p, IHSS_W_MSG);
+	if (p->backoff < PSMP_MAX_BACKOFF)
+		p->backoff++;
+	n = 1 << (fastrandn (p->backoff + 1));
+	tmr_start_lock (&p->timer,
+			(PSMP_WAIT_REQ_TO / TMR_UNIT_MS) * n,
+			(uintptr_t) p,
+			psmp_timeout,
+			&p->domain->lock);
+}
+
+static void rreq_token (IpspHandshake_t *p)
+{
+	if (p->peer && !p->peer->p_last_seqnr) {
+		log_printf (SPDP_ID, 0, "PSMP: First wait handshake: send request fast!\r\n");
+		tmr_start_lock (&p->timer,
+			5,
+			(uintptr_t) p,
+			psmp_timeout,
+			&p->domain->lock);
+
+		/*psmp_send_first_req (p);*/
+	}
+}
+
 static void rreq_to (IpspHandshake_t *p)
 {
-	if (!--p->retries) {
-		log_printf (SPDP_ID, 0, "PSMP: Too many retries failure!\r\n");
-		psmp_handshake_fail (p, 1);
-	}
-	else
-		psmp_handshake_request (p);
+	psmp_send_first_req (p);
 }
 
 static void wreq_token (IpspHandshake_t *p)
@@ -698,7 +722,7 @@ static void wreq_to (IpspHandshake_t *p)
 	unsigned	n;
 
 	if (!--p->retries) {
-		log_printf (SPDP_ID, 0, "PSMP: Remote Request time-out!\r\n");
+		log_printf (SPDP_ID, 0, "PSMP: Failed - waiting for Request time-out!\r\n");
 		psmp_handshake_fail (p, 1);
 	}
 	else {
@@ -760,7 +784,7 @@ static void wmsg_to (IpspHandshake_t *p)
 	unsigned	n;
 
 	if (!--p->retries) {
-		log_printf (SPDP_ID, 0, "PSMP: Too many retries failure!\r\n");
+		log_printf (SPDP_ID, 0, "PSMP: Failure - too many retries waiting for message!\r\n");
 		psmp_handshake_fail (p, 1);
 	}
 	else {
@@ -782,7 +806,7 @@ static void wmsg_to (IpspHandshake_t *p)
 static void rhs_to (IpspHandshake_t *p)
 {
 	if (!--p->retries) {
-		log_printf (SPDP_ID, 0, "PSMP: Too many retries failure!\r\n");
+		log_printf (SPDP_ID, 0, "PSMP: Failure -- too many retries processing!\r\n");
 		psmp_handshake_fail (p, 1);
 	}
 	else
@@ -797,7 +821,7 @@ static void wto_to (IpspHandshake_t *p)
 static IHSFCT ihsp_fsm [IHS_NSTATES][IHS_NEVENTS] = {
 		  /*TOKEN*/	/*TO*/
 /*R_VRI  */	{ NULL,		rvri_to },
-/*R_REQ  */	{ NULL,		rreq_to },
+/*R_REQ  */	{ rreq_token,	rreq_to },
 /*W_REQ  */	{ wreq_token,	wreq_to },
 /*R_REPLY*/	{ NULL,		rrep_to },
 /*W_MSG  */	{ wmsg_token,	wmsg_to },
@@ -873,7 +897,7 @@ void psmp_handshake_initiate (Domain_t      *dp,
 #endif
 	/* Resend participant info. */
 	wp = (Writer_t *) dp->participant.p_builtin_ep [EPB_PARTICIPANT_W];
-	rtps_stateless_resend (wp);
+	rtps_stateless_send (wp, pp, 0);
 
 	/* Send handshake. */
 	psmp_state_i (p, IHSS_R_REQ);
@@ -883,6 +907,10 @@ void psmp_handshake_initiate (Domain_t      *dp,
 	p->backoff = 0;
 	p->rehandshake = rehandshake;
 	p->initiator = 1;
+
+	if (rehandshake)
+		spdp_remote_participant_disable (pp);
+
 	psmp_handshake_request (p);
 }
 
@@ -901,7 +929,7 @@ void psmp_handshake_wait (Domain_t      *dp,
 
 	/* Resend participant info. */
 	wp = (Writer_t *) dp->participant.p_builtin_ep [EPB_PARTICIPANT_W];
-	rtps_stateless_resend (wp);
+	rtps_stateless_send (wp, pp, 0);
 
 	p = psmp_handshake_get (dp, pp, 1, 1);
 	if (!p) {
@@ -928,6 +956,8 @@ void psmp_handshake_wait (Domain_t      *dp,
 			psmp_timeout,
 			&dp->lock);
 	}
+	else
+		spdp_remote_participant_disable (pp);
 }
 
 /* psmp_delete -- Delete a handshake context corresponding to a participant. */
@@ -951,16 +981,17 @@ static void psmp_handshake_token (Domain_t                        *dp,
 {
 	IpspHandshake_t	*p;
 	Participant_t	*pp;
+	DDS_DataHolder	*token;
 	IHSFCT		fct;
 	char		buf [32];
-
-	/*log_printf (SEC_ID, 0, "PSMP: handshake token\r\n");*/
 
 	/* Check if message elements are correct. */
 	if (memcmp (info->destination_endpoint_key, psmp_unknown_key, 16) ||
 	    memcmp (info->source_endpoint_key, psmp_unknown_key, 16) ||
-	    DDS_SEQ_LENGTH (info->message_data) != 1)
+	    DDS_SEQ_LENGTH (info->message_data) != 1) {
+		log_printf (SEC_ID, 0, "PSMP: handshake token ignored!\r\n");
 		return;
+	}
 
 	/* Lookup the participant. */
 	pp = participant_lookup (dp,
@@ -971,18 +1002,40 @@ static void psmp_handshake_token (Domain_t                        *dp,
 		return;
 	}
 
+	/* Validate sequence number. */
+	if (info->message_identity.sequence_number < pp->p_last_seqnr) {
+#ifdef PSMP_TRACE_HS
+		log_printf (SEC_ID, 0, "psmp_handshake_token: duplicate message.\r\n");
+#endif
+		return;
+	}
 
-	/* Lookup the handshake context. */
+	/* Check if a rehandshake is requested! */
 	p = psmp_handshake_get (dp, pp, 0, 0);
-	if (!strcmp (info->message_class_id, WHANDSHAKE_STR)) {
-		if (pp->p_auth_state == AS_OK || pp->p_auth_state == AS_OK_FINAL_MSG) {
-			log_printf (SEC_ID, 0, "psmp_handshake_token: restarting handshake (%s)\r\n",
+	if (DDS_SEQ_LENGTH (info->message_data))
+		token = DDS_SEQ_ITEM_PTR (info->message_data, 0);
+	else
+		token = NULL;
+	if (token &&
+	    !strcmp (info->message_class_id, GMCLASSID_SECURITY_AUTH_HANDSHAKE) &&
+	    (pp->p_auth_state == AS_OK || pp->p_auth_state == AS_OK_FINAL_MSG)) {
+		if (!strcmp (token->class_id, whandshake_str)) {
+			log_printf (SEC_ID, 0, "psmp_handshake_token: restarting handshake - initiate (%s)\r\n",
 			    guid_prefix_str ((GuidPrefix_t *) info->message_identity.source_guid, buf));
 
 			psmp_handshake_initiate (dp, pp, pp->p_id_tokens, pp->p_p_tokens, 1);
+			return;
 		}
-		return;
+		else if (!p && !memcmp (token->class_id + 3, ":Auth:ChallengeReq:", 19)) {
+			log_printf (SEC_ID, 0, "psmp_handshake_token: restarting handshake - wait (%s)\r\n",
+			    guid_prefix_str ((GuidPrefix_t *) info->message_identity.source_guid, buf));
+
+			psmp_handshake_wait (dp, pp, pp->p_id_tokens, pp->p_p_tokens, 1);
+			p = psmp_handshake_get (dp, pp, 0, 0);
+		}
 	}
+
+	/* Lookup the handshake context. */
 	if (!p) {
 #ifdef PSMP_TRACE_HS
 		log_printf (SEC_ID, 0, "psmp_handshake_token: handshake get failure (%s)\r\n",
@@ -994,16 +1047,12 @@ static void psmp_handshake_token (Domain_t                        *dp,
 	log_printf (SEC_ID, 0, "psmp_handshake_token: %p\r\n", (void *) p);
 #endif
 
-	/* Validate sequence number. */
-	if (info->message_identity.sequence_number <= p->last_seqnr) {
-#ifdef PSMP_TRACE_HS
-		log_printf (SEC_ID, 0, "psmp_handshake_token: %p - duplicate message.\r\n", (void *) p);
-#endif
-		return;
-	}
-
 	/* Remember sequence numbers. */
-	p->last_seqnr = info->message_identity.sequence_number;
+	if (token && strcmp (token->class_id, whandshake_str))
+		pp->p_last_seqnr = info->message_identity.sequence_number;
+	else
+		fct = NULL;
+
 	p->last_rel = info->related_message_identity.sequence_number;
 
 	/* Process the Handshake Message Token. */
@@ -1082,7 +1131,7 @@ int psmp_start (Domain_t *dp)
 	/* Create builtin participant Stateless Writer. */
 	error = create_builtin_endpoint (dp, EPB_PARTICIPANT_SL_W,
 					 1, 0,
-					 0, 0, 0,
+					 0, 1, 0,
 					 NULL,
 					 dp->participant.p_meta_ucast,
 					 dp->participant.p_meta_mcast,
@@ -1098,7 +1147,7 @@ int psmp_start (Domain_t *dp)
 	/* Create builtin Participant Stateless Reader. */
 	error = create_builtin_endpoint (dp, EPB_PARTICIPANT_SL_R,
 					 0, 0,
-					 0, 0, 0,
+					 0, 1, 0,
 					 NULL,
 					 dp->participant.p_meta_ucast,
 					 dp->participant.p_meta_mcast,

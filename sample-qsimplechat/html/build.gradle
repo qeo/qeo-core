@@ -1,0 +1,14 @@
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/htmlSample.gradle'
+
+generateTypes {
+    ext.qdms = ["samples/QSimpleChat_ChatMessage.xml", "samples/QSimpleChat_ChatParticipant.xml"]
+    ext.language = "js"
+    ext.outputDir = "${buildDir}/generated-src/types"
+}
+
+dependencies {
+    //qdms for codegen
+    generated "org.qeo:qeo-qdm:${project.qeoVersion}:samples@zip"
+}
+

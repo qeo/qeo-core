@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -20,6 +20,9 @@
 #include "dds/dds_trans.h"
 #include "rtps_data.h"
 
+void rtps_ip_reset (void);
+
+/* Reset the IP transport to normal mode. */
 
 int rtps_ipv4_attach (unsigned max_cx, unsigned max_addr);
 
@@ -45,6 +48,10 @@ void rtps_ipv6_detach (void);
 void rtps_ip_dump (const char *cx, int extra);
 
 /* Debug: dump all IP connection contexts. */
+
+void rtps_ip_close (unsigned cx);
+
+/* Debug: close an IP connection. */
 
 void rtps_ip_dump_queued (void);
 

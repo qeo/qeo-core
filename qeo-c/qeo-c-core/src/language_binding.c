@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -22,6 +22,7 @@
 #include <qeo/log.h>
 
 #include "core.h"
+#include "core_util.h"
 #include "entity_store.h"
 #include "user_data.h"
 #include "samplesupport.h"
@@ -261,6 +262,47 @@ qeo_retcode_t qeocore_reader_policy_update(const qeocore_reader_t *reader)
     VALIDATE_NON_NULL(reader);
     VALIDATE_NON_NULL(reader->listener.on_policy_update);
     return reader_user_data_update(reader);
+}
+
+qeo_retcode_t qeocore_reader_bgns_notify(qeocore_reader_t *reader,
+                                         bool on)
+{
+    qeo_retcode_t rc = QEO_OK;
+
+    if (NULL == reader) {
+        rc = QEO_EINVAL;
+    }
+    else if (core_get_domain_id_open() == reader->entity.factory->domain_id) {
+        /* only closed domain notifications are possible */
+        rc = QEO_EINVAL;
+    }
+    else {
+        DDS_Topic topic = reader->entity.topic;
+
+        if (on) {
+            if (!reader->flags.notify_wakeup) {
+                DDS_ReturnCode_t ddsrc;
+
+                ddsrc = DDS_Activities_notify(reader->entity.factory->domain_id,
+                                              DDS_Topic_get_name(topic),
+                                              DDS_Topic_get_type_name(topic));
+                qeo_log_dds_rc("DDS_Activities_notify", ddsrc);
+                if (DDS_RETCODE_OK == ddsrc) {
+                    reader->flags.notify_wakeup = 1;
+                }
+                rc = ddsrc_to_qeorc(ddsrc);
+            }
+        }
+        else {
+            if (reader->flags.notify_wakeup) {
+                DDS_Activities_unnotify(reader->entity.factory->domain_id,
+                                        DDS_Topic_get_name(topic),
+                                        DDS_Topic_get_type_name(topic));
+                reader->flags.notify_wakeup = 0;
+            }
+        }
+    }
+    return rc;
 }
 
 /* ---[ writer API ]-------------------------------------------------------- */

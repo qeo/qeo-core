@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -460,6 +460,24 @@ qeo_retcode_t qeocore_reader_take(const qeocore_reader_t *reader,
  * \retval ::QEO_EINVAL when the input arguments are invalid
  */
 qeo_retcode_t qeocore_reader_policy_update(const qeocore_reader_t *reader);
+
+/**
+ * Enable or disable getting notifications of data arriving on a reader when
+ * Qeo has been suspended.
+ *
+ * \param[in] reader The reader for which notifications should be en/disabled.
+ * \param[in] on     Turn notifications on (\c true) or off (\c false).
+ *
+ * \retval ::QEO_OK on success
+ * \retval ::QEO_EINVAL in case of invalid arguments
+ * \retval ::QEO_ENOMEM when out of resources
+ *
+ * \see ::qeo_bgns_register
+ * \see ::qeo_bgns_suspend
+ * \see ::qeo_bgns_resume
+ */
+qeo_retcode_t qeocore_reader_bgns_notify(qeocore_reader_t *reader,
+                                         bool on);
 
 /// \}
 

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.qeo.sample.gauge.android.reader.test">
+
+    <uses-sdk android:minSdkVersion="14" />
+
+    <application>
+        <uses-library android:name="android.test.runner" />
+    </application>
+
+    <instrumentation android:name="pl.polidea.instrumentation.PolideaInstrumentationTestRunner"
+                     android:targetPackage="org.qeo.sample.gauge.android.reader"
+                     android:label="Tests for org.qeo.sample.gauge.android.reader"/>
+</manifest>
+

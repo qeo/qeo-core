@@ -1,0 +1,4 @@
+Manifest-Version: 1.0
+LCM-DU-Vendor: technicolor.com
+LCM-DU-Name: osgiMBusGauge
+LCM-DU-Version: 0.0.0

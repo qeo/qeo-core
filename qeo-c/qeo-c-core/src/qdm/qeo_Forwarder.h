@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -21,22 +21,27 @@
 
 #include <qeo/types.h>
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 
 /**
  * Information for a single locator of a Qeo forwarder.
  */
 typedef struct {
-    /**
-     * The type of the locator. Possible values are: 	 0 = unknown, 	 1 = TCPv4, 	 2 = TCPv6, 	 3 = UDPv4, 	 4 = UDPv6.
-     */
+  /**
+   * The type of the locator. Possible values are: 	 0 = unknown, 	 1 = TCPv4, 	 2 = TCPv6, 	 3 = UDPv4, 	 4 = UDPv6.
+   */
     int32_t type;
-    /**
-     * Address of the locator. This can be an IP address or a DNS name.
-     */
+  /**
+   * Address of the locator. This can be an IP address or a DNS name.
+   */
     char * address;
-    /**
-     * Port of the locator.
-     */
+  /**
+   * Port of the locator.
+   */
     int32_t port;
 } org_qeo_system_ForwarderLocator_t;
 extern const DDS_TypeSupport_meta org_qeo_system_ForwarderLocator_type[];
@@ -46,17 +51,29 @@ DDS_SEQUENCE(org_qeo_system_ForwarderLocator_t, org_qeo_system_Forwarder_locator
  * Representation of a single Qeo forwarder.
  */
 typedef struct {
-    /**
-     * [Key] The device ID as known by the location service.
-     */
+  /**
+   * [Key]
+   * The device ID as known by the location service.
+   */
     int64_t deviceId;
-    /**
-     * The list of locators present on this Qeo forwarder.
-     */
+  /**
+   * The list of locators present on this Qeo forwarder.
+   */
     org_qeo_system_Forwarder_locator_seq locator;
+  /**
+   * Flag to indicate the forwarding service is enabled.
+   */
+    qeo_boolean_t forwarder;
+  /**
+   * Flag to indicate the BGNS service is enabled.
+   */
+    qeo_boolean_t bgns;
 } org_qeo_system_Forwarder_t;
 extern const DDS_TypeSupport_meta org_qeo_system_Forwarder_type[];
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* QDM_QEO_FORWARDER_H_ */
 

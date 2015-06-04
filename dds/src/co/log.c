@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -19,9 +19,9 @@
 const char *log_id_str [32] = {
 	"PROF",
 	"DOMAIN", "POOL", "STR", "LOCATOR",
-	"TIMER", "DB", "THREAD", "CACHE",
-	"IP", "RTPS", "QOS", "SPDP", "SEDP",
-	"DISC", "DCPS", "XTYPES", "SEC", "DDS",
+	"TIMER", "DB", "THREAD", "SOCK", "IP", "TCPS", "BGNS", 
+	"CACHE", "QOS", "XTYPES", "RTPS", "DISC", "SPDP", "SEDP",
+	"DCPS", "SEC", "DDS",
 	"INFO", "USER",
 };
 

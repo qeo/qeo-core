@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+<!--
+  <include file="qeo_types.xml" />
+-->
+	<module name="org::qeo::system">
+	    <struct name="ForwarderLocator">
+	        <doc>Information for a single locator of a Qeo forwarder.</doc>
+	        <member name="type" type="int32">
+	            <doc>The type of the locator.  Possible values are:
+	                 0 = unknown,
+	                 1 = TCPv4,
+	                 2 = TCPv6,
+	                 3 = UDPv4,
+	                 4 = UDPv6.</doc>
+	        </member>
+	        <member name="address" type="string">
+	            <doc>Address of the locator.  This can be an IP address or a DNS name.</doc>
+	        </member>
+	        <member name="port" type="int32">
+	            <doc>Port of the locator.</doc>
+	        </member>
+	    </struct>
+	    <struct name="Forwarder" behavior="state">       
+            <doc>Representation of a single Qeo forwarder.</doc> 
+<!--
+            <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId" key="true">
+                <doc>The device ID of the Qeo forwarder as known by the SMS.  The same ID is embedded in the device certificate.</doc>
+            </member>
+-->
+            <member name="deviceId" type="int64" key="true">
+                <doc>The device ID as known by the location service.</doc>
+	        </member>
+            <member name="locator" type="nonBasic" nonBasicTypeName="ForwarderLocator" sequenceMaxLength="-1">
+                <doc>The list of locators present on this Qeo forwarder.</doc>
+            </member>
+	    <member name="forwarder" type="boolean">
+		<doc>Flag to indicate the forwarding service is enabled.</doc>
+	    </member>
+	    <member name="bgns" type="boolean">
+		<doc>Flag to indicate the BGNS service is enabled.</doc>
+	    </member>
+        </struct>
+	</module>
+</types>

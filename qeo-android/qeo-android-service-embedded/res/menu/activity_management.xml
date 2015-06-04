@@ -1,0 +1,18 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/mainActivity_menu_settings"
+        android:icon="@drawable/ic_action_action_settings"
+        android:showAsAction="ifRoom"
+        android:title="@string/action_settings"
+        android:titleCondensed="@string/action_settings"
+        android:visible="true">
+    </item>
+
+    <item
+        android:id="@+id/mainActivity_menu_accountInfo"
+        android:title="@string/account_info"
+        android:visible="true">
+    </item>
+
+</menu>

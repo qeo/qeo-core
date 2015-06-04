@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -21,7 +21,25 @@
 
 #define	TCP_MAX_CLIENTS		48	/* Max. # of TCP clients. */
 
-extern int	tcp_available;		/* Always exists: status of TCP. */
+extern int		tcp_available;	/* Always exists: status of TCP. */
+extern unsigned long	tcp_qdropped;	/* TCP queue entries discarded. */
+
+/* - Endian and swapping - */
+
+/* Send over the wire in little endian */
+#if ENDIAN_CPU == ENDIAN_LITTLE /* LITTLE_ENDIAN --> no swapping */
+/* TCP TO HOST */
+#define TTOHS(x) x
+#define TTOHL(x) x
+/* HOST TO TCP */
+#else /* BIG_ENDIAN --> swap */
+/* TCP TO HOST */
+#define TTOHS(x) ({uint16_t y = x, z = x; memcswap16(&z,&y); z;})
+#define TTOHL(x) ({uint32_t y = x, z = x; memcswap32(&z,&y); z;})
+/* HOST TO TCP */
+#endif
+#define HTOTS TTOHS
+#define HTOTL TTOHL
 
 /* Following variables/functions are only available if -DDDS_TCP */
 
@@ -39,7 +57,7 @@ int rtps_tcpv4_attach (void);
 
 /* Attach the TCPv4 protocol in order to send RTPS over TCPv4 messages. */
 
-void rtps_tcpv4_detach (void);
+void rtps_tcpv4_detach (int suspend);
 
 /* Detach the previously attached TCPv4 protocol. */
 
@@ -48,7 +66,7 @@ int rtps_tcpv6_attach (void);
 
 /* Attach the TCPv6 protocol for sending RTPS over TCPv6 messages. */
 
-void rtps_tcpv6_detach (void);
+void rtps_tcpv6_detach (int suspend);
 
 /* Detach the previously attached TCPv6 protocol. */
 
@@ -89,13 +107,18 @@ void rtps_tcp_addr_update_end (unsigned family);
 
 /* Done updating addresses for the given address family. */
 
+/* Protocol header sequence for control messages: */
 #define	ctrl_protocol_valid(p)	!memcmp (p, rpsc_protocol_id, sizeof (ProtocolId_t))
-extern ProtocolId_t		rpsc_protocol_id;
+#define	bgcp_protocol_valid(p)	!memcmp (p, bgcp_protocol_id, sizeof (ProtocolId_t))
 
-/* Protocol header sequence for control messages */
+extern ProtocolId_t	rpsc_protocol_id;
+#ifdef TCP_SUSPEND
+extern ProtocolId_t	bgcp_protocol_id;
+#endif
 
 
-/* Pending connect() serialization data structures and utility functions. */
+/* Pending connect() serialization data structures and utility functions.
+   ---------------------------------------------------------------------- */
 
 typedef struct tcp_con_list_st TCP_CON_LIST_ST;
 typedef struct tcp_con_req_st TCP_CON_REQ_ST;
@@ -124,6 +147,47 @@ TCP_CON_REQ_ST *tcp_clear_pending_connect (TCP_CON_REQ_ST *p);
 /* Remove the current pending connection and return the next. */
 
 TCP_CON_REQ_ST *tcp_pending_connect_remove (IP_CX *cxp);
+
+/* Remove a pending connection. */
+
+
+/* Suspend/resume notification support.
+   ------------------------------------ */
+
+typedef enum {
+	SRN_OPEN,	/* Control channel is established. */
+	SRN_CLOSED,	/* Control channel is closed. */
+	SRN_DATA	/* A message was received and should be processed. */
+} TCP_SR_EVENT;
+
+typedef void (*TCP_SR_IND) (uintptr_t           user,
+			    TCP_SR_EVENT        event,
+			    IP_CX               *cx,
+			    const unsigned char *msg,
+			    size_t              length);
+
+/* Callback function for processing control channel events. */
+
+int rtps_tcp_srn_attach (int server, TCP_SR_IND fct, uintptr_t user);
+
+/* Attach to the existing TCP control channels for suspend/resume notifications.
+   The callback function will be used to notify incoming data. */
+
+void rtps_tcp_srn_detach (int server);
+
+/* Detach from an existing TCP control channel. */
+
+#define	TCP_SEND_OK	0
+#define	TCP_SEND_ERR	1
+#define	TCP_SEND_BUSY	2
+
+int rtps_tcp_srn_send (IP_CX *cx, const unsigned char *msg, size_t length);
+
+/* Send a suspend/resume notification message. */
+
+void rtps_tcp_srn_suspend (IP_CX *cx, int enabled);
+
+/* Signal the status of the control connection. */
 
 #endif /* !__ri_tcp_h_ */
 

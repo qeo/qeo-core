@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <include file="qeo_types.xml"/>
+  <module name="org::qeo::networking::ids">
+    <doc>
+      This QDM models an Intrusion Detection System on a networked device.
+      It does not provide a way to configure an IDS system.
+      Rather, it models the log of detected intrusion attempts, providing
+      information on both historical an currently ongoing intrusion attempts.
+    </doc>
+    <struct name="Log" behavior="state">
+      <doc>
+        This topic models the intrusion log itself.
+        Log entries are modeled on the LogEntry topic.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>This is the IDS log UUID.</doc>
+      </member>
+      <member name="name" type="string">
+        <doc>This is a friendly name for the IDS log. E.g. "home gateway IDS"</doc>
+      </member>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId">
+        <doc>This is the device id of the device the IDS is running on.</doc>
+      </member>
+    </struct>
+    <struct name="LogEntry" behavior="state">
+      <doc>
+        This topic models individual IDS log entries.
+        Both historical data (past intrusion attempts) and current data
+        (ongoing intrusion attempts) are modeled on this topic.
+        As soon as a new intrusion is detected, an instance on this topic
+        will be published. Interested parties can subscribe to this topic,
+        and hence get notified immediately if an interesting event occurs.
+
+        Note: it is up to the implementer of the IDS system to decide how
+        many items he will publish in its log file. If the log is full, 
+        remove the oldest entry to make room for a newer one.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>This is the log entry ID.</doc>
+      </member>
+      <member name="logId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>This is the log the entry belongs to. A reference to Log.id.</doc>
+      </member>
+      <member name="description" type="string">
+        <doc>
+          This is the description of the attack. Format of description to be
+          defined.
+        </doc>
+      </member>
+      <member name="startTime" type="int64">
+        <doc>This is the detected start time of the attack.</doc>
+      </member>
+      <member name="endTime" type="int64">
+        <doc>
+          This is the detected end time of the attack. The endTime is equal to
+          0 when the end of the attack is impossible to detect, or the attack
+          is still ongoing.
+        </doc>
+      </member>
+      <member name="attacker" type="string">
+        <doc>
+          This is the IP address of the attacker. The attacker is equal to 0
+          when no single attacker IP address can be detected (e.g. in a
+          distributed denial of service attack).
+          IPv4 and v6 addresses must be specified in their respective canonical
+          forms.
+        </doc>
+      </member>
+      <member name="target" type="string">
+        <doc>
+          This is the IP address of the attacked target. The target is equal to
+          0 when no single attacked IP address can be detected.
+          IPv4 and v6 addresses must be specified in their respective canonical
+          forms.
+        </doc>
+      </member>
+      <member name="read" type="boolean">
+        <doc>
+          This flag indicates if the log entry has been read.
+          Initially, a LogEntry is unread, until at least on client notifies
+          the Log that a particular entry has been seen through the publication
+          of a LogEntryRequest.
+        </doc>
+      </member>
+    </struct>
+    <struct name="LogEntryRequest" behavior="event">
+      <doc>
+        This topic is used to signal that a given LogEntry has been read by
+        a responsible party. Upon receipt of a LogEntryRequest, the IDS will
+        adapt the LogEntry.read flag.
+        This is modeled as an event, so the publisher does not need to manage
+        the request's life cycle. Requests can be considered fire-and-forget.
+      </doc>
+      <member name="logId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>The log ID.</doc>
+      </member>
+      <member name="logEntryId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>The log entry ID. If logEntryId is 0 then all log entries will be marked as specified by the read flag.</doc>
+      </member>
+      <member name="read" type="boolean">
+        <doc>This flag indicates the requested read state for the log entry.</doc>
+      </member>
+    </struct>
+  </module>
+</types>

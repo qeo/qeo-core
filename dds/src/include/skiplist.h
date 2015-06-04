@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -88,6 +88,11 @@ void *sl_search (const Skiplist_t *list, const void *data, LISTEQF eqf);
 /* Search an element in the list.  The data argument points to the key to use
    to find the element.  The eqf argument is a function to compare the keys. */
 
+void *sl_next (const Skiplist_t *list, const void *data, LISTEQF eqf);
+
+/* Search the element in the list that is immediately following the given key
+   data. The eqf argument is a function to compare the keys. */
+
 void *sl_insert (Skiplist_t *list, const void *data, int *allocated, LISTEQF eqf);
 
 /* Try to insert an element in a list.  If it already exists, the node is
@@ -111,12 +116,12 @@ typedef int (*VISITF) (Skiplist_t *list, void *node, void *arg);
 
 void sl_walk (Skiplist_t *list, VISITF fct, void *arg);
 
-/* Returns the first element in the list or NULL if empty. */
-
-void *sl_head (Skiplist_t *list);
-
 /* Walk over a list, visiting every node, and call the fct function for each
    node encountered.  If the function returns 0, walking will stop. */
+
+void *sl_head (const Skiplist_t *list);
+
+/* Returns the first element in the list or NULL if empty. */
 
 #define	sl_length(l)	(l)->length
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -1579,7 +1579,7 @@ static void hc_transfer_change (HistoryCache_t *wcache,	/* Writer Cache. */
 		}
 
 		/* Set reception timestamp if not yet done. */
-		if (!FTIME_SEC (ncp->c_time) && !FTIME_FRACT (ncp->c_time))
+		if (FTIME_ZERO (ncp->c_time))
 			sys_getftime (&ncp->c_time);
 
 		/* Add cloned sample to destination cache. */
@@ -1716,7 +1716,9 @@ static void hc_match_begin (HistoryCache_t *wcp, HistoryCache_t *rcp)
 		lifespan_enable (&wep->w_ep, &rep->r_ep);
 
 	/* If writer cache contains data, transfer data. */
-	if (wcp->hc_nchanges)
+	if (wcp->hc_nchanges &&
+	    wep->w_qos->qos.durability_kind &&
+	    rep->r_qos->qos.durability_kind)
 		LIST_FOREACH (wcp->hc_changes.l_list, rp)
 			if ((!rp->change->c_dests [0] ||
 			     hc_in_dest (rep, rp->change->c_dests, MAX_DW_DESTS)) &&
@@ -1958,6 +1960,7 @@ Cache_t hc_new (void *endpoint, int prefix)
 			     qp->presentation_ordered_access;
 	hcp->hc_readers = NULL;
 	hcp->hc_monitor = 0;
+	hcp->hc_inform = 0;
 	hcp->hc_skiplists = 0;
 	hcp->hc_kind = NOT_ALIVE_UNREGISTERED;
 	hcp->hc_view = NEW;
@@ -2008,8 +2011,10 @@ Cache_t hc_new (void *endpoint, int prefix)
 	hcp->hc_deadlined = 0;
 	hcp->hc_dlc_idle = 0;
 	hcp->hc_tfilter = 0;
-	hcp->hc_sl_walk = 0;
+	hcp->hc_purge_nw = 0;
+	hcp->hc_purge_dis = 0;
 	hcp->hc_lsc_idle = 0;
+	hcp->hc_sl_walk = 0;
 	if (hcp->hc_writer) {
 
 		/* Start Lifespan timer if Lifespan QoS enabled. */
@@ -2993,7 +2998,7 @@ static int hc_change_remove (HistoryCache_t *hcp,
 		}
 		else
 			xlp = &hcp->hc_changes;
-		if (cp->c_kind == ALIVE)
+		if (cp->c_kind == ALIVE && ip)
 			ip->i_ndata--;
 		ccref_remove_ref (xlp, xrp);
 		ccref_delete (xrp);
@@ -4635,7 +4640,6 @@ static int hc_inst_check_lifespan (CacheActCheck_t *cp, INSTANCE *ip)
 	FTime_t		ntime;
 	CCREF		*rp, *next_rp;
 	CCREF		*crp, *irp;
-	Ticks_t		period;
 
 	act_print2 ("..<hc_inst_check_lifespan(%p,%p)>\r\n", (void *) cp->hcp, (void *) ip);
 	if (!ip->i_nchanges || (!cp->hcp->hc_writer && !ip->i_nwriters))
@@ -4665,8 +4669,9 @@ static int hc_inst_check_lifespan (CacheActCheck_t *cp, INSTANCE *ip)
 
 			if (cp->writer != rp->change->c_writer) {
 				cp->writer = rp->change->c_writer;
-				period = duration2ticks ((const Duration_t *) &ep->qos->qos.lifespan);
-				FTIME_SETT (cp->period, period); 
+				FTIME_SET (cp->period,
+					   ep->qos->qos.lifespan.duration.sec,
+					   ep->qos->qos.lifespan.duration.nanosec);
 			}
 		}
 
@@ -4715,10 +4720,11 @@ static int hc_inst_check_lifespan (CacheActCheck_t *cp, INSTANCE *ip)
 		crp = irp->mirror;
 		ccref_delete (irp);
 		ccref_remove_ref (&cp->hcp->hc_changes, crp);
-		if (crp->change)
+		if (crp->change) {
 			crp->change->c_cached = 0;
-		if (crp->change->c_kind == ALIVE)
-			cp->hcp->hc_ndata--;
+			if (crp->change->c_kind == ALIVE)
+				cp->hcp->hc_ndata--;
+		}
 
 		/* Finally delete the change reference. */
 		ccref_delete (crp);
@@ -4743,7 +4749,6 @@ static void hc_check_lifespan (CacheActCheck_t *cp)
 	FTime_t		ntime;
 	CCREF		*rp, *next_rp;
 	CCREF		*crp;
-	Ticks_t		period;
 
 	if (!cp->hcp->hc_nchanges)
 		return;
@@ -4763,8 +4768,9 @@ static void hc_check_lifespan (CacheActCheck_t *cp)
 
 			if (cp->writer != rp->change->c_writer) {
 				cp->writer = rp->change->c_writer;
-				period = duration2ticks ((const Duration_t *) &ep->qos->qos.lifespan);
-				FTIME_SETT (cp->period, period); 
+				FTIME_SET (cp->period,
+					   ep->qos->qos.lifespan.duration.sec,
+					   ep->qos->qos.lifespan.duration.nanosec);
 			}
 		}
 
@@ -5406,6 +5412,9 @@ static void hc_dump_instance (INSTANCE            *ip,
 	unsigned	i;
 	handle_t	*hp;
 
+#ifndef PARSE_KEY
+	ARG_NOT_USED (secure)
+#endif
 	dbg_printf ("%4u: ", ip->i_handle);
 	for (i = 0; i < 16; i++) {
 		if (i && (i & 0x3) == 0)

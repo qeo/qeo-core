@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -75,6 +75,7 @@ static parameter_t fwd_parameters[] = {
     {QEOCORE_GROUP_TYPE_FWD, "WAIT_LOCAL_FWD", QEOCORE_PAR_TYPE_NUMBER, {.num = 2000}},
     {QEOCORE_GROUP_TYPE_FWD, "DISABLE_LOCATION_SERVICE", QEOCORE_PAR_TYPE_NUMBER, {.num = 0}},
     {QEOCORE_GROUP_TYPE_FWD, "DISABLE_FORWARDING", QEOCORE_PAR_TYPE_NUMBER, {.num = 0}},
+    {QEOCORE_GROUP_TYPE_FWD, "DISABLE_BGNS", QEOCORE_PAR_TYPE_NUMBER, {.num = 0}},
 };
 #define NBR_FWD_PARAMETERS  (sizeof(fwd_parameters) / sizeof(parameter_t))
 

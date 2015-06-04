@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -81,9 +81,10 @@ static Policy_t *add_policy_node (GuidPrefix_t guid_prefix,
 	Policy_t *node;
 	
 	if (!(node = get_policy_node (guid_prefix))) {
-		if (!(node = malloc (sizeof (Policy_t)))) {
+		if (!(node = Alloc (sizeof (Policy_t))))
 			return (NULL);
-		} else {
+
+		else {
 			memcpy (&node->guid_prefix, &guid_prefix, sizeof (GuidPrefix_t));
 			node->version = version;
 			node->update_cnt = 1;
@@ -97,7 +98,7 @@ static void remove_policy_node (Policy_t *node)
 {
 	if (node) {
 		LIST_REMOVE (policy_list, *node);
-		free (node);
+		Free (node);
 	}
 }
 
@@ -123,6 +124,8 @@ static DDS_OctetSeq *char_to_seq (unsigned char *data,
 	DDS_ReturnCode_t ret;
 
 	seq = DDS_OctetSeq__alloc ();
+	if (!seq)
+		return (NULL);
 
 	ret = dds_seq_require (seq, length);
 	if (ret) {
@@ -160,7 +163,7 @@ static void qeo_write_policy_file (void)
 	version = get_policy_version (&error);
 
 	LIST_FOREACH (policy_list, node) {
-		if (node && node->version != version)
+		if (node->version != version)
 			goto write;
 	}
 	log_printf (SEC_ID, 0, "SEC_P_QEO: All qeo policy files were the same, so not written\r\n");
@@ -168,12 +171,13 @@ static void qeo_write_policy_file (void)
 
  write:
 	policy_file = get_policy_file (&len, &error);
-	msg->binary_value1 = char_to_seq (policy_file, len);
-
-	while ((dp = domain_next (&i, &error))) {
-		if (dp->security) {
-			DDS_Security_write_volatile_data (dp, msg);
-			log_printf (SEC_ID, 0, "SEC_P_QEO: Written qeo policy file\r\n");
+	if (msg) {
+		msg->binary_value1 = char_to_seq (policy_file, len);
+		while ((dp = domain_next (&i, &error))) {
+			if (dp->security) {
+				DDS_Security_write_volatile_data (dp, msg);
+				log_printf (SEC_ID, 0, "SEC_P_QEO: Written qeo policy file\r\n");
+			}
 		}
 	}
 
@@ -245,8 +249,10 @@ void qeo_receive_policy_version (GuidPrefix_t guid_prefix,
 	else if (type == 1) /* UPDATE */ {
 		lock_take (pol_lock);
 		node = add_policy_node (guid_prefix, version);
-		node->update_cnt ++;
-		node->version = version;
+		if (node) {
+			node->update_cnt ++;
+			node->version = version;
+		}
 		lock_release (pol_lock);
 	}
 	else if (type == 0) /* NEW */ {

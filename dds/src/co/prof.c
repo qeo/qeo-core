@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -40,8 +40,27 @@ Cycles_t rdtsc (void)
  
 	return (((Cycles_t) a) | (((Cycles_t) d) << 32));
 }
+#elif defined (__arm__) && __ARM_ARCH >= 6
+typedef uint64_t Cycles_t;
+
+Cycles_t rdtsc (void)
+{
+	uint32_t	value;
+
+	asm volatile("mrc   p15, 0, %0, c15, c12, 1" : "=r"(value));
+
+	return (value);
+}
+
+/*#elif defined (__mips__)
+	== really need MIPS support here ==
+ ? #include <asm/timex.h>
+ ? #define rdtsc rdtscll
+ ? #define Cycles_t cycles_t
+ */
+
 #else
-#if __mips__
+
 typedef uint64_t Cycles_t;
 Cycles_t rdtsc(void)
 {
@@ -50,16 +69,12 @@ Cycles_t rdtsc(void)
 	   clock_gettime (CLOCK_MONOTONIC, &ts);
 	   return ((Cycles_t) ts.tv_sec * 1000 * 1000 * 1000 + (Cycles_t)  ts.tv_nsec);
 }
-#else
-#include <asm/timex.h>
-#define	rdtsc rdtscll
-#define	Cycles_t cycles_t
-#endif
 #endif
 
 #define	sys_time_hr(hr)	hr = rdtsc()
 
 #define	MAX_PROFS	1024	/* Max. # of profile contexts. */
+#define	MAX_NEST	8192	/* Max. # of queued profile results. */
 
 /* History masks from short to long. We assume that most often we get short
    profile periods, e.g. <= 16ms. */
@@ -97,6 +112,13 @@ typedef struct prof_st {
 	unsigned long	hist [QTY_HIST];
 } PROF_ST, *PROF;
 
+typedef struct nest_st {
+	PROF		prof;
+	Cycles_t	delta;
+	void		*wcarg;
+	unsigned	divider;
+} NEST_ST, *NEST;
+
 static PROF_ST		profs [MAX_PROFS];
 static unsigned 	calib_delta;		/* In nanoseconds. */
 static unsigned 	cycles_100ms;		/* In cycles. */
@@ -106,6 +128,10 @@ static Time_t		duration_req;		/* Requested duration. */
 static Cycles_t		start_cycles;		/* Effective profiling start. */
 static Time_t		start_time;		/* Effective profiling start. */
 static Time_t		prof_time;		/* Effective profiling time. */
+static NEST_ST		nested [MAX_NEST];	/* Nested profile timestamps. */
+static unsigned		nest_depth;		/* Depth of nested profiles. */
+static PROF		root;			/* First encountered profile. */
+/*static thread_t	root_thread;		** Thread of first profile. */
 static int 		profile_disabled = 1;
 
 typedef struct sys_time_eng_st {	/* Engineering time. */
@@ -248,6 +274,95 @@ void prof_free (unsigned pid)
 	pp->name = NULL;
 }
 
+static void get_time_diff (Cycles_t delta, Time_t *diff)
+{
+	if (delta > calib_delta) {
+		delta -= calib_delta;
+		delta = (delta * 100000000) / cycles_100ms;
+		diff->seconds = delta / 1000000000;
+		diff->nanos = delta % 1000000000;
+		if (diff->seconds || diff->nanos > calib_delta) {
+			if (diff->nanos < calib_delta) {
+				diff->seconds--;
+				diff->nanos = diff->nanos + 1000000000 - calib_delta;
+			}
+			else
+				diff->nanos -= calib_delta;
+		}
+		else
+			diff->nanos = 0;
+	}
+	else {
+		diff->seconds = 0;
+		diff->nanos = 0;
+	}
+}
+
+static int sys_time_diff (Cycles_t prev, Cycles_t *new, Time_t *diff)
+{
+	sys_time_hr (*new);
+	if (*new < prev)
+		return (0);
+
+	get_time_diff (*new - prev, diff);
+	return (1);
+}
+
+static unsigned accumulate (PROF pp, Cycles_t delta, unsigned divider, void *wcarg)
+{
+	Time_t		t;
+	unsigned	i;
+	const HIST_ID_ST *histp; 
+
+	/* Get t, i.e. the time passed between profile start and stop. */
+	get_time_diff (delta, &t);
+
+	/* Prevent overflow: we stop gathering totals if more than 4000000000 samples. */
+	if (divider < (0xFFFFFFFF - pp->niter)) {
+		pp->ncalls++;
+		pp->niter += divider;
+		pp->total.nanos   += t.nanos;
+		pp->total.seconds += t.seconds;
+		if (pp->total.nanos >= 1000000000) {
+			pp->total.nanos -= 1000000000;
+			pp->total.seconds++;
+		}
+	}
+
+	/* Quick min/max call. */
+	if (TIME_LT (t, pp->min))
+		pp->min = t;
+	if (TIME_GT (t, pp->max)) {
+		pp->max = t;
+		pp->wc_arg = wcarg;
+	}
+
+	/* Prevent overflow: stop gathering histogram if more than 4000000000 samples. */
+	if (divider < (0xFFFFFFFF - pp->niter)) {
+		if (t.seconds)
+			pp->hist [QTY_HIST - 1] += divider;
+		else {
+			/* Do histogram. */
+			for (i = 0, histp = hist_masks; i < QTY_HIST; i++, histp++)
+				if (!(t.nanos & histp->mask))
+					break;
+
+			pp->hist [i] += divider;
+		}
+	}
+	return (t.nanos);
+}
+
+static void resolve_nested (void)
+{
+	NEST		p;
+	unsigned	i;
+
+	for (i = 0, p = &nested [nest_depth - 1]; i < nest_depth; i++, p--)
+		accumulate (p->prof, p->delta, p->divider, p->wcarg);
+	nest_depth = 0;
+}
+
 /* prof_start -- Start profile timing for the given context. */
 
 int prof_start (unsigned pid)
@@ -291,46 +406,32 @@ int prof_start (unsigned pid)
 		else
 			return (PROF_ERR_INACT);
 	}
-	if ((pp->flags & PROF_STARTED) != 0)
-		return (PROF_ERR_BUSY);
-
+	if ((pp->flags & PROF_STARTED) != 0) {
+		if (pp == root) {
+			root = NULL;
+			if (nest_depth)
+				resolve_nested ();
+		}
+	}
 	pp->flags |= PROF_STARTED;
 #ifdef CTRACE_USED
 	if ((pp->flags & PROF_TRACE) != 0)
 		ctrc_printd (PROF_ID, PROF_START, &pid, sizeof (pid));
 #endif
+	if (!root) {
+		root = pp;
+		/*root_thread = thread_id ();*/
+	}
 	sys_time_hr (pp->hrt);
 	return (PROF_OK);
-}
-
-static void sys_time_diff (Cycles_t prev, Cycles_t *new, Time_t *diff)
-{
-	uint64_t	delta;
-
-	sys_time_hr (*new);
-	delta = *new - prev - calib_delta;
-	delta = (delta * 100000000) / cycles_100ms;
-	diff->seconds = delta / 1000000000;
-	diff->nanos = delta % 1000000000;
-	if (diff->seconds || diff->nanos > calib_delta) {
-		if (diff->nanos < calib_delta) {
-			diff->seconds--;
-			diff->nanos = diff->nanos + 1000000000 - calib_delta;
-		}
-		else
-			diff->nanos -= calib_delta;
-	}
-	else
-		diff->nanos = 0;
 }
 
 unsigned prof_stop_wclog (unsigned pid, unsigned divider, void *wcarg)
 {
 	PROF		pp;
+	NEST		p;
 	Cycles_t	nt;
-	Time_t		t, ct;
-	unsigned	i;
-	const HIST_ID_ST *histp; 
+	Time_t		ct;
 
 	if (!divider || pid >= MAX_PROFS || profile_disabled)
 		return (0);
@@ -339,10 +440,10 @@ unsigned prof_stop_wclog (unsigned pid, unsigned divider, void *wcarg)
 
 	/* Start was not done (tracing disabled, or invalid sequence of calls)
 	   or start done, but trace is now disabled: do not trace! */
-	if (profile_disabled || (pp->flags & PROF_STARTED) == 0) 
+	if (profile_disabled || (pp->flags & PROF_STARTED) == 0)
 		return (0);
 
-	sys_time_diff (pp->hrt, &nt, &t);
+	sys_time_hr (nt);
 	pp->flags &= ~PROF_STARTED;
 
 #ifdef CTRACE_USED
@@ -354,47 +455,35 @@ unsigned prof_stop_wclog (unsigned pid, unsigned divider, void *wcarg)
 	if (stop_req.seconds || stop_req.nanos) {
 		sys_gettime (&ct);
 		if (!TIME_LT (ct, stop_req)) {
-			sys_time_diff (start_cycles, &nt, &prof_time);
+			get_time_diff (nt - start_cycles, &prof_time);
 			stop_req.seconds = 0;
 			stop_req.nanos = 0;
 			profile_disabled = 1;
 		}
 	}
+	if (pp == root) {
+		if (nest_depth)
+			resolve_nested ();
 
-	/* Prevent overflow: we stop gathering totals if more than 4000000000 samples. */
-	if (divider < (0xFFFFFFFF - pp->niter)) {
-		pp->ncalls++;
-		pp->niter += divider;
-		pp->total.nanos   += t.nanos;
-		pp->total.seconds += t.seconds;
-		if (pp->total.nanos >= 1000000000) {
-			pp->total.nanos -= 1000000000;
-			pp->total.seconds++;
-		}
+		root = NULL;
+		if (nt <= pp->hrt)
+			return (0);
+		else
+			return (accumulate (pp, nt - pp->hrt, divider, wcarg));
 	}
+	else if (root) {
+		if (nt <= pp->hrt)
+			return (0);
 
-	/* Quick min/max call. */
-	if (TIME_LT (t, pp->min))
-		pp->min = t;
-	if (TIME_GT (t, pp->max)) {
-		pp->max = t;
-		pp->wc_arg = wcarg;
+		p = &nested [nest_depth++];
+		p->prof = pp;
+		p->delta = nt - pp->hrt;
+		p->divider = divider;
+		p->wcarg = wcarg;
+		if (nest_depth >= MAX_NEST)
+			resolve_nested ();
 	}
-
-	/* Prevent overflow: stop gathering histogram if more than 4000000000 samples. */
-	if (divider < (0xFFFFFFFF - pp->niter)) {
-		if (t.seconds)
-			pp->hist [QTY_HIST - 1] += divider;
-		else {
-			/* Do histogram. */
-			for (i = 0, histp = hist_masks; i < QTY_HIST; i++, histp++)
-				if (!(t.nanos & histp->mask))
-					break;
-
-			pp->hist [i] += divider;
-		}
-	}
-	return (t.nanos);
+	return (1);
 }
 
 static void large_number_print (unsigned   number,
@@ -682,6 +771,9 @@ void prof_list (void)
 	old_prof_dis_flag = profile_disabled;
 	profile_disabled = 1;
 
+	if (nest_depth)
+		resolve_nested ();
+
 	/* If we have stopped, set correct stop time. */
 	if (prof_time.seconds || prof_time.nanos)
 		diff = prof_time;
@@ -838,11 +930,12 @@ void prof_calibrate (void)
 	Cycles_t	start_c;
 	Cycles_t	stop_c;
 	unsigned	i, index;
+	unsigned	n, cycles [3];
 
 	if (prof_alloc ("PROF_CALI", &index))
 		return;
 
-	for (i = 0; i < 10; i++) {
+	for (i = 0, n = 0; i < 3; i++) {
 		do {
 			sys_gettime (&start);
 		}
@@ -853,19 +946,24 @@ void prof_calibrate (void)
 		}
 		while (t.nanos - start.nanos < 100000000);
 		sys_time_hr (stop_c);
-		if (stop_c > start_c) {
-			cycles_100ms = stop_c - start_c;
-			break;
-		}
+		if (stop_c > start_c)
+			cycles [n++] = stop_c - start_c;
 	}
+	if (!n)
+		fatal_printf ("prof_calibrate: no valid cycle counts?");
+
+	for (i = 1, cycles_100ms = cycles [0]; i < n; i++)
+		if (cycles [i] < cycles_100ms)
+			cycles_100ms = cycles [i];
+
 	calib_delta = 0;
+	pp = &profs [index];
 	for (i = 0; i < 4; i++) {
 		prof_start (index);
 		prof_stop (index, 1);
 	}
-	pp = &profs [index];
 	calib_delta = pp->min.nanos;
-	log_printf (PROF_ID, 0, "Profiling calibrated : %u cycles/100ms, delta = %uns.\r\n",
+	dbg_printf ("Profiling calibrated : %u cycles/100ms, delta = %uns.\r\n",
 				cycles_100ms, calib_delta);
 }
 

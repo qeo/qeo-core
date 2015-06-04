@@ -17,7 +17,7 @@ $(miniupnpc_COMP_DIR)/miniupnpcstrings.h:
 $(miniupnpc_COMP_DIR)/miniwget.c: $(miniupnpc_COMP_DIR)/miniupnpcstrings.h
 
 miniupnpc.libminiupnpc_SRCS := miniwget.c minixml.c igd_desc_parse.c minisoap.c miniupnpc.c upnpreplyparse.c upnpcommands.c upnperrors.c connecthostport.c portlistingparse.c receivedata.c minissdpc.c
-miniupnpc.libminiupnpc_LOCALDEFINES := -Wall -W -Wstrict-prototypes -fno-common -DMINIUPNPC_SET_SOCKET_TIMEOUT -DMINIUPNPC_GET_SRC_ADDR -D_BSD_SOURCE -D_POSIX_C_SOURCE=1 -ansi
+miniupnpc.libminiupnpc_LOCALDEFINES := -Wall -W -Wstrict-prototypes -fno-common -DMINIUPNPC_SET_SOCKET_TIMEOUT -DMINIUPNPC_GET_SRC_ADDR -D_BSD_SOURCE -D_POSIX_C_SOURCE=1
 ifdef ANDROID_ARCH
 miniupnpc.libminiupnpc_LOCALDEFINES += -Dsun
 endif

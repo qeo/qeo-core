@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -64,7 +64,7 @@ DDS_DataReaderSeq *DDS_DataReaderSeq__alloc (void)
 {
 	DDS_DataReaderSeq	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_DataReaderSeq));
+	p = Alloc (sizeof (DDS_DataReaderSeq));
 	if (!p)
 		return (NULL);
 
@@ -78,7 +78,7 @@ void DDS_DataReaderSeq__free (DDS_DataReaderSeq *readers)
 		return;
 
 	DDS_DataReaderSeq__clear (readers);
-	mm_fcts.free_ (readers);
+	Free (readers);
 }
 
 DDS_ReturnCode_t DDS_DataReader_get_qos (DDS_DataReader rp,
@@ -344,7 +344,7 @@ static void *dcps_get_cdata_cdr (void                *bufp,
 		copy_data = (sdbp != NULL && cp->c_db->nrefs != 1);
 
 		/* Convert to dynamic data. */
-		ddp = cdr_dynamic_data (sdata, 4, tp, 0, copy_data, swap);
+		ddp = cdr_dynamic_data (sdata, CDR_DOFS, tp, 0, copy_data, swap);
 #if defined (DDS_DEBUG) && defined (DUMP_DDATA)
 		dbg_printf ("dcps_get_cdata_cdr:\r\n");
 		xd_dump (1, ddp);
@@ -378,7 +378,11 @@ static void *dcps_get_cdata_cdr (void                *bufp,
 
 	tp = ts->ts_cdr;
 #endif
-	alloc_size = cdr_unmarshalled_size (sdata, 4, tp, 0, 0, swap, 0, NULL);
+	alloc_size = cdr_unmarshalled_size (sdata, CDR_DOFS, tp, 0, 0, swap, 
+#ifdef XTYPES_USED
+					    0,
+#endif
+					    NULL);
 	if (!alloc_size) {
 		log_printf (DCPS_ID, 0, "dds_get_cdata: cdr_unmarshalled_size failed (writer=%u)!\r\n", cp->c_writer);
 		/*log_print_region (RTPS_ID, 0, cp->c_data, cp->c_length, 1, 1);*/
@@ -417,7 +421,7 @@ static void *dcps_get_cdata_cdr (void                *bufp,
 		ddbp = NULL;
 		*auxp = dp;
 	}
-	*error = cdr_unmarshall (dp, sdata, 4, tp, 0, 0, swap, 0);
+	*error = cdr_unmarshall (dp, sdata, CDR_DOFS, tp, 0, 0, swap, 0);
 	if (*error) {
 		log_printf (DCPS_ID, 0, "dds_get_cdata: error %d unmarshalling CDR data (writer=%u)!\r\n", *error, cp->c_writer);
 		/*log_print_region (RTPS_ID, 0, cp->c_data, cp->c_length, 1, 1);*/
@@ -713,7 +717,7 @@ DDS_DataSeq *DDS_DataSeq__alloc (void)
 {
 	DDS_DataSeq	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_DataSeq));
+	p = Alloc (sizeof (DDS_DataSeq));
 	if (!p)
 		return (NULL);
 
@@ -727,7 +731,7 @@ void DDS_DataSeq__free (DDS_DataSeq *data)
 		return;
 
 	DDS_DataSeq__clear (data);
-	mm_fcts.free_ (data);
+	Free (data);
 }
 
 void DDS_SampleInfoSeq__init (DDS_SampleInfoSeq *samples)
@@ -744,7 +748,7 @@ DDS_SampleInfoSeq *DDS_SampleInfoSeq__alloc (void)
 {
 	DDS_SampleInfoSeq	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_SampleInfoSeq));
+	p = Alloc (sizeof (DDS_SampleInfoSeq));
 	if (!p)
 		return (NULL);
 
@@ -758,7 +762,7 @@ void DDS_SampleInfoSeq__free (DDS_SampleInfoSeq *samples)
 		return;
 
 	DDS_SampleInfoSeq__clear (samples);
-	mm_fcts.free_ (samples);
+	Free (samples);
 }
 
 static void reader_get_no_resources (Reader_t *rp, const char *subject)
@@ -2012,7 +2016,7 @@ DDS_InstanceHandleSeq *DDS_InstanceHandleSeq__alloc (void)
 {
 	DDS_InstanceHandleSeq	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_InstanceHandleSeq));
+	p = Alloc (sizeof (DDS_InstanceHandleSeq));
 	if (!p)
 		return (NULL);
 
@@ -2026,7 +2030,7 @@ void DDS_InstanceHandleSeq__free (DDS_InstanceHandleSeq *handles)
 		return;
 
 	DDS_InstanceHandleSeq__clear (handles);
-	mm_fcts.free_ (handles);
+	Free (handles);
 }
 
 static int check_matched_publication (Endpoint_t            *ep, 

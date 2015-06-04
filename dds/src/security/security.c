@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -79,6 +79,7 @@ static unsigned long id_function(void)
 void DDS_Security_set_library_lock (void)
 {
 	int i;
+
 	ssl_mutexes = xmalloc (CRYPTO_num_locks () * sizeof (lock_t));
 	if (!ssl_mutexes)
 		return;
@@ -93,6 +94,7 @@ void DDS_Security_set_library_lock (void)
 void DDS_Security_unset_library_lock (void)
 {
 	int i;
+
 	if (!ssl_mutexes)
 		return;
 
@@ -170,7 +172,7 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 		          strlen (crp->info.filenames.private_key_file) +
 			  strlen (crp->info.filenames.certificate_chain_file) +
 			  2;
-		credentials = malloc (xlength);
+		credentials = Alloc (xlength);
 		if (!credentials)
 			return (DDS_RETCODE_OUT_OF_RESOURCES);
 
@@ -199,7 +201,7 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 			  strlen (crp->info.engine.cert_id) +
 			  strlen (crp->info.engine.priv_key_id) +
 			  3;
-		credentials = malloc (xlength);
+		credentials = Alloc (xlength);
 		if (!credentials)
 			return (DDS_RETCODE_OUT_OF_RESOURCES);
 
@@ -232,7 +234,7 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 		xlength = sizeof (DDS_Credentials) +
 			sizeof (crp->info.sslData.private_key) +
 			sizeof (crp->info.sslData.certificate_list);
-		credentials = malloc (xlength);
+		credentials = Alloc (xlength);
 		if (!credentials)
 			return (DDS_RETCODE_OUT_OF_RESOURCES);
 
@@ -247,13 +249,13 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 		/* copy every certificate to the new stack */
 		for (i = 0; i < (unsigned) nbOfCert; i++) {
 #ifdef DDS_DEBUG
-			log_printf (SEC_ID, 0, "cert %d is: \r\n", i);
-
-			BIO *dbg_out = BIO_new(BIO_s_mem());
+			BIO *dbg_out = BIO_new (BIO_s_mem ());
 			char dbg_out_string[256];
 			int size;
+
 			X509_NAME_print_ex (dbg_out, X509_get_subject_name (sk_X509_value (crp->info.sslData.certificate_list, i)),
 					       1, XN_FLAG_MULTILINE);
+			log_printf (SEC_ID, 0, "cert %d is: \r\n", i);
 			while(1) {
 				size = BIO_read(dbg_out, &dbg_out_string, 255);
 				if (size <= 0) {
@@ -265,7 +267,6 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 			BIO_free(dbg_out);
 			log_printf (SEC_ID, 0, "\r\n");
 #endif		
-
 			cert_ori = sk_X509_value (crp->info.sslData.certificate_list, i);
 			cert_cpy = X509_dup (cert_ori);
 			sk_X509_push (credentials->info.sslData.certificate_list,
@@ -299,7 +300,7 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 
 			xlength += crp->info.data.certificates [i].length;
 		}
-		credentials = malloc (xlength);
+		credentials = Alloc (xlength);
 		if (!credentials)
 			return (DDS_RETCODE_OUT_OF_RESOURCES);
 
@@ -379,7 +380,7 @@ Identity_t validate_local_identity (const char      *name,
 	ret = (*plugin_fct) (DDS_VALIDATE_LOCAL_ID, &data);
 	if (ret || plugin_policy == DDS_SECURITY_AGENT) {
 		memset (credentials, 0, xlength);
-		free (credentials);
+		Free (credentials);
 	}
 	if (ret) {
 		log_printf (SEC_ID, 0, "Security: The returned handle is 0 --> problem\r\n");

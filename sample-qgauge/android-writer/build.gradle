@@ -1,0 +1,17 @@
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidSDKSample.gradle'
+
+//Specify the location of the tests.
+android {
+	sourceSets {
+		androidTest.java.srcDir project(":sample-qgauge-java-lib").file("src/test/java")
+	}
+}
+
+dependencies {
+  compile     group: 'org.qeo', name: 'qeo-android', version: version
+  compile     group: 'org.qeo', name: 'qeo-android-tests', version: version
+  compile     group: 'org.qeo', name: 'qeo-java', version: version, classifier: 'testlib'
+  compile latestSupportV4
+  compile(group: 'org.achartengine', name: 'achartengine', version: '1.0.0')
+  compile project(':sample-qgauge-java-lib')
+}

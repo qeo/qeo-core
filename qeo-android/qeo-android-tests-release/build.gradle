@@ -1,0 +1,38 @@
+
+//use release service instead of unittest version
+ext.serviceClassifier = null //no classifier means the "release" build is used
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: project(":qeo-android-tests").file("serviceInstaller.gradle")
+
+configurations {
+    downloadTestlib
+}
+
+checkstyleMain {
+	//disable this task, it's all testrelated code
+	enabled = false
+}
+
+checkstyleTest {
+	//add main sourcetree to test sourcetree to apply test coding conventions
+	source "src"
+}
+
+installCertFile {
+    afterEvaluate {
+        project.configurations.downloadTestlib.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            if (artifact.classifier.equals("testlib")) {
+                jarFile = artifact.file
+            }
+        }
+    }
+}
+
+dependencies {
+    compile project(':qeo-android')
+    downloadTestlib group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'testlib'
+}
+
+

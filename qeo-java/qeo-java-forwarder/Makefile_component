@@ -1,0 +1,43 @@
+ifneq ($($(qeo-java-forwarder_INCLUDED)),1)
+
+JNIBUILD := 1
+
+override COMPONENT_SEARCH_PATH_PREFIX :=  $(projectdir/)../../*/%/Makefile_component
+
+override COMPONENT          := org.qeo-java-forwarder
+
+# The license of this component
+
+# The exported header files for this component
+qeo-java-forwarder_INCLUDES             := api/headers
+
+# The linker flags that have to be added to use the libraries of this component
+qeo-java-forwarder_LIBS                 := -lqeo-java-forwarder
+
+# The parts (libraries and programs) that make up this component
+qeo-java-forwarder_PARTS_INSTALL        := libqeojavaforwarder.so@$$(libdir/)libqeojavaforwarder.so:755
+qeo-java-forwarder_TEST_RUN              = 
+
+# The tests need check, both at compile time and at deploy time
+qeo-java-forwarder_DEPS               := qeo-forwarder
+
+include $(projectdir/)build/Makefile_component_top
+
+qeo-java-forwarder.LIBRARIES               := libqeojavaforwarder
+
+qeo-java-forwarder.libqeojavaforwarder_SRCS          := src/main/c/jni_forwarder.c
+qeo-java-forwarder.libqeojavaforwarder_LOCALINCLUDES := $(qeo-c-core_INCLUDES) $(qeo-forwarder_INCLUDES) $(OUTPUT_PREFIX/)gradle/javah
+qeo-java-forwarder.libqeojavaforwarder_LOCALDEFINES  := $(qeo-c-core_CFLAGS)
+qeo-java-forwarder.libqeojavaforwarder_LDADD  := $(qeo-forwarder_LIBS)
+
+# Some compiler checks disabled for MIPS (3.4.6 compiler doesn't understand those options)
+ifneq ($(TARG_ARCH),MIPS)
+qeo-java-forwarder.libqeojavaforwarder_LOCALDEFINES  += -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast -Werror
+#qeoJNI.libqeoJNI_LOCALDEFINES  += -Wall
+endif
+
+include $(projectdir/)build/Makefile_component_bot
+endif
+
+# Vim Modeline, used to enable folds on this Makefile
+# vim: foldmethod=marker foldmarker=##<,##> :

@@ -1,0 +1,28 @@
+
+version = qeoVersion
+//ext.cSdkSampleDebug=true
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/klocwork.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/mwbuild.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/CSDKSample.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+
+generateTypes {
+	ext.language = "c"
+	//note: generated files have to be listed in .gitignore to avoid them being checkedin
+	ext.qdms = ["samples/QSimpleChat_ChatMessage.xml", "samples/QSimpleChat_ChatParticipant.xml"]
+}
+
+clean.doLast {
+	//remove generated files
+	project.delete file("src/QSimpleChat_ChatMessage.c")
+	project.delete file("src/QSimpleChat_ChatMessage.h")
+	project.delete file("src/QSimpleChat_ChatParticipant.c")
+	project.delete file("src/QSimpleChat_ChatParticipant.h")
+}
+
+dependencies {
+    //qdms for codegen
+    generated "org.qeo:qeo-qdm:${project.qeoVersion}:samples@zip"
+}
+

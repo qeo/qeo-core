@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -39,7 +39,7 @@ typedef unsigned qeocore_domain_id_t;
  * \param[in] factory the factory
  * \param[in] success \c true if successfully initialzed, \c false if not
  */
-typedef void (*qeocore_on_factory_init_done)(qeo_factory_t *, bool success);
+typedef void (*qeocore_on_factory_init_done)(qeo_factory_t *factory, bool success);
 
 /**
  * Callback function called by a forwarding factory when it needs a publicly
@@ -93,13 +93,15 @@ void qeocore_factory_close(qeo_factory_t *factory);
  * It will create the DDS domain participant and a publisher/subscriber pair.
  *
  * \param[in] factory the factory to initialize
+ * \param[in] listener the factory related listeners
  *
  * \retval ::QEO_OK on success
  * \retval ::QEO_EINVAL when the input arguments are invalid
  * \retval ::QEO_EBADSTATE when the factory is already initialized
  * \retval ::QEO_EFAIL on failure
  */
-qeo_retcode_t qeocore_factory_init(qeo_factory_t *factory, const qeocore_factory_listener_t *listener);
+qeo_retcode_t qeocore_factory_init(qeo_factory_t *factory,
+                                   const qeocore_factory_listener_t *listener);
 
 /**
  * Trigger a refresh of the security policy.  Note that this action will start
@@ -187,10 +189,12 @@ const char * qeocore_factory_get_realm_url(qeo_factory_t *factory);
 qeo_retcode_t qeocore_factory_set_intf(qeo_factory_t *factory,
                                        const char *interfaces);
 
+qeo_retcode_t qeocore_factory_set_bgns(qeo_factory_t  *factory,
+                                       const char     *bgns_server,
+                                       const char     *bgns_port);
 qeo_retcode_t qeocore_factory_set_tcp_server(qeo_factory_t *factory,
                                              const char *tcp_server);
-qeo_retcode_t qeocore_factory_set_local_tcp_port(qeo_factory_t *factory,
-                                                 const char *local_port);
+qeo_retcode_t qeocore_factory_set_local_tcp_port(qeo_factory_t *factory);
 
 qeo_retcode_t qeocore_factory_set_user_data(qeo_factory_t *factory,
                                        uintptr_t userdata);
@@ -206,13 +210,15 @@ qeo_retcode_t qeocore_factory_get_user_data(qeo_factory_t *factory,
  *
  * \param[in] cb callback function (see ::qeocore_on_fwdfactory_get_public_locator)
  * \param[in] local_port the local TCP port to be used
+ * \param[in] bgns background notification service enabled or not
  *
  * \return The factory or \c NULL on failure.
  *
  * \see ::qeocore_fwdfactory_close
  */
 qeo_factory_t *qeocore_fwdfactory_new(qeocore_on_fwdfactory_get_public_locator cb,
-                                      const char *local_port);
+                                      const char *local_port,
+                                      bool bgns);
 
 /**
  * Close factory and release any resources associated with it.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -116,7 +116,7 @@ void *heap_alloc (unsigned heap_id, size_t size)
 #ifdef FORCE_MALLOC
 	ARG_NOT_USED (heap_id)
 
-	return (mm_fcts.alloc_ (size));
+	return (Alloc (size));
 #else
 	HEAP	prev, p, sp;
 	size_t	nsize;
@@ -203,7 +203,7 @@ static void heap_free_chunk (unsigned heap_id, HEAP tp)
 void heap_free (void *addr)
 {
 #ifdef FORCE_MALLOC
-	mm_fcts.free_ (addr);
+	Free (addr);
 #else
 	HEAP		tp;
 	unsigned	heap_id;

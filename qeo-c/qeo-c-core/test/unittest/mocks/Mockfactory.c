@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -104,6 +104,16 @@ typedef struct _CMOCK_qeocore_factory_set_intf_CALL_INSTANCE
 
 } CMOCK_qeocore_factory_set_intf_CALL_INSTANCE;
 
+typedef struct _CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE
+{
+  UNITY_LINE_TYPE LineNumber;
+  qeo_retcode_t ReturnVal;
+  qeo_factory_t* Expected_factory;
+  char* Expected_bgns_server;
+  char* Expected_bgns_port;
+
+} CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE;
+
 typedef struct _CMOCK_qeocore_factory_set_tcp_server_CALL_INSTANCE
 {
   UNITY_LINE_TYPE LineNumber;
@@ -118,7 +128,6 @@ typedef struct _CMOCK_qeocore_factory_set_local_tcp_port_CALL_INSTANCE
   UNITY_LINE_TYPE LineNumber;
   qeo_retcode_t ReturnVal;
   qeo_factory_t* Expected_factory;
-  char* Expected_local_port;
 
 } CMOCK_qeocore_factory_set_local_tcp_port_CALL_INSTANCE;
 
@@ -146,6 +155,7 @@ typedef struct _CMOCK_qeocore_fwdfactory_new_CALL_INSTANCE
   qeo_factory_t* ReturnVal;
   qeocore_on_fwdfactory_get_public_locator Expected_cb;
   char* Expected_local_port;
+  bool Expected_bgns;
 
 } CMOCK_qeocore_fwdfactory_new_CALL_INSTANCE;
 
@@ -231,6 +241,11 @@ static struct MockfactoryInstance
   CMOCK_qeocore_factory_set_intf_CALLBACK qeocore_factory_set_intf_CallbackFunctionPointer;
   int qeocore_factory_set_intf_CallbackCalls;
   CMOCK_MEM_INDEX_TYPE qeocore_factory_set_intf_CallInstance;
+  int qeocore_factory_set_bgns_IgnoreBool;
+  qeo_retcode_t qeocore_factory_set_bgns_FinalReturn;
+  CMOCK_qeocore_factory_set_bgns_CALLBACK qeocore_factory_set_bgns_CallbackFunctionPointer;
+  int qeocore_factory_set_bgns_CallbackCalls;
+  CMOCK_MEM_INDEX_TYPE qeocore_factory_set_bgns_CallInstance;
   int qeocore_factory_set_tcp_server_IgnoreBool;
   qeo_retcode_t qeocore_factory_set_tcp_server_FinalReturn;
   CMOCK_qeocore_factory_set_tcp_server_CALLBACK qeocore_factory_set_tcp_server_CallbackFunctionPointer;
@@ -331,6 +346,11 @@ void Mockfactory_Verify(void)
   UNITY_TEST_ASSERT(CMOCK_GUTS_NONE == Mock.qeocore_factory_set_intf_CallInstance, cmock_line, "Function 'qeocore_factory_set_intf' called less times than expected.");
   if (Mock.qeocore_factory_set_intf_CallbackFunctionPointer != NULL)
     Mock.qeocore_factory_set_intf_CallInstance = CMOCK_GUTS_NONE;
+  if (Mock.qeocore_factory_set_bgns_IgnoreBool)
+    Mock.qeocore_factory_set_bgns_CallInstance = CMOCK_GUTS_NONE;
+  UNITY_TEST_ASSERT(CMOCK_GUTS_NONE == Mock.qeocore_factory_set_bgns_CallInstance, cmock_line, "Function 'qeocore_factory_set_bgns' called less times than expected.");
+  if (Mock.qeocore_factory_set_bgns_CallbackFunctionPointer != NULL)
+    Mock.qeocore_factory_set_bgns_CallInstance = CMOCK_GUTS_NONE;
   if (Mock.qeocore_factory_set_tcp_server_IgnoreBool)
     Mock.qeocore_factory_set_tcp_server_CallInstance = CMOCK_GUTS_NONE;
   UNITY_TEST_ASSERT(CMOCK_GUTS_NONE == Mock.qeocore_factory_set_tcp_server_CallInstance, cmock_line, "Function 'qeocore_factory_set_tcp_server' called less times than expected.");
@@ -407,6 +427,8 @@ void Mockfactory_Destroy(void)
   Mock.qeocore_factory_get_realm_url_CallbackCalls = 0;
   Mock.qeocore_factory_set_intf_CallbackFunctionPointer = NULL;
   Mock.qeocore_factory_set_intf_CallbackCalls = 0;
+  Mock.qeocore_factory_set_bgns_CallbackFunctionPointer = NULL;
+  Mock.qeocore_factory_set_bgns_CallbackCalls = 0;
   Mock.qeocore_factory_set_tcp_server_CallbackFunctionPointer = NULL;
   Mock.qeocore_factory_set_tcp_server_CallbackCalls = 0;
   Mock.qeocore_factory_set_local_tcp_port_CallbackFunctionPointer = NULL;
@@ -968,6 +990,70 @@ void qeocore_factory_set_intf_StubWithCallback(CMOCK_qeocore_factory_set_intf_CA
   Mock.qeocore_factory_set_intf_CallbackFunctionPointer = Callback;
 }
 
+qeo_retcode_t qeocore_factory_set_bgns(qeo_factory_t* factory, const char* bgns_server, const char* bgns_port)
+{
+  UNITY_LINE_TYPE cmock_line = TEST_LINE_NUM;
+  CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE*)CMock_Guts_GetAddressFor(Mock.qeocore_factory_set_bgns_CallInstance);
+  Mock.qeocore_factory_set_bgns_CallInstance = CMock_Guts_MemNext(Mock.qeocore_factory_set_bgns_CallInstance);
+  if (Mock.qeocore_factory_set_bgns_IgnoreBool)
+  {
+    if (cmock_call_instance == NULL)
+      return Mock.qeocore_factory_set_bgns_FinalReturn;
+    memcpy(&Mock.qeocore_factory_set_bgns_FinalReturn, &cmock_call_instance->ReturnVal, sizeof(qeo_retcode_t));
+    return cmock_call_instance->ReturnVal;
+  }
+  if (Mock.qeocore_factory_set_bgns_CallbackFunctionPointer != NULL)
+  {
+    return Mock.qeocore_factory_set_bgns_CallbackFunctionPointer(factory, bgns_server, bgns_port, Mock.qeocore_factory_set_bgns_CallbackCalls++);
+  }
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeocore_factory_set_bgns' called more times than expected.");
+  cmock_line = cmock_call_instance->LineNumber;
+  UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'qeocore_factory_set_bgns' called with unexpected value for argument 'factory'.");
+  if (cmock_call_instance->Expected_bgns_server == NULL)
+    { UNITY_TEST_ASSERT_NULL(bgns_server, cmock_line, "Expected NULL. Function 'qeocore_factory_set_bgns' called with unexpected value for argument 'bgns_server'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_bgns_server, bgns_server, 1, cmock_line, "Function 'qeocore_factory_set_bgns' called with unexpected value for argument 'bgns_server'."); }
+  if (cmock_call_instance->Expected_bgns_port == NULL)
+    { UNITY_TEST_ASSERT_NULL(bgns_port, cmock_line, "Expected NULL. Function 'qeocore_factory_set_bgns' called with unexpected value for argument 'bgns_port'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_bgns_port, bgns_port, 1, cmock_line, "Function 'qeocore_factory_set_bgns' called with unexpected value for argument 'bgns_port'."); }
+  return cmock_call_instance->ReturnVal;
+}
+
+void CMockExpectParameters_qeocore_factory_set_bgns(CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE* cmock_call_instance, qeo_factory_t* factory, const char* bgns_server, const char* bgns_port)
+{
+  cmock_call_instance->Expected_factory = factory;
+  cmock_call_instance->Expected_bgns_server = (char*)bgns_server;
+  cmock_call_instance->Expected_bgns_port = (char*)bgns_port;
+}
+
+void qeocore_factory_set_bgns_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo_retcode_t cmock_to_return)
+{
+  CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE));
+  CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
+  Mock.qeocore_factory_set_bgns_CallInstance = CMock_Guts_MemChain(Mock.qeocore_factory_set_bgns_CallInstance, cmock_guts_index);
+  cmock_call_instance->LineNumber = cmock_line;
+  cmock_call_instance->ReturnVal = cmock_to_return;
+  Mock.qeocore_factory_set_bgns_IgnoreBool = (int)1;
+}
+
+void qeocore_factory_set_bgns_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory, const char* bgns_server, const char* bgns_port, qeo_retcode_t cmock_to_return)
+{
+  CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE));
+  CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeocore_factory_set_bgns_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
+  Mock.qeocore_factory_set_bgns_CallInstance = CMock_Guts_MemChain(Mock.qeocore_factory_set_bgns_CallInstance, cmock_guts_index);
+  cmock_call_instance->LineNumber = cmock_line;
+  CMockExpectParameters_qeocore_factory_set_bgns(cmock_call_instance, factory, bgns_server, bgns_port);
+  memcpy(&cmock_call_instance->ReturnVal, &cmock_to_return, sizeof(qeo_retcode_t));
+}
+
+void qeocore_factory_set_bgns_StubWithCallback(CMOCK_qeocore_factory_set_bgns_CALLBACK Callback)
+{
+  Mock.qeocore_factory_set_bgns_CallbackFunctionPointer = Callback;
+}
+
 qeo_retcode_t qeocore_factory_set_tcp_server(qeo_factory_t* factory, const char* tcp_server)
 {
   UNITY_LINE_TYPE cmock_line = TEST_LINE_NUM;
@@ -1027,7 +1113,7 @@ void qeocore_factory_set_tcp_server_StubWithCallback(CMOCK_qeocore_factory_set_t
   Mock.qeocore_factory_set_tcp_server_CallbackFunctionPointer = Callback;
 }
 
-qeo_retcode_t qeocore_factory_set_local_tcp_port(qeo_factory_t* factory, const char* local_port)
+qeo_retcode_t qeocore_factory_set_local_tcp_port(qeo_factory_t* factory)
 {
   UNITY_LINE_TYPE cmock_line = TEST_LINE_NUM;
   CMOCK_qeocore_factory_set_local_tcp_port_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeocore_factory_set_local_tcp_port_CALL_INSTANCE*)CMock_Guts_GetAddressFor(Mock.qeocore_factory_set_local_tcp_port_CallInstance);
@@ -1041,22 +1127,17 @@ qeo_retcode_t qeocore_factory_set_local_tcp_port(qeo_factory_t* factory, const c
   }
   if (Mock.qeocore_factory_set_local_tcp_port_CallbackFunctionPointer != NULL)
   {
-    return Mock.qeocore_factory_set_local_tcp_port_CallbackFunctionPointer(factory, local_port, Mock.qeocore_factory_set_local_tcp_port_CallbackCalls++);
+    return Mock.qeocore_factory_set_local_tcp_port_CallbackFunctionPointer(factory, Mock.qeocore_factory_set_local_tcp_port_CallbackCalls++);
   }
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeocore_factory_set_local_tcp_port' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'qeocore_factory_set_local_tcp_port' called with unexpected value for argument 'factory'.");
-  if (cmock_call_instance->Expected_local_port == NULL)
-    { UNITY_TEST_ASSERT_NULL(local_port, cmock_line, "Expected NULL. Function 'qeocore_factory_set_local_tcp_port' called with unexpected value for argument 'local_port'."); }
-  else
-    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_local_port, local_port, 1, cmock_line, "Function 'qeocore_factory_set_local_tcp_port' called with unexpected value for argument 'local_port'."); }
   return cmock_call_instance->ReturnVal;
 }
 
-void CMockExpectParameters_qeocore_factory_set_local_tcp_port(CMOCK_qeocore_factory_set_local_tcp_port_CALL_INSTANCE* cmock_call_instance, qeo_factory_t* factory, const char* local_port)
+void CMockExpectParameters_qeocore_factory_set_local_tcp_port(CMOCK_qeocore_factory_set_local_tcp_port_CALL_INSTANCE* cmock_call_instance, qeo_factory_t* factory)
 {
   cmock_call_instance->Expected_factory = factory;
-  cmock_call_instance->Expected_local_port = (char*)local_port;
 }
 
 void qeocore_factory_set_local_tcp_port_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo_retcode_t cmock_to_return)
@@ -1070,14 +1151,14 @@ void qeocore_factory_set_local_tcp_port_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmo
   Mock.qeocore_factory_set_local_tcp_port_IgnoreBool = (int)1;
 }
 
-void qeocore_factory_set_local_tcp_port_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory, const char* local_port, qeo_retcode_t cmock_to_return)
+void qeocore_factory_set_local_tcp_port_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory, qeo_retcode_t cmock_to_return)
 {
   CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_qeocore_factory_set_local_tcp_port_CALL_INSTANCE));
   CMOCK_qeocore_factory_set_local_tcp_port_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeocore_factory_set_local_tcp_port_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
   Mock.qeocore_factory_set_local_tcp_port_CallInstance = CMock_Guts_MemChain(Mock.qeocore_factory_set_local_tcp_port_CallInstance, cmock_guts_index);
   cmock_call_instance->LineNumber = cmock_line;
-  CMockExpectParameters_qeocore_factory_set_local_tcp_port(cmock_call_instance, factory, local_port);
+  CMockExpectParameters_qeocore_factory_set_local_tcp_port(cmock_call_instance, factory);
   memcpy(&cmock_call_instance->ReturnVal, &cmock_to_return, sizeof(qeo_retcode_t));
 }
 
@@ -1198,7 +1279,7 @@ void qeocore_factory_get_user_data_StubWithCallback(CMOCK_qeocore_factory_get_us
   Mock.qeocore_factory_get_user_data_CallbackFunctionPointer = Callback;
 }
 
-qeo_factory_t* qeocore_fwdfactory_new(qeocore_on_fwdfactory_get_public_locator cb, const char* local_port)
+qeo_factory_t* qeocore_fwdfactory_new(qeocore_on_fwdfactory_get_public_locator cb, const char* local_port, bool bgns)
 {
   UNITY_LINE_TYPE cmock_line = TEST_LINE_NUM;
   CMOCK_qeocore_fwdfactory_new_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeocore_fwdfactory_new_CALL_INSTANCE*)CMock_Guts_GetAddressFor(Mock.qeocore_fwdfactory_new_CallInstance);
@@ -1212,7 +1293,7 @@ qeo_factory_t* qeocore_fwdfactory_new(qeocore_on_fwdfactory_get_public_locator c
   }
   if (Mock.qeocore_fwdfactory_new_CallbackFunctionPointer != NULL)
   {
-    return Mock.qeocore_fwdfactory_new_CallbackFunctionPointer(cb, local_port, Mock.qeocore_fwdfactory_new_CallbackCalls++);
+    return Mock.qeocore_fwdfactory_new_CallbackFunctionPointer(cb, local_port, bgns, Mock.qeocore_fwdfactory_new_CallbackCalls++);
   }
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeocore_fwdfactory_new' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
@@ -1221,13 +1302,15 @@ qeo_factory_t* qeocore_fwdfactory_new(qeocore_on_fwdfactory_get_public_locator c
     { UNITY_TEST_ASSERT_NULL(local_port, cmock_line, "Expected NULL. Function 'qeocore_fwdfactory_new' called with unexpected value for argument 'local_port'."); }
   else
     { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_local_port, local_port, 1, cmock_line, "Function 'qeocore_fwdfactory_new' called with unexpected value for argument 'local_port'."); }
+  UNITY_TEST_ASSERT_EQUAL_INT(cmock_call_instance->Expected_bgns, bgns, cmock_line, "Function 'qeocore_fwdfactory_new' called with unexpected value for argument 'bgns'.");
   return cmock_call_instance->ReturnVal;
 }
 
-void CMockExpectParameters_qeocore_fwdfactory_new(CMOCK_qeocore_fwdfactory_new_CALL_INSTANCE* cmock_call_instance, qeocore_on_fwdfactory_get_public_locator cb, const char* local_port)
+void CMockExpectParameters_qeocore_fwdfactory_new(CMOCK_qeocore_fwdfactory_new_CALL_INSTANCE* cmock_call_instance, qeocore_on_fwdfactory_get_public_locator cb, const char* local_port, bool bgns)
 {
   memcpy(&cmock_call_instance->Expected_cb, &cb, sizeof(qeocore_on_fwdfactory_get_public_locator));
   cmock_call_instance->Expected_local_port = (char*)local_port;
+  cmock_call_instance->Expected_bgns = bgns;
 }
 
 void qeocore_fwdfactory_new_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* cmock_to_return)
@@ -1241,14 +1324,14 @@ void qeocore_fwdfactory_new_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo
   Mock.qeocore_fwdfactory_new_IgnoreBool = (int)1;
 }
 
-void qeocore_fwdfactory_new_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_on_fwdfactory_get_public_locator cb, const char* local_port, qeo_factory_t* cmock_to_return)
+void qeocore_fwdfactory_new_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_on_fwdfactory_get_public_locator cb, const char* local_port, bool bgns, qeo_factory_t* cmock_to_return)
 {
   CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_qeocore_fwdfactory_new_CALL_INSTANCE));
   CMOCK_qeocore_fwdfactory_new_CALL_INSTANCE* cmock_call_instance = (CMOCK_qeocore_fwdfactory_new_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
   Mock.qeocore_fwdfactory_new_CallInstance = CMock_Guts_MemChain(Mock.qeocore_fwdfactory_new_CallInstance, cmock_guts_index);
   cmock_call_instance->LineNumber = cmock_line;
-  CMockExpectParameters_qeocore_fwdfactory_new(cmock_call_instance, cb, local_port);
+  CMockExpectParameters_qeocore_fwdfactory_new(cmock_call_instance, cb, local_port, bgns);
   cmock_call_instance->ReturnVal = cmock_to_return;
 }
 

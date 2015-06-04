@@ -1,0 +1,43 @@
+<html>
+<head>
+ <link rel="stylesheet" href="qunit.css">
+</head>
+
+<body>
+<div id="qunit"></div>
+<div id="qunit-fixture"></div>
+<script src="qeo_DeviceInfo.js"></script>
+<script src="qeo_RegistrationRequest.js"></script>
+<script src="qeo.js"></script> 
+<script src="qeo_types.js"></script>
+<script src="qeo_RegistrationCredentials.js"></script> 
+<script src="qunit.js"></script>
+<script src="qunit-reporter-junit.js"></script>
+<script src="functions.js"></script>
+<script src="tests.js"></script>
+<script src="tests_enum.js"></script>
+
+<script type="text/javascript">
+QUnit.config.testTimeout = 30000; // each test should finish in 30 seconds
+QUnit.jUnitReport = function(report) {
+    TestReporter.jUnitReport(JSON.stringify(report));
+};
+QUnit.testDone(function( details ) {
+    TestReporter.testDone(JSON.stringify(details));
+});
+QUnit.testStart(function( details ) {
+    TestReporter.testStart(JSON.stringify(details));
+});
+QUnit.done(function( details ) {
+    TestReporter.done(JSON.stringify(details));
+});
+QUnit.log(function( details ) {
+    TestReporter.log(JSON.stringify(details));
+});
+</script>
+
+
+
+</body>
+
+</html>

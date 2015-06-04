@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE concept PUBLIC "-//OASIS//DTD DITA Concept//EN" "concept.dtd">
+<concept id="concept_ncp_jpt_fq">
+ <title>Mobile device support</title>
+ <shortdesc></shortdesc>
+ <conbody>
+  <p>In order to use DDS effectively on low-power devices such as smartphones and tablets, it is
+   mandatory to make sure that the CPU of these devices can be put in a a deep sleep as often as
+   possible.</p>
+  <p>Since these low-power requirements are actually in contradiction with the DDS peer-to-peer,
+   always-on way of working, some extra mechanisms are needed: a suspend/resume mechanism, as well
+   as a remote wakeup feature, handled by a dedicated background notification server.</p>
+  <p>Suspend/resume makes sure that when an application is about to enter a low-power state, DDS can
+   detach itself from all external connections and stops all internal activity, effectively freezing
+   itself until coming out of low-power.  In this state, all entities such as DomainParticipants,
+   Topics, Types, DataReaders, DataWriters (as well as their caches) and all discovered
+   Participants, DataReaders and DataWriters are preserved but inactive, until activated again.</p>
+  <p>For the remote wakeup feature, an external server is required, which will be explained
+   later.</p>
+ </conbody>
+</concept>

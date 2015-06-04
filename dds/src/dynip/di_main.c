@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -41,7 +41,7 @@
 
 /*#define TRACE_DYNIP_NOTIFY   ** Trace DYNIP notify calls. */
 
-#define	MAX_IFTABLE	8
+#define	MAX_IFTABLE	20
 
 struct ip_addr_st {
 #ifndef DDS_IPV6
@@ -90,6 +90,7 @@ static NL_Proto		ipv6;
 #endif
 static Timer_t		sched_timer;
 static Timer_t		notify_timer;
+static lock_t		di_lock;
 
 IP_Intf_t *di_intf_lookup (unsigned id)
 {
@@ -218,6 +219,7 @@ int di_init (void)
 	config_notify (DC_IPv6_Intf, di_intf_change);
 #endif
 	init = 1;
+	lock_init_nr (di_lock, "D-IP");
 	return (di_sys_init ());
 }
 
@@ -243,6 +245,8 @@ void di_final (void)
 	for (i = 0; i < MAX_IFTABLE; i++)
 		while (intf_table [i])
 			di_intf_delete (intf_table [i]);
+
+	lock_destroy (di_lock);
 	init = 0;
 }
 
@@ -601,13 +605,14 @@ void di_evh_begin (void)
 #ifdef DDS_IPV6
 	ipv6.n_changes = 0;
 #endif
-
+	lock_take (di_lock);
 }
 
 static int notify_retry_ipv4 = 0;
 #ifdef DDS_IPV6
 static int notify_retry_ipv6 = 0;
 #endif
+
 void di_evh_end_run (unsigned int count);
  
 void di_evh_end_timer (uintptr_t user)
@@ -621,16 +626,15 @@ void di_evh_end_timer (uintptr_t user)
 
 void di_evh_end_run (unsigned int count)
 {
-	int ok = 1;
+	int	ok = 1;
 
 	if (ipv4.n_changes || notify_retry_ipv4) {
 #ifdef TRACE_DYNIP_NOTIFY
 	    log_printf (IP_ID, 0, "DynIP: di_evh_end: ipv4.notify()\r\n");
 #endif
-		if ((*ipv4.notify) () == DDS_RETCODE_OK) {
+		if ((*ipv4.notify) () == DDS_RETCODE_OK)
 			/* ok */
 			notify_retry_ipv4 = 0;
-		}
 		else {
 			ok = 0;
 			notify_retry_ipv4 = 1;
@@ -642,10 +646,10 @@ void di_evh_end_run (unsigned int count)
 #ifdef TRACE_DYNIP_NOTIFY
 	    log_printf (IP_ID, 0, "DynIP: di_evh_end: ipv6.notify()\r\n");
 #endif
-		if ((*ipv6.notify) () == DDS_RETCODE_OK) {
-			/* ok */
+		if ((*ipv6.notify) () == DDS_RETCODE_OK)
+
+			/* Ok! */
 			notify_retry_ipv6 = 0;
-		}
 		else {
 			notify_retry_ipv6 = 1;
 			ok = 0;
@@ -657,18 +661,19 @@ void di_evh_end_run (unsigned int count)
 	if (!ok) {
 		count++;
 		if (count <= 2) {
-			/* retry */ 
-		    log_printf (IP_ID, 0, "DynIP: di_evh_end: start retry timer: %d\r\n", count);
+
+			/* Retry! */ 
+			log_printf (IP_ID, 0, "DynIP: di_evh_end: start retry timer: %d\r\n", count);
 			tmr_start (&notify_timer, 200, count, di_evh_end_timer);
 		}
-		else {
+		else
 			warn_printf ("DynIP: notification failure -- giving up");
-		}
 	}
 }
 
 void di_evh_end	(void)
 {
+	lock_release (di_lock);
 	di_evh_end_run (0);
 }
 
@@ -681,6 +686,7 @@ void di_update_intf_filters (uintptr_t user)
 
 	ARG_NOT_USED (user)
 
+	lock_take (di_lock);
 	for (i = 0; i < MAX_IFTABLE; i++) {
 		ifp = intf_table [i];
 		if (!ifp)
@@ -704,6 +710,7 @@ void di_update_intf_filters (uintptr_t user)
 #endif
 		di_intf_update (ifp, ifp->up, allow, allow6);
 	}
+	lock_release (di_lock);
 }
 
 /* Restarting a timer is currently BROKEN.
@@ -714,12 +721,13 @@ void di_update_intf_filters (uintptr_t user)
  * Therefore we resorted to this variable...
  */
 static int _di_filter_update_called;
+
 void di_filter_update (void)
 {
-    if (_di_filter_update_called == 0){
-        tmr_start (&sched_timer, 1, 0, di_update_intf_filters);
-        ++_di_filter_update_called;
-    }
+	if (_di_filter_update_called == 0){
+		tmr_start (&sched_timer, 1, 0, di_update_intf_filters);
+		++_di_filter_update_called;
+	}
 }
 
 int di_attach (unsigned      family,
@@ -747,6 +755,8 @@ int di_attach (unsigned      family,
 	else
 		return (DDS_RETCODE_BAD_PARAMETER);
 
+	lock_take (di_lock);
+
 	if (!pp->own)
 		n_proto++;
 	pp->own = ipa;
@@ -758,6 +768,8 @@ int di_attach (unsigned      family,
 
 	di_sys_attach (family, ipa, n, max, min_scope, max_scope, fct);
 
+	lock_release (di_lock);
+	
 	return (DDS_RETCODE_OK);
 }
 
@@ -765,6 +777,8 @@ void di_detach (unsigned family)
 {
 	if (!init)
 		return;
+
+	lock_take (di_lock);
 
 	if (family == AF_INET) {
 		if (ipv4.own)
@@ -781,6 +795,7 @@ void di_detach (unsigned family)
 	}
 #endif
 	di_sys_detach (family);
+	lock_release (di_lock);
 }
 
 #ifdef DDS_IPV6
@@ -793,15 +808,29 @@ unsigned di_ipv6_intf (unsigned char *addr)
 	IP_Addr_t	*ap;
 	unsigned	i;
 
+	lock_take (di_lock);
+
 	for (i = 0; i < MAX_IFTABLE; i++)
 		for (ifp = intf_table [i]; ifp; ifp = ifp->next)
 			for (ap = ifp->addr6; ap; ap = ap->next)
-				if (!memcmp (ap->a_ipv6, addr, 16))
+				if (!memcmp (ap->a_ipv6, addr, 16)) {
+					lock_release (di_lock);
 					return (ifp->id);
+				}
+
+	lock_release (di_lock);
 	return (0);
 }
 
 #endif
+
+/* di_check -- Check if IP addresses have changed. */
+
+void di_check (void)
+{
+	di_sys_check ();
+}
+
 #ifdef DDS_DEBUG
 
 static void di_intf_dump (IP_Intf_t *ifp)
@@ -856,9 +885,14 @@ void di_dump (void)
 	IP_Intf_t	*ifp;
 	unsigned	i;
 
+	lock_take (di_lock);
+
 	for (i = 0; i < MAX_IFTABLE; i++)
 		for (ifp = intf_table [i]; ifp; ifp = ifp->next)
 			di_intf_dump (ifp);
+
+	lock_release (di_lock);
 }
 
 #endif
+

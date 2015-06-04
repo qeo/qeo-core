@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -156,6 +156,91 @@ int rtps_stateless_resend (Writer_t *w)
 	return (ret);
 }
 
+/* rtps_stateless_send -- Generic SPDP message write function.
+			  Depending on the enabled functionality, it is either
+			  completely compliant to the RTPS spec, i.e. restarts
+			  the multicast reader-locator send, or allows to send
+			  unicast/broadcast SPDP messages without timer reset.*/
+
+int rtps_stateless_send (Writer_t *w, Participant_t *pp, int bcast)
+{
+	int		ret;
+#ifdef RTPS_SPDP_BCAST
+	WRITER		*wp;
+	RemReader_t	*rrp;
+	CCREF		*rp;
+	unsigned	mc, bc, handle, t;
+# if 0
+	static LocatorNode_t bcast_loc_node = {
+		~0U, { LOCATOR_KIND_UDPv4, port}
+	};
+# endif
+	if (!pp && !bcast) {
+		rtps_stateless_resend (w);
+		return (DDS_RETCODE_OK);
+	}
+	lock_take (w->w_lock);
+	wp = w->w_rtps;
+	if (!wp) {
+		log_printf (RTPS_ID, 0, "rtps_stateless_send: writer(%s) doesn't exist!\r\n", str_ptr (w->w_topic->name));
+		ret = DDS_RETCODE_ALREADY_DELETED;
+		goto done;
+	}
+	if (wp->endpoint.stateful ||!wp->endpoint.resends) {
+
+		/* Not applicable in stateful mode. */
+		ret = DDS_RETCODE_BAD_PARAMETER;
+		goto done;
+	}
+	LIST_FOREACH (wp->rem_readers, rrp) {
+		if (pp) {
+			handle = pp->p_handle;
+			mc = bc = 0;
+		}
+		else if (bcast && rrp->rr_locator->locator.kind == LOCATOR_KIND_UDPv4) {
+			handle = 0;
+			mc = 0;
+			bc = 1;
+		}
+		else {
+			handle = 0;
+			mc = 1;
+			bc = 0;
+		}
+		for (rp = LIST_HEAD (rrp->rr_changes);
+		     rp;
+		     rp = LIST_NEXT (rrp->rr_changes, *rp)) {
+			if (!rp->relevant)
+				continue;
+
+			rp->override = 1;
+			rp->mcdata = mc;
+			rp->bcdata = bc;
+			rp->dphandle = handle;
+		}
+		unsent_changes_reset (rrp);
+		if (rrp->rr_unsent_changes)
+			NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
+	}
+	if (!tmr_active (wp->rh_timer))
+		t = wp->rh_period;
+	else
+		t = tmr_remain (wp->rh_timer);
+	RESEND_TMR_START (wp, wp->rh_timer, t, (uintptr_t) wp,
+				slw_be_resend_to, &w->w_lock);
+	ret = DDS_RETCODE_OK;
+
+    done:
+	lock_release (w->w_lock);
+#else
+	ARG_NOT_USED (pp)
+	ARG_NOT_USED (bcast)
+
+	ret = rtps_stateless_resend (w);
+#endif
+	return (ret);
+}
+
 /* rtps_stateless_update -- An entry in the stateless writer cache was
 			    updated by the application.  Resend it. */
 
@@ -260,12 +345,11 @@ static int slw_be_new_change (RemReader_t      *rrp,
 	return (1);
 }
 
-int be_send_data (RemReader_t *rrp, DiscoveredReader_t *reader)
+int be_send_data (RemReader_t *rrp, DiscoveredReader_t *reader, int bcast)
 {
 	CCREF			*rp, *next_rp;
 	DiscoveredReader_t	*drp;
 	Participant_t		*pp;
-	GuidPrefix_t		*prefix;
 	const EntityId_t	*eid;
 	DDS_HANDLE		dest;
 	int			error;
@@ -289,14 +373,24 @@ int be_send_data (RemReader_t *rrp, DiscoveredReader_t *reader)
 		else
 			drp = NULL;
 
-		if (drp && drp->dr_participant) {
-			prefix = &drp->dr_participant->p_guid_prefix;
+		if (drp && (pp = drp->dr_participant) != NULL)
 			eid = &drp->dr_entity_id;
+		else if (rp->override) {
+			if (rp->dphandle) {
+				pp = (Participant_t *) entity_ptr (rp->dphandle);
+				eid = &rtps_builtin_eids [EPB_PARTICIPANT_R];
+			}
+			else {
+				bcast = rp->bcdata;
+				pp = NULL;
+				eid = NULL;
+			}
+			rp->override = rp->bcdata = rp->mcdata = 0;
+			rp->dphandle = 0;
 		}
 		else if (!rrp->rr_writer->endpoint.stateful &&
 		         (dest = rp->u.c.change->c_dests [0]) != 0 &&
 			 (pp = (Participant_t *) entity_ptr (dest)) != NULL) {
-			prefix = &pp->p_guid_prefix;
 #ifdef DDS_NATIVE_SECURITY
 			if (entity_id_eq (rrp->rr_writer->endpoint.endpoint->ep.entity_id,
 					  rtps_builtin_eids [EPB_PARTICIPANT_SL_W]))
@@ -310,14 +404,15 @@ int be_send_data (RemReader_t *rrp, DiscoveredReader_t *reader)
 				eid = NULL;
 		}
 		else {
-			prefix = NULL;
+			pp = NULL;
 			eid = NULL;
 		}
 
 		/* Add DATA submessage (possibly preceeded by INFO_TS). */
 		error = rtps_msg_add_data (rrp,
-					   prefix,
+					   pp,
 					   eid,
+					   (bcast) ? RME_BCAST : RME_MCAST,
 					   rp->u.c.change,
 					   rp->u.c.hci,
 					   next_rp == NULL
@@ -369,7 +464,7 @@ static int slw_be_send_data (RemReader_t *rrp)
 	if (rrp->rr_writer->endpoint.mark_send)
 		rtps_marker_notify (rrp->rr_writer->endpoint.endpoint, EM_SEND, "slw_be_send_data");
 #endif
-	error = be_send_data (rrp, NULL);
+	error = be_send_data (rrp, NULL, 0);
 	prof_stop (rtps_pw_send, 1);
 	return (error);
 }

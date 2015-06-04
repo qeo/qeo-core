@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -41,6 +41,8 @@
 #include "disc_qeo.h"
 #include "disc_match.h"
 #include "disc_policy_updater.h"
+
+int policy_updater = 1;
 
 lock_t part_lock;
 
@@ -428,5 +430,9 @@ void policy_updater_participant_start_timer (Domain_t *dp, Participant_t *p, uns
 	add_part_node (dp, p, timer);
 	lock_release (part_lock);
 }
+
+#else
+
+int policy_updater;
 
 #endif

@@ -1,0 +1,8 @@
+
+[meta]
+appname = "sample-qgauge-reader"
+version = 1
+
+[application]
+org::qeo::sample::gauge::NetStatMessage = rw
+

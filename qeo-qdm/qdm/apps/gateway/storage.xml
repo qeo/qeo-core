@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <include file="qeo_types.xml"/>
+  <module name="org::qeo::storage">
+    <doc>
+      This QDM allows a Qeo-enabled device to publish information about its
+      attached storage volumes (capacity, free space, health...).
+    </doc>
+    <struct name="Volume" behavior="state">
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>
+          This ID uniquely identifies the storage volume.  If the volume is
+          moved to another location but otherwise left intact, the ID should
+          remain the same.  The algorithm to achieve this can make use of
+          persistent identifiers from USB, FAT, etc.
+          TODO: specify the algorithm.  
+        </doc>
+      </member>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId">
+        <doc>
+          This device ID uniquely identifies the device that the storage volume
+          is associated with.
+        </doc>
+      </member>
+      <member name="name" type="string">
+        <doc>This string contains the human readable volume name.</doc>
+      </member>
+      <member name="totalCapacity" type="int64">
+        <doc>
+          This integer expresses the total capacity of the storage volume in
+          bytes.
+        </doc>
+      </member>
+      <member name="freeSpace" type="int64">
+        <doc>
+          This integer expresses the free space left on the storage volume in
+          bytes. The update frequency of this statistic is currently
+          unspecified.
+        </doc>
+      </member>
+      <member name="healthy" type="boolean">
+        <doc>
+          This boolean indicates the health of the storage volume. Set to true
+          when the volume is in good health, false when it is in real danger of
+          failing. Set to true when the health cannot be ascertained.
+        </doc>
+      </member>
+    </struct>
+  </module>
+</types>

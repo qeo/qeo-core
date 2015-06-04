@@ -1,0 +1,16 @@
+# This file contains proguard configuration that is used for release builds only.
+
+# Remove the call to disable the manifest popup.
+-assumenosideeffects class org.qeo.android.service.QeoServiceImpl {
+    public void checkPopupDisabled(java.lang.Boolean[]);
+}
+
+-assumenosideeffects class java.util.logging.Logger {
+    public void entering(...);
+    public void exiting(...);
+    public void finest(...);
+    public void finer(...);
+    public void fine(...);
+    public void config(...);
+    public void info(...);
+}

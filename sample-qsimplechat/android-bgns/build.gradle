@@ -1,0 +1,63 @@
+//The artifactory.gradle file will be used as a helper function in order to use the functionality of artifactory.
+ext.gradleSample = true
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidSDKSample.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactDownloader.gradle'
+
+generateTypes {
+	ext.qdms = ["samples/QSimpleChat_ChatMessage.xml", "samples/QSimpleChat_ChatParticipant.xml"]
+	ext.language = "java"
+}
+
+afterEvaluate {
+    tasks.assembleRelease.dependsOn(artifactDownloadUnzip)
+    tasks.assembleDebug.dependsOn(artifactDownloadUnzip)
+}
+
+artifactDownloadUnzip {
+    appendName = true
+    appendClassifier = true
+}
+
+
+dependencies {
+	compile project.latestSupportV4
+
+    //qeo-android
+	compile (group: 'org.qeo', name: 'qeo-android', version: version)
+    //qdms for codegen
+    generated "org.qeo:qeo-qdm:${project.qeoVersion}:samples@zip"
+
+    //embedded qeo-android-service
+    releaseCompile (group: "org.qeo", name: "qeo-android-service-embedded", version: version, ext: "aar", classifier: "release") {
+        transitive=true
+        exclude (group: "org.apache.httpcomponents", module: "httpclient") //included in android by default
+        exclude (group: "com.google.android", module: "support-v4") //eclipse version
+        exclude (group: "org.qeo", module: "qeo-android-service-core") //this points to the jar instead of the aar. So exclude it here and include the aar version explicit
+    }
+    releaseCompile (group: "org.qeo", name: "qeo-android-service-core", version: version, ext: "aar", classifier: "release") {
+        transitive=true
+        exclude (group: "org.apache.httpcomponents", module: "httpclient") //included in android by default
+    }
+
+
+    //embedded qeo-android-service
+    debugCompile (group: "org.qeo", name: "qeo-android-service-embedded", version: version, ext: "aar", classifier: "debug") {
+        transitive=true
+        exclude (group: "org.apache.httpcomponents", module: "httpclient") //included in android by default
+        exclude (group: "com.google.android", module: "support-v4") //eclipse version
+        exclude (group: "org.qeo", module: "qeo-android-service-core") //this points to the jar instead of the aar. So exclude it here and include the aar version explicit
+    }
+    debugCompile (group: "org.qeo", name: "qeo-android-service-core", version: version, ext: "aar", classifier: "debug") {
+        transitive=true
+        exclude (group: "org.apache.httpcomponents", module: "httpclient") //included in android by default
+    }
+
+    //download .so files for debugging
+    downloadUnzip group: "org.qeo", name: 'qeo-java',         version: version, classifier: 'native-android-symbols', ext: "jar"
+    downloadUnzip group: "org.qeo", name: 'qeo-java',         version: version, classifier: 'native-android-gdb', ext: "jar"
+    downloadUnzip group: "org.qeo", name: 'qeo-java',         version: version, classifier: 'native-android-debug', ext: "jar"
+    debugApk      group: "org.qeo", name: 'qeo-java',         version: version, classifier: 'native-android-gdb'
+
+}
+

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -18,6 +18,8 @@
 #define __disc_policy_updater_h_
 
 #include "dds_data.h"
+
+extern int policy_updater;
 
 #ifdef DDS_QEO_TYPES
 

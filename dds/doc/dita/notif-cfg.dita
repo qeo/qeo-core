@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE concept PUBLIC "-//OASIS//DTD DITA Concept//EN" "concept.dtd">
+<concept id="concept_j32_xxn_fq">
+ <title>Variables for the Background Notification Service</title>
+ <shortdesc></shortdesc>
+ <conbody>
+  <p>As explained in the previous chapter, this Service requires some parameters in orde to be
+   configured properly.</p>
+  <p>Following parameters can be distinguished:</p>
+  <p>
+   <table frame="all" id="table_hkb_tyn_fq">
+    <title/>
+    <tgroup cols="2">
+     <colspec colname="c1" colnum="1" colwidth="1*"/>
+     <colspec colname="c2" colnum="2" colwidth="2.64*"/>
+     <thead>
+      <row>
+       <entry>Environment variable</entry>
+       <entry>Description</entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry><b>BGNS_DOMAIN</b></entry>
+       <entry>Specifies the DDS domain that is used for the Notification service.  Both client and
+        server must set this correctly or the service will used id 0.</entry>
+      </row>
+      <row>
+       <entry><b>BGNS_[SEC]PORT[6]</b></entry>
+       <entry>Used by the server to specify the TCP port number on which the server is listening for
+        incoming connections.  If set for the first time, a server for the notification service is
+        started.  Either a valid port number should be specified for a dedicated TCP server, or @
+        may be specified, which indicates a connection that is in-band, i.e. multiplexed on the
+        connection of the DDS/TCP control channel server.</entry>
+      </row>
+      <row>
+       <entry><b>BGNS_[SEC]SERVER[6]</b></entry>
+       <entry>Used by the client to specify the TCP server URL of the remote Notification service.
+        If set to @ the client connection will be in-band, i.e. multiplexed on the client connection
+        of the DDS/TCP control channel.  Once this variable is set, the client will attempt to
+        connect to the remote server.</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+  </p>
+  <note>The optional SEC prefix indicates that a secure TCP connection is needed for the server.</note>
+  <note>The optional 6 suffix indicates that the TCP connection is over IPv6 instead of over IP.</note>
+  <p><b>Examples</b></p>
+  <p><b>export TDDS_BGNS_DOMAIN=7</b></p>
+  <p>Set the DDS domain to 7 for the Background Notification service.</p>
+  <p><b>export TDDS_BGNS_PORT=5500</b></p>
+  <p>Start a dedicated Background Notification server on port 5500.</p>
+  <p><b>export TDDS_BGNS_PORT=@</b></p>
+  <p>Start a Background Notification server multiplexed with the DDS TCP control channel.</p>
+  <p><b>export TDDS_BGNS_SERVER=www.technicolor.com/bgns:5500</b></p>
+  <p>Start a dedicated Background Notification service to the server at the given URL on port
+   5500.</p>
+  <p><b>export TDDS_BGNS_SERVER=@</b></p>
+  <p>Start a Background Notification client multiplexed with the DDS TCP control channel.</p>
+ </conbody>
+</concept>

@@ -9,6 +9,9 @@ dds_NATIVE_SECURITY := 1
 dds_QEO_SECURITY := 1
 #dds_DTLS_SECURITY := 1
 
+# Enable low-power backgrounding service
+dds_SUSPEND := 1
+
 # The license of this component
 
 # The exported header files for this component
@@ -76,9 +79,9 @@ include $(projectdir/)build/Makefile_component_top
 
 DDS_TYPE_SYSTEM:=XTYPES
 
-# Workaround for raw multicast to different endian hosts
+# Workaround for raw multicast to different endian hosts, History counts for Unregister/Dispose, CDR align at encapsulation header
 
-dds_EXTRA_DEFINES           += -DRTPS_MARSHALL_ALWAYS -DDDS_HIST_PURGE_NA
+dds_EXTRA_DEFINES           += -DRTPS_MARSHALL_ALWAYS -DDDS_HIST_PURGE_NA -DCDR_DOFS=4
 
 dds.LIBRARIES               := libdds
 
@@ -88,7 +91,7 @@ dds.libdds_SRCS             := \
                                                              ipc.c ipfilter.c libx.c log.c md5.c nmatch.c pool.c prof.c random.c \
                                                              skiplist.c sock.c str.c strseq.c sys.c thread.c timer.c) \
                                $(addprefix src/dcps/,        dcps_builtin.c dcps_dbg.c dcps_dpfact.c dcps_entity.c dcps_event.c dcps_main.c \
-			                                     dcps_part.c dcps_pub.c dcps_qos.c dcps_reader.c dcps_sub.c dcps_topic.c \
+			                                     dcps_part.c dcps_pub.c dcps_qos.c dcps_reader.c dcps_sub.c dcps_topic.c dcps_notif.c \
 							     dcps_waitset.c dcps_writer.c) \
                                $(addprefix src/dds/,         dds.c dds_seq.c domain.c guard.c guid.c locator.c uqos.c) \
                                $(addprefix src/disc/,        disc_tc.c disc_ep.c disc_match.c disc_sub.c disc_pub.c disc_msg.c \
@@ -105,13 +108,21 @@ dds.libdds_SRCS             += $(addprefix src/dynip/,       di_darwin.c di_main
 else
 dds.libdds_SRCS             += $(addprefix src/dynip/,       di_linux.c di_main.c)
 endif
-                               
+ 
 ifeq ($(DDS_TYPE_SYSTEM),XTYPES)			       
 dds.libdds_SRCS             += $(addprefix src/xtypes/,      builtin.c pid.c pl_cdr.c tsm.c vtc.c xcdr.c xdata.c xtopic.c xtypecode.c xtypes.c)
 else
 dds.libdds_SRCS             += $(addprefix src/typecode/,    cdr.c pid.c pl_cdr.c typecode.c)
 endif
-                               
+
+ifeq ($(dds_SUSPEND), 1)
+dds_EXTRA_DEFINES           += -DTCP_SUSPEND
+dds.libdds_SRCS             += \
+                               $(addprefix src/bgns/,        bgns.c) \
+                               $(addprefix src/trans/ip/,    ri_bgcp.c) \
+                               $(addprefix src/co/,          table.c)
+endif
+
 ifeq ($(dds_DEBUG), 1)
 dds.libdds_SRCS             += $(addprefix src/dbg/,         debug.c) \
 	                       $(addprefix src/co/,          tty.c)
@@ -168,7 +179,7 @@ dds.PEDANTIC                := -pedantic
 endif
 endif
 dds.libdds_LOCALINCLUDES    := $(dds_INCLUDES) src/include
-dds.libdds_LOCALDEFINES     := -Wextra -Wall -Wno-long-long $(dds.PEDANTIC) $(dds_EXTRA_DEFINES) -DNO_ATOMIC -DDCPS_ZERO_BUFFER -DPTHREADS_USED -D_XOPEN_SOURCE=600 -D_SVID_SOURCE -DRTPS_USED -DDDS_AUTO_LIVELINESS -DDDS_DYN_IP -DDDS_TYPECODE -DDDS_TCP -DBIGDATA -DNO_CERTIFICATE_TIME_VALIDITY_CHECK # -DDDS_IPV6 -DLOG_FILE  -DCTRACE_USED -DCTRACE_ATEXIT 
+dds.libdds_LOCALDEFINES     := -Wextra -Wall -Wno-long-long $(dds.PEDANTIC) $(dds_EXTRA_DEFINES) -DNO_ATOMIC -DDCPS_ZERO_BUFFER -DPTHREADS_USED -D_XOPEN_SOURCE=600 -D_SVID_SOURCE -DRTPS_USED -DDDS_AUTO_LIVELINESS -DDDS_DYN_IP -DDDS_TYPECODE -DDDS_TCP -DBIGDATA -DNO_CERTIFICATE_TIME_VALIDITY_CHECK -DRTPS_SPDP_BCAST # -DDDS_IPV6 -DLOG_FILE  -DCTRACE_USED -DCTRACE_ATEXIT 
 ifeq ($(dds_WERROR), 1)
 dds.libdds_LOCALDEFINES     += -Werror
 endif
@@ -219,7 +230,7 @@ dds.PROGRAMS                    += shapes
 dds_$(E)_TEST_PARTS             += $(dds_PREFIX/)shapes
 dds_$(E)_TEST_INSTALL           += && cp $(dds_PREFIX/)shapes $(bindir/)shapes
 
-dds.dcps_test_SRCS              := apps/dcps/main.c src/dbg/debug.c
+dds.dcps_test_SRCS              := apps/dcps/main.c src/dbg/debug.c apps/co/dd_log.c
 dds.dcps_test_LOCALINCLUDES     := $(dds_INCLUDES) src/include  
 dds.dcps_test_LDADD             := -Wl,-Bstatic -L$(dds_PREFIX) -ldds -Wl,-Bdynamic $(rt_LIBS) $(dds_EXTRA_LIBS)
 dds.dcps_test_LDDEPS            := libdds.a
@@ -303,7 +314,7 @@ dds.latency_test_LDADD          := -Wl,-Bstatic -L$(dds_PREFIX) -ldds -Wl,-Bdyna
 dds.latency_test_LDDEPS         := libdds.a
 
 ifneq ($(dds_OLD_SECURITY), 1)
-dds.aac_test_SRCS               := apps/dcps/main.c src/dbg/debug.c $(dds.libdds_SRCS) src/dds/dds.c plugins/nsecplug/sp_xml.c src/co/tty.c
+dds.aac_test_SRCS               := apps/dcps/main.c apps/co/dd_log.c src/dbg/debug.c $(dds.libdds_SRCS) src/dds/dds.c plugins/nsecplug/sp_xml.c src/co/tty.c
 dds.aac_test_LOCALINCLUDES      := $(dds_INCLUDES) src/include /usr/include/libxml2/
 dds.aac_test_LOCALDEFINES       := -Wextra -Wall -Wno-long-long $(dds.PEDANTIC) -DDDS_NO_MCAST -DXTYPES_USED -DNO_ATOMIC -DDCPS_ZERO_BUFFER -DPTHREADS_USED -D_XOPEN_SOURCE=600 -D_SVID_SOURCE -DRTPS_USED -DDDS_AUTO_LIVELINESS -DDDS_DYN_IP -DDDS_TYPECODE -DDDS_TCP -DBIGDATA -DMSECPLUG_WITH_SECXML -DDDS_DEBUG -DLOG_FILE -DDDS_NATIVE_SECURITY -DDDS_SECURITY -DDDS_FORWARD -DDDS_QEO_TYPES
 dds.aac_test_LDADD              := -Wl,-Bstatic -L$(dds_PREFIX) -Wl,-Bdynamic $(rt_LIBS) $(dds_EXTRA_LIBS) -lm -lxml2
@@ -311,6 +322,9 @@ dds.aac_test_LDDEPS             :=
 dds_$(E)_TEST_INSTALL           += && cp $(projectdir/)apps/dcps/testScript.sh $(bindir/)testScript.sh \
                                    && cp $(projectdir/)apps/dcps/securityQeo.xml $(bindir/)security.xml \
                                    && cp -r $(projectdir)/apps/dcps/qeoCerts/ $(bindir/)qeoCerts/
+ifeq ($(dds_SUSPEND), 1)
+dds.aac_test_LOCALDEFINES      += -DTCP_SUSPEND
+endif
 endif
 ##>
 

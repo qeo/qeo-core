@@ -1,0 +1,201 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <include file="qeo_types.xml"/>
+  <module name="org::qeo::networking::connectivity::diagnostics">
+    <doc>
+      This QDM provides diagnostics and statistics information about IP
+      interfaces on a networking device. Note: this is not limited to WAN IP
+      interfaces only; LAN interfaces can be included as well.
+    </doc>
+
+    <struct name="NetworkIntfState" behavior="state">
+      <doc>
+        Physical and logical interfaces are modeled on the same topic as they have
+        the same properties.  As a consequence applications only interested in physical or
+        logical interfaces will receive both types and will need to filter at application
+        level.
+      </doc>
+      <member name="name" type="string" key="true">
+        <doc>Interface name.</doc>
+      </member>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId" key="true">
+        <doc>Device ID of the device this IP interface is attached to.</doc>
+      </member>
+      <member name="physical" type="boolean">
+        <doc>Boolean value indicating whether the interface is physical or logical.</doc>
+      </member>
+      <member name="operationalState" type="int32">
+        <!-- type should be enum, but enums are not yet supported in Qeo. -->
+        <doc>
+          The current operational state (based on ifOperStatus from RFC2863).
+          1 = up
+          2 = down
+          3 = testing
+          4 = unknown
+          5 = dormant
+          6 = notPresent
+          7 = lowerLayerDown
+        </doc>
+      </member>
+      <member name="administrativeState" type="int32">
+        <!-- type should be enum, but enums are not yet supported in Qeo. -->
+        <doc>
+          The current operational state (based on ifAdminStatus from RFC2863).
+          1 = up
+          2 = down
+        </doc>
+      </member>
+    </struct>
+    <struct behavior="state" name="NetworkIntfStatistics">
+      <doc>
+        Statistics are modeled with state behavior. The intention is for them to
+        be updated periodically by the device that owns the network interfaces in
+        question.
+        There is a NetworkIntfStatisticsRequest topic that allows interested 
+        parties to declare their interest in statistics (which interfaces, which
+        sample rate, etc.). The NetworkIntfStatistics publisher can decide to 
+        update its statistics more frequently, but is supposed to at least try to
+        honour the requests made by interested parties. If no requests have been
+        published, the statistics publisher is not obliged to publish any stats,
+        although he is allowed to of course.
+      </doc>
+      <member name="name" type="string" key="true">
+        <doc>
+          Interface Name.
+        </doc>
+      </member>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId" key="true">
+        <doc>Device ID of the device this IP interface is attached to.</doc>
+      </member>
+      <member name="bytesSent" type="int32">
+        <doc>
+          The total number of bytes transmitted out of the interface, including
+          framing characters.
+        </doc>
+      </member>
+      <member name="bytesReceived" type="int32">
+        <doc>
+          The total number of bytes received on the interface, including
+          framing characters.
+        </doc>
+      </member>
+      <member name="packetsSent" type="int32">
+        <doc>
+          The total number of packets transmitted out of the interface.
+        </doc>
+      </member>
+      <member name="packetsReceived" type="int32">
+        <doc>
+          The total number of packets received on the interface.
+        </doc>
+      </member>
+      <member name="errorsSent" type="int32">
+        <doc>
+          The total number of outbound packets that could not be transmitted
+          because of errors.
+        </doc>
+      </member>
+      <member name="errorsReceived" type="int32">
+        <doc>
+          The total number of inbound packets that contained errors preventing
+          them from being delivered to a higher-layer protocol.
+        </doc>
+      </member>
+      <member name="unicastPacketsSent" type="int32">
+        <doc>
+          The total number of packets requested for transmission which were not
+          addressed to a multicast or broadcast address at this layer,
+          including those that were discarded or not sent.
+        </doc>
+      </member>
+      <member name="unicastPacketsReceived" type="int32">
+        <doc>
+          The total number of received packets, delivered by this layer to a
+          higher layer, which were not addressed to a multicast or broadcast
+          address at this layer.
+        </doc>
+      </member>
+      <member name="discardPacketsSent" type="int32">
+        <doc>
+          The total number of outbound packets which were chosen to be
+          discarded even though no errors had been detected to prevent their
+          being transmitted. One possible reason for discarding such a packet
+          could be to free up buffer space.
+        </doc>
+      </member>
+      <member name="discardPacketsReceived" type="int32">
+        <doc>
+          The total number of inbound packets which were chosen to be discarded
+          even though no errors had been detected to prevent their being
+          delivered. One possible reason for discarding such a packet could be
+          to free up buffer space.
+        </doc>
+      </member>
+      <member name="multicastPacketsSent" type="int32">
+        <doc>
+          The total number of packets that higher-level protocols requested for
+          transmission and which were addressed to a multicast address at this
+          layer, including those that were discarded or not sent.
+        </doc>
+      </member>
+      <member name="multicastPacketsReceived" type="int32">
+        <doc>
+          The total number of received packets, delivered by this layer to a
+          higher layer, which were addressed to a multicast address at this
+          layer.
+        </doc>
+      </member>
+      <member name="broadcastPacketsSent" type="int32">
+        <doc>
+          The total number of packets that higher-level protocols requested for
+          transmission and which were addressed to a broadcast address at this
+          layer, including those that were discarded or not sent.  Note that
+          IPv6 does not define broadcast addresses, so IPv6 packets will never
+          cause this counter to increment.
+        </doc>
+      </member>
+      <member name="broadcastPacketsReceived" type="int32">
+        <doc>
+          The total number of received packets, delivered by this layer to a
+          higher layer, which were addressed to a broadcast address at this
+          layer.  Note that IPv6 does not define broadcast addresses, so IPv6
+          packets will never cause this counter to increment.
+        </doc>
+      </member>
+      <member name="unknownProtoPacketsReceived" type="int32">
+        <doc>
+          The total number of packets received via the interface which were
+          discarded because of an unknown or unsupported protocol.
+        </doc>
+      </member>
+    </struct>
+    <struct behavior="state" name="NetworkIntfStatisticsRequest">
+      <doc>
+        Modeled as STATE, statistics provider will keep publishing samples as
+        long as the instance has not been disposed unless sampleInterval is 0.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>
+          Request id to identify requester. Basically a randomly-generated UUID that
+          makes the request uniquely identifiable.
+        </doc>
+      </member>
+      <member name="name" type="string">
+        <doc>
+          Name of the interface for which statistics are requested.
+        </doc>
+      </member>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId">
+        <doc>
+          Device ID of the interface for which statistics are requested.
+        </doc>
+      </member>
+      <member name="sampleInterval" type="int32">
+        <doc>
+          Sample publication interval in seconds, 0 for one-shot.
+        </doc>
+      </member>
+    </struct>
+  </module>
+</types>
+

@@ -1,0 +1,16 @@
+
+rootProject.name = "sample-qsimplechat"
+
+include 'c', 'android',  'android-policy',  'c-policy', "android-embedded", 'android-bgns'
+// prepend root project name to all child project names..
+rootProject.children.each { it.name = rootProject.name + '-' + it.name }
+
+//Logic for building everything from source in development
+if (!System.env.JENKINS_URL) {
+	//don't enable this logic in jenkins
+	if (System.properties['qeo.src.qeo-android']) {
+		logger.warn("Building qeo-android from source: " + System.properties['qeo.src.qeo-android'])
+		apply from: System.properties['qeo.src.qeo-android'] + "/settings.gradle"
+	}
+}
+

@@ -1,0 +1,21 @@
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/findbugs.gradle'
+
+//creation of the apk artifacts
+def qeoAndroidManagementDebug = file('build/outputs/apk/qeo-android-management-debug-unaligned.apk')
+def qeoAndroidManagementRelease = file('build/outputs/apk/qeo-android-management-release.apk')
+
+android.noDeviceTests = true //no device tests for this project
+
+dependencies {
+    compile latestSupportV4
+    compile project(':qeo-android')
+}
+
+// publish the apk to artifactory
+artifacts {
+    archives file: qeoAndroidManagementDebug, name: project.name, classifier: 'debug', builtBy:assembleDebug
+    archives file: qeoAndroidManagementRelease, name: project.name, builtBy:assembleRelease
+}
+

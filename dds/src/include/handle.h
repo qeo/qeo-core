@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -18,9 +18,9 @@
 #define __handle_h_
 
 #ifdef HBITMAP_USED
-typedef unsigned handle_t;	/* Non-zero handle. */
+typedef unsigned handle_t;		/* Non-zero handle. */
 #else
-typedef unsigned short handle_t;		/* Non-zero handle. */
+typedef unsigned short handle_t;	/* Non-zero handle. */
 #endif
 
 void *handle_init (unsigned nhandles);

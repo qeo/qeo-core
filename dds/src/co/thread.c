@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -82,7 +82,12 @@ static lock_t		trc_lock = PTHREAD_MUTEX_INITIALIZER;
 #define	lock_hash(l)	((uintptr_t) l & (MAX_LOCK_HASH - 1))
 
 #ifdef LOG_LOCKS
+#ifdef ANDROID
+#include <android/log.h>
+#define ltrc_print1(s,a)    __android_log_print(ANDROID_LOG_INFO, "DDSLock", s, a)
+#else
 #define	ltrc_print1(s,a)	printf(/*THREAD_ID, 0, */s, a)
+#endif
 #else
 #define	ltrc_print1(s,a)
 #endif
@@ -123,7 +128,7 @@ int trc_lock_init (pthread_mutex_t *l,
 		warn_printf ("lock_init(%s) on existing lock (%s:%d)", name,
 								file, line);
 	else {
-		lp = (LockState_t *) mm_fcts.alloc_ (sizeof (LockState_t));
+		lp = (LockState_t *) Alloc (sizeof (LockState_t));
 		if (lp) {
 			lp->lock = l;
 			strncpy (lp->name, name, sizeof (lp->name) - 1);
@@ -367,7 +372,7 @@ int trc_lock_destroy (pthread_mutex_t *l, const char *file, int line)
 			(lp) ? lp->name : NULL, strerror (res));
 
 	if (lp)
-		mm_fcts.free_ (lp);
+		Free (lp);
 	lock_releasef (trc_lock);
 	return (res);
 }

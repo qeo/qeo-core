@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -176,7 +176,7 @@ int guid_init (unsigned eid)
 	else {
 #endif
 		/* if it's not a global ip then use a random number */
-		if (!sys_own_ipv4_addr (ipa, sizeof (ipa), 4, 4) ||
+		if (!sys_own_ipv4_addr (ipa, sizeof (ipa), 4, 4, 0) ||
 		    ipa [0] == 127) { /* Address really available? */
 			hid = random_hid ();
 			log_printf (DOM_ID, 0, "Random host identifier generated.\r\n");

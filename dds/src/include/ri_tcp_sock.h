@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -167,7 +167,7 @@ struct tcp_fd_st {
 	void            *sproto;        /* TLS_CX context */
 };
 
-typedef IP_CX *(* SA_on_new_connection_cb) (TCP_FD *pp, unsigned char* msg, size_t size);
+typedef IP_CX *(* SA_on_new_connection_cb) (TCP_FD *pp, const unsigned char* msg, size_t size);
 
 /* 'Promote' a pending context to a full blown IP_CX and deliver the first message on that connection
     The contained file descriptor has been set to non-blocking.
@@ -186,7 +186,7 @@ typedef void (* SA_on_write_completed_cb) (IP_CX *cxp);
    callback or returning immediately in the callback implementation). It is allowed to start sending a new message
    from within the callback. */
 
-typedef int (* SA_on_new_message_cb) (IP_CX *cxp, unsigned char *msg, size_t size);
+typedef int (* SA_on_new_message_cb) (IP_CX *cxp, const unsigned char *msg, size_t size);
 
 /* A new TCP message has been arrived for this context. The data behind msg will
    be freed immediately after the callback finishes. If one needs the data

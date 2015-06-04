@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -23,10 +23,13 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
 #include <miniupnpc.h>
 #include <upnpcommands.h>
 #include <upnperrors.h>
+
+#ifdef __APPLE__
+#include <sys/time.h>
+#endif
 
 #include <qeocore/api.h>
 #include <qeocore/config.h>
@@ -82,7 +85,14 @@ static unsigned int _upnp_portmap_lease_period = PORTMAP_LEASE_PERIOD;
 
 static char *_public_ip = NULL;
 static int _public_port = -1;
+static int _old_port = -1;
 static char *_local_port = NULL;
+static bool _notification_service = true;
+static bool _forwarding_service = true;
+static bool _retry = false;
+static bool _portmap_needed = true;
+static int _retry_delay = 0;
+static char *_port_path = NULL;
 
 static qeo_factory_t *_factory = NULL;
 
@@ -138,18 +148,23 @@ static bool has_portmap(igd_t * igd) {
     if (igd == NULL || igd->wan_port == NULL) {
         return false;
     }
+    qeo_log_d("Verify UPNP portmap for external port %s", igd->wan_port);
     char intClientIP[40];
     char intClientPort[6];
     char duration[16];
     char description[256];
     char enabled[16];
 
-    if (0 == UPNP_GetSpecificPortMappingEntry(igd->control_url, igd->service_type, igd->wan_port, "TCP",
+    if (UPNPCOMMAND_SUCCESS == UPNP_GetSpecificPortMappingEntry(igd->control_url, igd->service_type, igd->wan_port, "TCP",
                                                   intClientIP, intClientPort, description, enabled, duration)) {
+        qeo_log_d("Found portmap to %s:%s (%s)", intClientIP, intClientPort, description);
         //portmap available
         if (strcmp(intClientIP, igd->lan_ip) == 0 && strcmp(intClientPort, _local_port) == 0) {
             return true;
         }
+    }
+    else {
+        qeo_log_d("No portmap found");
     }
     return false;
 }
@@ -180,14 +195,18 @@ static int get_free_igd_port(igd_t *igd)
     int extPortInt;
     char extPortString[12];
     int startport;
-    int extPortStart=get_startport();
+    int extPortStart = get_startport();
 
     // DE3155
-    if (NULL == igd->wan_port) {startport = extPortStart;}
-        else  {startport = atoi(igd->wan_port)+1;}
+    if (NULL == igd->wan_port) {
+        startport = extPortStart;
+    }
+    else {
+        startport = atoi(igd->wan_port) + 1;
+    }
     // DE3155 end
     // DE3155 for (extPortInt = extPortStart; became for (extPortInt=startport ;
-    for (extPortInt=startport ; extPortInt < (extPortStart + FWD_BASE_PORT_SPAN); extPortInt++) {
+    for (extPortInt = startport; extPortInt < (extPortStart + FWD_BASE_PORT_SPAN); extPortInt++) {
         sprintf(extPortString, "%d", extPortInt);
         if (0 == UPNP_GetSpecificPortMappingEntry(igd->control_url, igd->service_type, extPortString, "TCP",
                                                   intClientIP, intClientPort, description, enabled, duration)) {
@@ -199,9 +218,29 @@ static int get_free_igd_port(igd_t *igd)
             qeo_log_i("%s is a free external port (i.e. not used by UPnP)", extPortString);
             igd->wan_port = strdup(extPortString);
             rc = 0;
-            break;}
+            break;
+        }
     }
     return rc;
+}
+
+static bool notify_public_port(int public_port)
+{
+    bool ret = true;
+    char buffer [100];
+
+    if (-1 == public_port || NULL == _port_path || _old_port == public_port) {
+        ret = true;
+    } else {
+        sprintf(&buffer [0], "echo %d > %s &\n", public_port, _port_path);
+
+        if (-1 == system (&buffer [0])) {
+            qeo_log_e("Could not write public port to file");
+            ret = false;
+        }
+        _old_port = public_port;
+    }
+    return ret;
 }
 
 /**
@@ -260,35 +299,37 @@ static int add_portmap(igd_t *igd)
         qeo_log_d("only need to refresh portmap");
     }
 
-    qeo_log_i("adding/refreshing portmap for external IP %s:%s to local IP %s:%s duration=%s",
-              igd->wan_ip, igd->wan_port,igd->lan_ip, _local_port, xstr(PORTMAP_LEASE_PERIOD));
-    rc = UPNP_AddPortMapping(igd->control_url, igd->service_type, igd->wan_port, _local_port,
-                             igd->lan_ip, xstr(PORTMAP_DESCRIPTION), "TCP", 0, xstr(PORTMAP_LEASE_PERIOD));
- 
-    if (0 != rc) {
-        qeo_log_e("Failed to add portmap: %d (%s)\n", rc, strupnperror(rc));
-        /* It is possible a portmap was made on the IGD by other means than UPnP
-         * then a UPNP_AddPortMapping can fail; we need to try the next external
-         * port starting with current extPort+1 */
-        int extPortStart=get_startport();
-        while ( atoi(igd->wan_port) < (extPortStart + FWD_BASE_PORT_SPAN+1) )  {
-            /* continue trying to get an available port */
-            rc = get_free_igd_port(igd);
-            if (0 != rc) {
-                qeo_log_e("failed to find an available UPNP external port");
-                return rc;
-            }
-            else {
-                /* try to add portmap */
-                qeo_log_i("adding portmap for external IP %s:%s to local IP %s:%s duration=%s",
-                          igd->wan_ip, igd->wan_port,igd->lan_ip, _local_port, xstr(PORTMAP_LEASE_PERIOD));
-                rc = UPNP_AddPortMapping(igd->control_url, igd->service_type, igd->wan_port, _local_port,
-                                         igd->lan_ip, xstr(PORTMAP_DESCRIPTION), "TCP", 0, xstr(PORTMAP_LEASE_PERIOD));
+    if (true == _portmap_needed) {
+        qeo_log_i("adding/refreshing portmap for external IP %s:%s to local IP %s:%s duration=%s",
+                  igd->wan_ip, igd->wan_port,igd->lan_ip, _local_port, xstr(PORTMAP_LEASE_PERIOD));
+        rc = UPNP_AddPortMapping(igd->control_url, igd->service_type, igd->wan_port, _local_port,
+                                 igd->lan_ip, xstr(PORTMAP_DESCRIPTION), "TCP", 0, xstr(PORTMAP_LEASE_PERIOD));
+
+        if (0 != rc) {
+            qeo_log_e("Failed to add portmap: %d (%s)\n", rc, strupnperror(rc));
+            /* It is possible a portmap was made on the IGD by other means than UPnP
+             * then a UPNP_AddPortMapping can fail; we need to try the next external
+             * port starting with current extPort+1 */
+            int extPortStart=get_startport();
+            while ( atoi(igd->wan_port) < (extPortStart + FWD_BASE_PORT_SPAN+1) )  {
+                /* continue trying to get an available port */
+                rc = get_free_igd_port(igd);
                 if (0 != rc) {
-                    qeo_log_e("Failed to add portmap: %d (%s)\n", rc, strupnperror(rc));
+                    qeo_log_e("failed to find an available UPNP external port");
+                    return rc;
                 }
                 else {
-                    break;
+                    /* try to add portmap */
+                    qeo_log_i("adding portmap for external IP %s:%s to local IP %s:%s duration=%s",
+                              igd->wan_ip, igd->wan_port,igd->lan_ip, _local_port, xstr(PORTMAP_LEASE_PERIOD));
+                    rc = UPNP_AddPortMapping(igd->control_url, igd->service_type, igd->wan_port, _local_port,
+                                             igd->lan_ip, xstr(PORTMAP_DESCRIPTION), "TCP", 0, xstr(PORTMAP_LEASE_PERIOD));
+                    if (0 != rc) {
+                        qeo_log_e("Failed to add portmap: %d (%s)\n", rc, strupnperror(rc));
+                    }
+                    else {
+                        break;
+                    }
                 }
             }
         }
@@ -297,11 +338,10 @@ static int add_portmap(igd_t *igd)
     if (0 == rc) {
         printf("- Public address : %s:%s\n", igd->wan_ip, igd->wan_port);
     }
-
+    notify_public_port(atoi(igd->wan_port));
 
     return rc;
 }
-
 
 static void igd_clean(igd_t *igd)
 {
@@ -367,6 +407,7 @@ static int get_igd_details(igd_t *igd)
     }
     /* get external IP address */
     if (0 == rc) {
+        qeo_log_d("Get external IP address");
         char wan_ip[16];
 
         rc = UPNP_GetExternalIPAddress(igd->control_url, igd->service_type, wan_ip);
@@ -375,6 +416,7 @@ static int get_igd_details(igd_t *igd)
         }
         else {
             if ((NULL == igd->wan_ip) || (0 != strcmp(igd->wan_ip, wan_ip))) {
+                //WAN ip changed
                 if (NULL != igd->wan_ip) {
                     qeo_log_i("WAN ip update from %s to %s", igd->wan_ip, wan_ip);
                     qeo_log_i("deleting portmap for external port %s", igd->wan_port);
@@ -386,6 +428,14 @@ static int get_igd_details(igd_t *igd)
                 if (NULL == igd->wan_ip) {
                     qeo_log_e("out of memory");
                     rc = 1;
+                }
+            }
+            else {
+                //verify if UPNP portmap is still present
+                if (!has_portmap(igd)) {
+                    qeo_log_i("UPNP portmap no longer available, recreating");
+                    //just set the wan_updated flag, this will recreate the portmap
+                    igd->wan_updated = true;
                 }
             }
         }
@@ -411,7 +461,7 @@ static bool update_locator(igd_t *igd)
         qeo_log_e("failed to get public address using UPnP IGD");
     }
     else if (igd->wan_updated) {
-        if (strcmp("0.0.0.0",igd->wan_ip)) {
+        if (strcmp("0.0.0.0", igd->wan_ip)) {
             /* create the port map */
             if (0 != add_portmap(igd)) {
                 qeo_log_e("failed to configure port map using UPnP IGD");
@@ -430,7 +480,6 @@ static bool update_locator(igd_t *igd)
         }
     }
 
-
     else {
         /* wan ip did not change, nothing to be done */
         success = true;
@@ -442,6 +491,7 @@ static bool update_locator(igd_t *igd)
 
 static void get_public_locator_callback(qeo_factory_t *factory)
 {
+    qeo_log_d("Get public locator: %s", _public_ip);
     /* use preconfigured locator (if any) */
     if (NULL != _public_ip) {
         printf("- Public locator : %s:%d\n", _public_ip, _public_port);
@@ -459,7 +509,14 @@ static void update_timer(struct timespec *timer,
                          timer_type_t type,
                          int sec_period)
 {
+#ifdef __APPLE__
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    TIMEVAL_TO_TIMESPEC(&tv, &timer[type]);
+#else
     clock_gettime(CLOCK_REALTIME, &timer[type]);
+#endif
+
     timer[type].tv_sec += sec_period;
 }
 
@@ -510,12 +567,11 @@ static void handle_quit(igd_t *igd)
     }
 }
 
-
 static void state_machine_run(void)
 {
-    igd_t igd = {0};
+    igd_t igd = { 0 };
     struct timespec *ts = NULL;
-    struct timespec timer[TIMER_NUM] = { {0} };
+    struct timespec timer[TIMER_NUM] = { { 0 } };
     timer_type_t earliest;
     bool quit = false;
     bool timeout = false;
@@ -541,7 +597,8 @@ static void state_machine_run(void)
         }
         if (ETIMEDOUT == rc) {
             timeout = true;
-        } else if (0 != rc) {
+        }
+        else if (0 != rc) {
             qeo_log_e("state machine failure");
             break;
         }
@@ -554,6 +611,7 @@ static void state_machine_run(void)
                 handle_quit(&igd);
                 break;
             case STATE_PUBLIC_IP_REQUESTED:
+                qeo_log_d("STATE_PUBLIC_IP_REQUESTED");
                 if (update_locator(&igd)) {
                     update_timer(timer, TIMER_UPNP_POLL, _upnp_poll_period);
                 }
@@ -584,8 +642,7 @@ static void state_machine_run(void)
 
 /* ===[ Public API ]======================================================== */
 
-void forwarder_config_public_locator(const char *ip,
-                                     int port)
+void forwarder_config_public_locator(const char *ip, int port)
 {
     if (NULL != _public_ip) {
         free(_public_ip);
@@ -604,6 +661,21 @@ void forwarder_config_local_port(const char *port)
     qeo_log_i("using local port : %s", _local_port);
 }
 
+void forwarder_disable_notification_service(void)
+{
+    _notification_service = false;
+    qeocore_parameter_set("FWD_DISABLE_BGNS", "1");
+    qeo_log_i("disable notification service");
+}
+
+void forwarder_disable_forwarding_service(void)
+{
+    _forwarding_service = false;
+    qeocore_parameter_set("FWD_DISABLE_LOCATION_SERVICE", "1");
+    qeocore_parameter_set("FWD_DISABLE_FORWARDING", "1");
+    qeo_log_i("disable forwarding service");
+}
+
 void forwarder_config_local_discovery(unsigned int discover_timeout)
 {
     char buf[16];
@@ -611,6 +683,12 @@ void forwarder_config_local_discovery(unsigned int discover_timeout)
     snprintf(buf, sizeof(buf), "%d", discover_timeout);
     qeocore_parameter_set("FWD_WAIT_LOCAL_FWD", buf);
     qeo_log_i("using local discovery delay : %dms", discover_timeout);
+}
+
+void forwarder_disable_portmap(char *path)
+{
+    _portmap_needed = false;
+    _port_path = strdup(path);
 }
 
 void forwarder_config_upnp(unsigned int discover_timeout,
@@ -622,6 +700,13 @@ void forwarder_config_upnp(unsigned int discover_timeout,
     _upnp_portmap_lease_period = lease_period;
     qeo_log_i("using UPnP timers : discovery delay = %dms, poll period = %ds, lease period = %ds",
               _upnp_disc_timeout, _upnp_poll_period, _upnp_portmap_lease_period);
+}
+
+void forwarder_retry_on_failed_remote_registration(int delay)
+{
+    _retry = true;
+    _retry_delay = delay;
+    qeo_log_i("retry on failed remote registration");
 }
 
 int forwarder_start(void)
@@ -641,7 +726,9 @@ int forwarder_start(void)
         }
     }
     if (NULL != _local_port) {
-        _factory = qeocore_fwdfactory_new(get_public_locator_callback, _local_port);
+        do {
+            _factory = qeocore_fwdfactory_new(get_public_locator_callback, _local_port, _notification_service);
+        } while (_retry && NULL == _factory && notify_public_port(-1) && 0 == sleep (_retry_delay));
         if (NULL == _factory) {
             qeo_log_e("failed to create forwarder factory");
         }
@@ -649,6 +736,7 @@ int forwarder_start(void)
             printf("Starting forwarder\n");
             printf("- Realm ID       : %0"PRIx64"\n", qeocore_factory_get_realm_id(_factory));
             printf("- Local port     : %s\n", _local_port);
+
             /* start */
             state_machine_run();
             rc = 0;

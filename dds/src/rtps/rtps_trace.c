@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -610,11 +610,9 @@ void rtps_dtrace_get (unsigned *mode)
 
 # endif
 #else
-# if 0
 
 int rtps_trace = 0;
 
-# endif
 #endif /* !RTPS_TRACE */
 
 #ifdef RTPS_TRC_SEQNR

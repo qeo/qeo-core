@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -158,7 +158,10 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_register_forwarder(qeo_mgmt_client_ctx
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeo_mgmt_client_register_forwarder' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_ctx), (void*)(ctx), sizeof(qeo_mgmt_client_ctx_t), cmock_line, "Function 'qeo_mgmt_client_register_forwarder' called with unexpected value for argument 'ctx'.");
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_url, url, cmock_line, "Function 'qeo_mgmt_client_register_forwarder' called with unexpected value for argument 'url'.");
+  if (cmock_call_instance->Expected_url == NULL)
+    { UNITY_TEST_ASSERT_NULL(url, cmock_line, "Expected NULL. Function 'qeo_mgmt_client_register_forwarder' called with unexpected value for argument 'url'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_url, url, 1, cmock_line, "Function 'qeo_mgmt_client_register_forwarder' called with unexpected value for argument 'url'."); }
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_locators), (void*)(locators), sizeof(qeo_mgmt_client_locator_t), cmock_line, "Function 'qeo_mgmt_client_register_forwarder' called with unexpected value for argument 'locators'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_nrOfLocators), (void*)(&nrOfLocators), sizeof(u_int32_t), cmock_line, "Function 'qeo_mgmt_client_register_forwarder' called with unexpected value for argument 'nrOfLocators'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_ssl_cb), (void*)(&ssl_cb), sizeof(qeo_mgmt_client_ssl_ctx_cb), cmock_line, "Function 'qeo_mgmt_client_register_forwarder' called with unexpected value for argument 'ssl_cb'.");
@@ -222,7 +225,10 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_get_forwarders(qeo_mgmt_client_ctx_t* 
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeo_mgmt_client_get_forwarders' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_ctx), (void*)(ctx), sizeof(qeo_mgmt_client_ctx_t), cmock_line, "Function 'qeo_mgmt_client_get_forwarders' called with unexpected value for argument 'ctx'.");
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_url, url, cmock_line, "Function 'qeo_mgmt_client_get_forwarders' called with unexpected value for argument 'url'.");
+  if (cmock_call_instance->Expected_url == NULL)
+    { UNITY_TEST_ASSERT_NULL(url, cmock_line, "Expected NULL. Function 'qeo_mgmt_client_get_forwarders' called with unexpected value for argument 'url'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_url, url, 1, cmock_line, "Function 'qeo_mgmt_client_get_forwarders' called with unexpected value for argument 'url'."); }
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_fwd_cb), (void*)(&fwd_cb), sizeof(qeo_mgmt_client_forwarder_cb), cmock_line, "Function 'qeo_mgmt_client_get_forwarders' called with unexpected value for argument 'fwd_cb'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_result_cb), (void*)(&result_cb), sizeof(qeo_mgmt_client_forwarder_result_cb), cmock_line, "Function 'qeo_mgmt_client_get_forwarders' called with unexpected value for argument 'result_cb'.");
   UNITY_TEST_ASSERT_EQUAL_PTR(cmock_call_instance->Expected_fwd_cookie, fwd_cookie, cmock_line, "Function 'qeo_mgmt_client_get_forwarders' called with unexpected value for argument 'fwd_cookie'.");
@@ -288,7 +294,10 @@ qeo_mgmt_client_retcode_t qeo_mgmt_client_get_forwarders_sync(qeo_mgmt_client_ct
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeo_mgmt_client_get_forwarders_sync' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_ctx), (void*)(ctx), sizeof(qeo_mgmt_client_ctx_t), cmock_line, "Function 'qeo_mgmt_client_get_forwarders_sync' called with unexpected value for argument 'ctx'.");
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_url, url, cmock_line, "Function 'qeo_mgmt_client_get_forwarders_sync' called with unexpected value for argument 'url'.");
+  if (cmock_call_instance->Expected_url == NULL)
+    { UNITY_TEST_ASSERT_NULL(url, cmock_line, "Expected NULL. Function 'qeo_mgmt_client_get_forwarders_sync' called with unexpected value for argument 'url'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_url, url, 1, cmock_line, "Function 'qeo_mgmt_client_get_forwarders_sync' called with unexpected value for argument 'url'."); }
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_fwd_cb), (void*)(&fwd_cb), sizeof(qeo_mgmt_client_forwarder_cb), cmock_line, "Function 'qeo_mgmt_client_get_forwarders_sync' called with unexpected value for argument 'fwd_cb'.");
   UNITY_TEST_ASSERT_EQUAL_PTR(cmock_call_instance->Expected_fwd_cookie, fwd_cookie, cmock_line, "Function 'qeo_mgmt_client_get_forwarders_sync' called with unexpected value for argument 'fwd_cookie'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_ssl_cb), (void*)(&ssl_cb), sizeof(qeo_mgmt_client_ssl_ctx_cb), cmock_line, "Function 'qeo_mgmt_client_get_forwarders_sync' called with unexpected value for argument 'ssl_cb'.");

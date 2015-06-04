@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -724,13 +724,6 @@ static void tls_write_msg_fragment (IP_CX *cxp)
 		switch (error) {
 		case SSL_ERROR_NONE:
 			/* Write successful. */
-#ifdef MSG_TRACE
-			if (cxp->trace)
-				rtps_ip_trace (cxp->handle, 'T',
-					       &cxp->locator->locator,
-					       cxp->dst_addr, cxp->dst_port,
-					       len);
-#endif
 			trace_tls ("SSL_write: Error none for fd [%d]\r\n", cxp->fd);
 			break;
 		case SSL_ERROR_WANT_WRITE:
@@ -855,14 +848,20 @@ continue_reading:
 	}
 	if (!msg->buffer) {
 		/* Just received a CtrlHeader - see what else is needed? */
-		if (ctrl_protocol_valid (&msg->header))
-			msg->size += msg->header.length;
+		if (ctrl_protocol_valid (&msg->header)
+#ifdef TCP_SUSPEND
+		 || bgcp_protocol_valid (&msg->header)
+#endif
+						      )
+			msg->size += TTOHS (msg->header.length);
 		else if (protocol_valid (&msg->header)) {
 			memcpy (&l, &msg->header.msg_kind, sizeof (l));
+			l = TTOHL (l);
 			msg->size += l;
 		}
 		else {
-			/* Data not recognized as either a RTPS nor a RPSC message */
+			/* Data not recognized as either a RTPS nor a RPSC/BGNS 
+			   message. */
 			msg->size = msg->used = 0;
 			goto error;
 		}
@@ -1915,13 +1914,6 @@ WR_RC tls_write_msg (IP_CX *cxp, unsigned char *msg, size_t len)
 		switch (error) {
 			case SSL_ERROR_NONE:
 				/* Write successful. */
-#ifdef MSG_TRACE
-				if (cxp->trace)
-					rtps_ip_trace (cxp->handle, 'T',
-						       &cxp->locator->locator,
-						       cxp->dst_addr, cxp->dst_port,
-						       len);
-#endif
 				trace_tls ("SSL_write: Error none for [%d]\r\n", cxp->fd);
 				break;
 		        case SSL_ERROR_WANT_WRITE:

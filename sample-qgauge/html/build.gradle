@@ -1,0 +1,15 @@
+
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/htmlSample.gradle'
+
+generateTypes {
+    ext.qdms = ["samples/QGauge_NetStatMessage.xml"]
+    ext.language = "js"
+    ext.outputDir = "${buildDir}/generated-src/types"
+}
+
+dependencies {
+    //for codegen
+    generated "org.qeo:qeo-qdm:${project.qeoVersion}:samples@zip"
+}
+

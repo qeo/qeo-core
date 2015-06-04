@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -26,6 +26,8 @@
 
 #define MAX_TX_SIZE	0xfff0	/* 64K - 16 bytes. */
 #define MAX_RX_SIZE	0xfff0	/* 64K - 16 bytes. */
+#define MIN_TX_SIZE	768	/* 768 bytes. */
+#define MIN_RX_SIZE	768	/* 768 bytes. */
 
 #define DDS_TCP_NODELAY /* Use TCP_NODELAY flag as recommanded in the spec. */
 
@@ -57,7 +59,6 @@ typedef struct ip_cx_stats_st {
 	unsigned	empty_read;	/* # of empty reads. */
 	unsigned	too_short;	/* # of too short reads. */
 	unsigned	nomem;		/* # of out-of-memory conds. */
-	unsigned	nqueued;	/* # of messages queued. */
 } IP_CX_STATS;
 
 typedef enum {
@@ -71,6 +72,7 @@ typedef enum {
 	ICM_UNKNOWN,		/* As yet unknown. */
 	ICM_ROOT,		/* Main server. */
 	ICM_CONTROL,		/* Control connection. */
+	ICM_NOTIFY,		/* Suspend/resume connection. */
 	ICM_DATA		/* Data connection. */
 } IP_CX_MODE;
 
@@ -94,15 +96,23 @@ typedef enum {
 
 /* TCP Control state. */
 typedef enum {
-	TCS_IDLE,		/* No connection (or UDP). */
+	TCS_IDLE,		/* No connection. */
 	TCS_WCXOK,		/* Setting up connection. */
 	TCS_WIBINDOK,		/* Identity Bind sent. */
 	TCS_CONTROL		/* Control connection established. */
 } TCP_CONTROL_STATE;
 
+/* TCP Notify state. */
+typedef enum {
+	TNS_IDLE,		/* No connection. */
+	TNS_WCXOK,		/* Setting up connection. */
+	TNS_WBINDOK,		/* Domain Bind sent. */
+	TNS_NOTIFY		/* Notification connection established. */
+} TCP_NOTIFY_STATE;
+
 /* TCP Data state. */
 typedef enum {
-	TDS_IDLE,		/* No connection (or UDP). */
+	TDS_IDLE,		/* No connection. */
 	TDS_WCONTROL,		/* Waiting for Control connection. */
 	TDS_WPORTOK,		/* Waiting for Logical Port. */
 	TDS_WCXOK,		/* Wait for successful data connection. */
@@ -140,7 +150,7 @@ struct ip_cx_st {
 	unsigned	dst_forward;	/* Destination can forward. */
 	unsigned	retries:4;	/* # of retries. */
 	unsigned	cx_type:2;	/* Connection type (IP_CX_TYPE). */
-	unsigned	cx_mode:2;	/* Connection mode (IP_CX_MODE). */
+	unsigned	cx_mode:3;	/* Connection mode (IP_CX_MODE). */
 	unsigned	cx_side:2;	/* Side of connection (IP_CX_SIDE). */
 	unsigned	cx_state:3;	/* Connection state (IP_CX_STATE). */
 	unsigned	p_state:3;	/* Protocol state (*_CONTROL/DATA_STATE).*/
@@ -155,9 +165,12 @@ struct ip_cx_st {
 	unsigned	has_prefix:1;	/* GUID prefix present. */
 	unsigned	has_dst_addr:1;	/* Destination address present. */
 	unsigned	cxbs_queued:1;	/* ConnectionBindSuccess queued. */
+	unsigned	suspended:1;	/* Connection suspended. */
 	unsigned	id;		/* Higher layer id. */
 	unsigned	handle;		/* Connection handle. */
 	int		fd;		/* File descriptor. */
+	unsigned	nqueued;	/* # of messages queued. */
+	Ticks_t		qstart;		/* Time of initial busy. */
 	RMREF		*head;		/* Pending messages list. */
 	RMREF		*tail;
 	IP_CX		*next;		/* Next in connection list. */
@@ -170,12 +183,15 @@ struct ip_cx_st {
 	long		label;		/* Connection label. */
 	unsigned	data_length;	/* Data length. */
 	void		*data;		/* Data. */
+	void		*info;		/* Extra connection info. */
 	uint32_t	transaction_id;	/* Transaction Id. */
 	STREAM_API	*stream_fcts;	/* Lower layer interface for managing connections and transferring data. */
 	STREAM_CB	*stream_cb;	/* Callbacks to be used by the installed STREAM_API implementation. */
+	uintptr_t	user;		/* User parameter. */
 #endif
 	void		*sproto;	/* Security (DTLS/TLS) or raw TCP context. */
 	Timer_t		*timer;		/* Retry timer. */
+
 	IP_CX_STATS	stats;		/* Statistics. */
 };
 
@@ -219,6 +235,8 @@ extern IP_PROTO	ipv6_proto;
 extern unsigned	ip_attached;
 extern unsigned char *rtps_tx_buf;
 extern unsigned char *rtps_rx_buf;
+extern size_t rtps_max_tx_size;
+extern size_t rtps_max_rx_size;
 
 extern unsigned long ip_rx_fd_count;
 extern unsigned long dtls_server_fd_count;
@@ -244,22 +262,22 @@ void rtps_ipv6_final (void);
 
 /* Finalize the IPv6-based RTPS tramsport mechanisms. */
 
-RMBUF *rtps_parse_buffer (IP_CX *cxp, unsigned char *buf, unsigned len);
+RMBUF *rtps_parse_buffer (IP_CX *cxp, const unsigned char *buf, unsigned len);
 
 /* Parse a (received) packet in a buffer. */
 
-void rtps_rx_buffer (IP_CX         *cxp,
-		     unsigned char *buf,
-		     size_t        len,
-		     unsigned char *saddr,
-		     uint32_t      sport);
+void rtps_rx_buffer (IP_CX               *cxp,
+		     const unsigned char *buf,
+		     size_t              len,
+		     const unsigned char *saddr,
+		     uint32_t            sport);
 
 /* Process an RTPS message in a buffer. */
 
-void rtps_rx_msg (IP_CX         *cxp,
-		  RMBUF         *msg,
-		  unsigned char *saddr,
-		  uint32_t      sport);
+void rtps_rx_msg (IP_CX               *cxp,
+		  RMBUF               *msg,
+		  const unsigned char *saddr,
+		  uint32_t            sport);
 
 /* Process an RTPS message in message format. */
 
@@ -328,10 +346,10 @@ IP_CX *rtps_src_mcast_next (unsigned      id,
 
 void rtps_ip_trace (unsigned            handle,
 		    char                dir,
-		    Locator_t           *lp,
-		    const unsigned char *addr,
-		    unsigned            port,
-		    unsigned            length);
+		    const Locator_t     *lp,
+		    const unsigned char *saddr,
+		    unsigned            sport,
+		    const RMBUF         *msg);
 
 /* Trace an IP message. */
 

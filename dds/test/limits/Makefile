@@ -35,7 +35,7 @@ dcps_CSRCS = ${DCPS}/dcps_main.c ${DCPS}/dcps_dpfact.c ${DCPS}/dcps_part.c \
 	     ${DCPS}/dcps_pub.c ${DCPS}/dcps_sub.c ${DCPS}/dcps_topic.c \
 	     ${DCPS}/dcps_reader.c ${DCPS}/dcps_writer.c ${DCPS}/dcps_event.c \
 	     ${DCPS}/dcps_waitset.c ${DCPS}/dcps_builtin.c ${DCPS}/dcps_qos.c \
-	     ${DCPS}/dcps_entity.c ${DCPS}/dcps_dbg.c
+	     ${DCPS}/dcps_entity.c ${DCPS}/dcps_dbg.c ${DCPS}/dcps_notif.c
 cache_CSRCS= ${CACHE}/cache.c
 disc_CSRCS = ${DISC}/disc_tc.c ${DISC}/disc_sub.c ${DISC}/disc_pub.c \
 	     ${DISC}/disc_msg.c ${DISC}/disc_ep.c ${DISC}/disc_match.c \
@@ -61,7 +61,7 @@ sec_CSRCS  = ${NSEC}/sec_main.c ${NSEC}/sec_id.c ${NSEC}/sec_perm.c \
 	     ${NSEC}/sec_cdata.c ${NSEC}/sec_logging.c ${NSEC}/sec_util.c \
 	     ${NSEC}/sec_compat.c ${NSEC}/sec_a_std.c  ${NSEC}/sec_p_std.c \
 	     ${NSEC}/sec_c_std.c ${NSEC}/sec_a_dtls.c ${NSEC}/sec_p_dtls.c \
-	     ${NSEC}/sec_a_qeo.c ${NSEC}/sec_p_qeo.c
+	     ${NSEC}/sec_a_qeo.c ${NSEC}/sec_p_qeo.c ${NSEC}/sec_qeo_policy.c
 #splug_CSRCS= ../secplug/msecplug.c ../secplug/xmlparse.c ../security/engine_fs.c
 #splug_CSRCS= ../../test/splug/p_main.c ../../test/splug/p_xml.c \
 #	     ../security/engine_fs.c

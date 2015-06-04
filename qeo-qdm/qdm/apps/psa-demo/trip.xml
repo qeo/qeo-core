@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <module name="org::qeo::psademo">
+    <struct behavior="state" name="Trip">
+      <member name="currentLocation" type="string" key="true">
+        <doc>A reference to a location object which represents the current location in the trip.</doc>
+      </member>
+
+      <member name="destination" type="string">
+        <doc>A reference to a location object which represents the destination of the trip.</doc>
+      </member>
+
+      <member name="timeLeft" type="int32">
+        <doc>The time left in seconds for getting from the currentLocation to the destination</doc>
+      </member>
+
+      <member name="distanceLeft" type="int32">
+        <doc>The distance left in meters between the currentLocation and the destination</doc>
+      </member>
+
+     </struct>
+  </module>
+</types>

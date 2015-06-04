@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -565,9 +565,9 @@ static const CDR_TypeSupport *enum_cont_find (const CDR_TypeSupport_container *c
 	return (NULL);
 }
 
-static int enum_lookup (const DDS_TypeSupport *ts,
-			const char            *name,
-			int                   *value)
+static int enum_lookup (const TypeSupport_t *ts,
+			const char          *name,
+			int                 *value)
 {
 	const T_TypeSupport	*tp;
 

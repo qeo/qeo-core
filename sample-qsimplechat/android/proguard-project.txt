@@ -1,0 +1,5 @@
+
+# Don't do anything (especially don't obfuscate) QeoType classes.
+-keep class org.qeo.QeoType { *; }
+-keep @org.qeo.QeoType public class * { *; }
+

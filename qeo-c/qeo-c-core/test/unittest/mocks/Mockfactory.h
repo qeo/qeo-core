@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -86,6 +86,12 @@ void qeocore_factory_set_intf_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, q
 void qeocore_factory_set_intf_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory, const char* interfaces, qeo_retcode_t cmock_to_return);
 typedef qeo_retcode_t (* CMOCK_qeocore_factory_set_intf_CALLBACK)(qeo_factory_t* factory, const char* interfaces, int cmock_num_calls);
 void qeocore_factory_set_intf_StubWithCallback(CMOCK_qeocore_factory_set_intf_CALLBACK Callback);
+#define qeocore_factory_set_bgns_IgnoreAndReturn(cmock_retval) qeocore_factory_set_bgns_CMockIgnoreAndReturn(__LINE__, cmock_retval)
+void qeocore_factory_set_bgns_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo_retcode_t cmock_to_return);
+#define qeocore_factory_set_bgns_ExpectAndReturn(factory, bgns_server, bgns_port, cmock_retval) qeocore_factory_set_bgns_CMockExpectAndReturn(__LINE__, factory, bgns_server, bgns_port, cmock_retval)
+void qeocore_factory_set_bgns_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory, const char* bgns_server, const char* bgns_port, qeo_retcode_t cmock_to_return);
+typedef qeo_retcode_t (* CMOCK_qeocore_factory_set_bgns_CALLBACK)(qeo_factory_t* factory, const char* bgns_server, const char* bgns_port, int cmock_num_calls);
+void qeocore_factory_set_bgns_StubWithCallback(CMOCK_qeocore_factory_set_bgns_CALLBACK Callback);
 #define qeocore_factory_set_tcp_server_IgnoreAndReturn(cmock_retval) qeocore_factory_set_tcp_server_CMockIgnoreAndReturn(__LINE__, cmock_retval)
 void qeocore_factory_set_tcp_server_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo_retcode_t cmock_to_return);
 #define qeocore_factory_set_tcp_server_ExpectAndReturn(factory, tcp_server, cmock_retval) qeocore_factory_set_tcp_server_CMockExpectAndReturn(__LINE__, factory, tcp_server, cmock_retval)
@@ -94,9 +100,9 @@ typedef qeo_retcode_t (* CMOCK_qeocore_factory_set_tcp_server_CALLBACK)(qeo_fact
 void qeocore_factory_set_tcp_server_StubWithCallback(CMOCK_qeocore_factory_set_tcp_server_CALLBACK Callback);
 #define qeocore_factory_set_local_tcp_port_IgnoreAndReturn(cmock_retval) qeocore_factory_set_local_tcp_port_CMockIgnoreAndReturn(__LINE__, cmock_retval)
 void qeocore_factory_set_local_tcp_port_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo_retcode_t cmock_to_return);
-#define qeocore_factory_set_local_tcp_port_ExpectAndReturn(factory, local_port, cmock_retval) qeocore_factory_set_local_tcp_port_CMockExpectAndReturn(__LINE__, factory, local_port, cmock_retval)
-void qeocore_factory_set_local_tcp_port_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory, const char* local_port, qeo_retcode_t cmock_to_return);
-typedef qeo_retcode_t (* CMOCK_qeocore_factory_set_local_tcp_port_CALLBACK)(qeo_factory_t* factory, const char* local_port, int cmock_num_calls);
+#define qeocore_factory_set_local_tcp_port_ExpectAndReturn(factory, cmock_retval) qeocore_factory_set_local_tcp_port_CMockExpectAndReturn(__LINE__, factory, cmock_retval)
+void qeocore_factory_set_local_tcp_port_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory, qeo_retcode_t cmock_to_return);
+typedef qeo_retcode_t (* CMOCK_qeocore_factory_set_local_tcp_port_CALLBACK)(qeo_factory_t* factory, int cmock_num_calls);
 void qeocore_factory_set_local_tcp_port_StubWithCallback(CMOCK_qeocore_factory_set_local_tcp_port_CALLBACK Callback);
 #define qeocore_factory_set_user_data_IgnoreAndReturn(cmock_retval) qeocore_factory_set_user_data_CMockIgnoreAndReturn(__LINE__, cmock_retval)
 void qeocore_factory_set_user_data_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo_retcode_t cmock_to_return);
@@ -112,9 +118,9 @@ typedef qeo_retcode_t (* CMOCK_qeocore_factory_get_user_data_CALLBACK)(qeo_facto
 void qeocore_factory_get_user_data_StubWithCallback(CMOCK_qeocore_factory_get_user_data_CALLBACK Callback);
 #define qeocore_fwdfactory_new_IgnoreAndReturn(cmock_retval) qeocore_fwdfactory_new_CMockIgnoreAndReturn(__LINE__, cmock_retval)
 void qeocore_fwdfactory_new_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* cmock_to_return);
-#define qeocore_fwdfactory_new_ExpectAndReturn(cb, local_port, cmock_retval) qeocore_fwdfactory_new_CMockExpectAndReturn(__LINE__, cb, local_port, cmock_retval)
-void qeocore_fwdfactory_new_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_on_fwdfactory_get_public_locator cb, const char* local_port, qeo_factory_t* cmock_to_return);
-typedef qeo_factory_t* (* CMOCK_qeocore_fwdfactory_new_CALLBACK)(qeocore_on_fwdfactory_get_public_locator cb, const char* local_port, int cmock_num_calls);
+#define qeocore_fwdfactory_new_ExpectAndReturn(cb, local_port, bgns, cmock_retval) qeocore_fwdfactory_new_CMockExpectAndReturn(__LINE__, cb, local_port, bgns, cmock_retval)
+void qeocore_fwdfactory_new_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_on_fwdfactory_get_public_locator cb, const char* local_port, bool bgns, qeo_factory_t* cmock_to_return);
+typedef qeo_factory_t* (* CMOCK_qeocore_fwdfactory_new_CALLBACK)(qeocore_on_fwdfactory_get_public_locator cb, const char* local_port, bool bgns, int cmock_num_calls);
 void qeocore_fwdfactory_new_StubWithCallback(CMOCK_qeocore_fwdfactory_new_CALLBACK Callback);
 #define qeocore_fwdfactory_close_Ignore() qeocore_fwdfactory_close_CMockIgnore(__LINE__)
 void qeocore_fwdfactory_close_CMockIgnore(UNITY_LINE_TYPE cmock_line);

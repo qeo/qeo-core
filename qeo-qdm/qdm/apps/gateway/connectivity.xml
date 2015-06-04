@@ -1,0 +1,86 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <include file="qeo_types.xml"/>
+  <module name="org::qeo::networking::connectivity">
+    <doc>
+      The goal of this QDM is to provide information about the WAN IP addresses
+      of a gateway device. This information is often useful to devices sitting
+      behind the gateway, that need to advertise the gateway's IP address to
+      some outside entity.
+
+      For example, a TR-069 agent on a set-top box may need the gateway's WAN
+      IP address to correctly send INFORM messages to the ACS.  Note that a
+      gateway may have multiple WAN IP addresses, not all of which are truly
+      public IP addresses: there may for example be a separate (logical)
+      management IP interface towards the operator's network that receives a
+      WAN IP address in the 10.0.0.0 range.
+
+      In order for clients to determine which published WAN IP address is the
+      right one for their purposes, we provide a hint system. Clients can
+      publish a WanIpAddressHint object that describes the IP address or
+      fully-qualified domain name of an outside (i.e. at the WAN side of the
+      gateway) device that must be able to reach the gateway.
+      The gateway must then add each of the hints to the foreignAddresses list
+      of the corresponding WanIpAddress object.
+    </doc>
+    <struct behavior="state" name="WanIpAddress">
+      <doc>
+        For each WAN IP address assigned to a logical IP interface on the 
+        gateway, a WanIpAddress instance is published. The instance is alive
+        for as long as the IP address is assigned to that interface. When the
+        IP address is no longer assigned to the interface, the corresponding
+        WanIpAddress instance is removed.
+      </doc>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId" key="true">
+        <doc>
+          The device ID (as published on the DeviceInfo topic) of the gateway
+          publishing this WAN IP address.
+          This information is mainly useful in the case that multiple gateways
+          are part of the same Qeo Realm. Clients can then use the information
+          provided by the device discovery QDM
+          (org::qeo::networking::devicediscovery) to determine which gateway is
+          the one they are interested in.
+        </doc>
+      </member>
+      <member name="name" type="string" key="true">
+        <doc>
+          Logical name of the IP interface this IP address belongs to.
+        </doc>
+      </member>
+      <member name="ipAddress" type="string" key="true">
+        <doc>
+          The assigned IPv4 or IPv6 address.
+          IPv4 addresses are specified in dotted-quad notation (all decimal, no leading zeros).
+          IPv6 addresses are specified in canonical form (RFC 5952).
+        </doc>
+      </member>
+      <member name="foreignAddresses" type="string" sequenceMaxLength="-1">
+        <doc>
+          List of foreign address hints that apply to this IP address/interface
+          combination.
+        </doc>
+      </member>
+    </struct>
+
+    <struct behavior="state" name="WanIpAddressHint">
+      <doc>
+        Address hints provide a way for clients to figure out which of the
+        published WAN IP addresses is the right one for them.
+        A client publishes a hint containing the IP address or FQDN of an
+        outside host that must be able to reach them, and the gateway will
+        add this hint to the foreignAddresses list of the correct WanIpAddress
+        instance.
+        The hint is published as a state: if the WanIpAddressHint instance is
+        removed, the hint itself will be removed from the WanIpAddress instance
+        as well.
+      </doc>
+      <member name="foreignAddress" type="string" key="true">
+        <doc>
+          A foreign IP address or FQDN can be supplied as a hint to assist the
+          WAN IP address providers in annotating the right instance.
+        </doc>
+      </member>
+    </struct>
+  </module>
+</types>
+

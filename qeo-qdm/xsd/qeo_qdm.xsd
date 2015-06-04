@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+This file contains the XML Schema Document (XSD) for Qeo type representation as currently supported. 
+This XSD is based on the XML Type Representation defined by the OMG specification "Extensible and Dynamic
+Topic Types for DDS" (DDS-XTypes) and is further adapted to reflect Qeo features. 
+The OMG XSD taken as basis is retrieved from
+http://www.omg.org/spec/DDS-XTypes/20120202/dds-xtypes_type_definition.xsd
+Correction : xmlns= assignment added in the schema element to obtain validation.
+-->
+
+
+<xs:schema
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    elementFormDefault="qualified"
+    attributeFormDefault="unqualified"
+    targetNamespace="http://www.qeo.org/formal/2013/Qeo_Data_Model"
+    xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model"
+    >
+
+  <!-- =================================================================== -->
+  <!-- Documentation tags       (Qeo specific)                             -->
+  <!-- =================================================================== -->
+
+  <xs:element name="doc">
+    <xs:complexType mixed="true">
+      <xs:sequence>
+        <xs:any maxOccurs="unbounded" minOccurs="0" namespace="##any" processContents="skip"/>
+      </xs:sequence>
+      <xs:attribute name="language"
+                    type="xs:string"
+                    use="optional"
+                    default="*"/>
+    </xs:complexType>
+  </xs:element>
+    
+    
+  <!-- =================================================================== -->
+  <!-- Identifiers                                                         -->
+  <!-- =================================================================== -->
+
+  <xs:simpleType name="identifierName">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="([a-zA-Z]|::)([a-zA-Z_0-9]|::)*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+
+  <!-- =================================================================== -->
+  <!-- File Inclusion                                                      -->
+  <!-- =================================================================== -->
+
+  
+  <xs:simpleType name="fileName">
+    <xs:restriction base="xs:string">
+    </xs:restriction>
+  </xs:simpleType>
+
+
+  <xs:complexType name="includeDecl">
+    <xs:attribute name="file"
+                  type="fileName"
+                  use="required"/>
+  </xs:complexType>
+  
+
+
+  <!-- =================================================================== -->
+  <!-- Forward Declarations                                                -->
+  <!-- =================================================================== -->
+
+  <xs:simpleType name="forwardDeclTypeKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="struct"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+
+  <xs:complexType name="forwardDecl">
+    <xs:attribute name="name"
+                  type="identifierName"
+                  use="required"/>
+    <xs:attribute name="kind"
+                  type="forwardDeclTypeKind"
+                  use="required"/>
+  </xs:complexType>
+
+  
+  <!-- =================================================================== -->
+  <!-- Basic Types                                                         -->
+  <!-- =================================================================== -->
+
+  <xs:simpleType name="allTypeKind">
+    <xs:restriction base="xs:string">
+      <!-- Primitive Types -->
+      <xs:enumeration value="boolean"/>
+      <xs:enumeration value="byte"/>
+      <xs:enumeration value="int16"/>
+      <xs:enumeration value="int32"/>
+      <xs:enumeration value="int64"/>
+      <xs:enumeration value="float32"/>
+      <!-- String containers -->
+      <xs:enumeration value="string"/>
+      <!-- Some other type -->
+      <xs:enumeration value="nonBasic"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+
+  <xs:simpleType name="arrayDimensionsKind">
+    <xs:restriction base="xs:string">
+    </xs:restriction>
+  </xs:simpleType>
+
+
+
+  <!-- =================================================================== -->
+  <!-- Aggregated Types (General)                                          -->
+  <!-- =================================================================== -->
+
+  <xs:complexType name="simpleMemberDecl">
+    <!-- ref element sequence is Qeo specific --> 
+    <xs:sequence>
+      <xs:element ref="doc"
+                  minOccurs="0"
+                  maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name"
+                  type="identifierName"
+                  use="required"/>
+    <xs:attribute name="type"
+                  type="allTypeKind"
+                  use="required"/>
+    <xs:attribute name="nonBasicTypeName"
+                  type="identifierName"
+                  use="optional"/>
+  </xs:complexType>
+
+  <xs:simpleType name="unboundedSequenceLengthDecl">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="-1" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="memberDecl">
+    <xs:complexContent>
+      <xs:extension base="simpleMemberDecl">
+        <xs:attribute name="sequenceMaxLength"
+                      type="unboundedSequenceLengthDecl"
+                      use="optional"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="structOrUnionTypeDecl">
+
+    <xs:sequence>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <!-- ref element is Qeo specific -->
+        <xs:element ref="doc" />
+      </xs:choice>
+    </xs:sequence>
+
+    <xs:attribute name="name"
+                  type="identifierName"
+                  use="required"/>
+  </xs:complexType>
+
+
+  <!-- =================================================================== -->
+  <!-- Structures                                                          -->
+  <!-- =================================================================== -->
+
+  <xs:complexType name="structMemberDecl">
+    <xs:complexContent>
+      <xs:extension base="memberDecl">
+        <xs:attribute name="key"
+                      type="xs:boolean"
+                      use="optional"
+                      default="false"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <!-- behaviorDecl is Qeo specific -->
+  <xs:simpleType name="behaviorDecl">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="state"/>
+      <xs:enumeration value="event"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="structDecl">
+    <xs:complexContent>
+      <xs:extension base="structOrUnionTypeDecl">
+        <xs:sequence>
+          <xs:choice maxOccurs="unbounded">
+            <xs:element name="member"
+                        type="structMemberDecl"
+                        minOccurs="1"/>
+          </xs:choice>
+        </xs:sequence>
+        <!--  behavior attribute is Qeo specific -->
+        <xs:attribute name="behavior"
+	                  type="behaviorDecl"
+		              use="optional"/> 
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+
+  <!-- =================================================================== -->
+  <!-- Enumerations                                                        -->
+  <!-- =================================================================== -->
+
+  <xs:complexType name="enumeratorDecl">
+    <xs:sequence>
+      <xs:element ref="doc"
+                  minOccurs="0"/>
+    </xs:sequence>
+
+    <xs:attribute name="name"
+                  type="identifierName"
+                  use="required"/>
+  </xs:complexType>
+
+
+  <xs:complexType name="enumDecl">
+    <xs:sequence>
+      <xs:choice maxOccurs="unbounded">
+        <xs:element ref="doc"
+                    minOccurs="0"/>
+        <xs:element name="enumerator"
+                    type="enumeratorDecl"
+                    minOccurs="1"
+                    maxOccurs="unbounded"/>
+      </xs:choice>
+    </xs:sequence>
+
+    <xs:attribute name="name"
+                  type="identifierName"
+                  use="required"/>
+  </xs:complexType>
+
+
+  <!-- =================================================================== -->
+  <!-- Modules                                                             -->
+  <!-- =================================================================== -->
+
+  <xs:group name="moduleElements">
+    <xs:sequence>
+      <xs:choice maxOccurs="unbounded">
+        <!-- ref element is Qeo specific -->
+        <xs:element ref="doc"
+                    minOccurs="0"/>
+        <xs:element name="include"
+                    type="includeDecl"
+                    minOccurs="0"/>
+        <xs:element name="forward_dcl"
+                    type="forwardDecl"
+                    minOccurs="0"/>
+        <xs:element name="module"
+                    type="moduleDecl"
+                    minOccurs="0"/>
+        <xs:element name="struct"
+                    type="structDecl"
+                    minOccurs="0"/>
+        <xs:element name="enum"
+                    type="enumDecl"
+                    minOccurs="0"/>
+      </xs:choice>
+    </xs:sequence>
+  </xs:group>
+
+<!-- disallowing nested module elements is qeo specific 
+is a copy of xs:group name="moduleElements" except no recurrent module
+-->
+  <xs:group name="innerModuleElements">
+    <xs:sequence>
+      <xs:choice maxOccurs="unbounded">
+        <!-- ref element is Qeo specific -->
+        <xs:element ref="doc"
+                    minOccurs="0"/>
+        <xs:element name="include"
+                    type="includeDecl"
+                    minOccurs="0"/>
+        <xs:element name="forward_dcl"
+                    type="forwardDecl"
+                    minOccurs="0"/>
+        <xs:element name="struct"
+                    type="structDecl"
+                    minOccurs="0"/>
+        <xs:element name="enum"
+                    type="enumDecl"
+                    minOccurs="0"/>
+      </xs:choice>
+    </xs:sequence>
+  </xs:group>
+
+
+
+  <xs:complexType name="moduleDecl">
+    <xs:sequence>
+      <xs:group   ref="innerModuleElements"
+                  minOccurs="0"
+                  maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name"
+                  type="identifierName"
+                  use="required"/>
+  </xs:complexType>
+
+
+  <!-- =================================================================== -->
+  <!-- Document Root                                                       -->
+  <!-- =================================================================== -->
+
+  <xs:element name="types">
+    <xs:complexType>
+       <xs:group ref="moduleElements"/>
+       <xs:attribute name="version" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

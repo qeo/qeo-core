@@ -1,0 +1,28 @@
+include 'qeo-android-core', 'qeo-android', 'qeo-android-tests', 'qeo-android-tests-release', 'qeo-android-service', 'qeo-android-management',  'qeo-android-debugconfig', "qeo-android-uitest", "qeo-android-service-embedded", "qeo-android-service-core", "qeo-android-tests-embedded"
+rootProject.name = 'qeo-android-root'
+
+
+//Logic for building everything from source in development
+if (!System.env.JENKINS_URL) {
+    //don't enable this logic in jenkins
+	
+	//include qeo-java
+	if (System.properties['qeo.src.qeo-java']) {
+        logger.warn("Building qeo-java from source: " + System.properties['qeo.src.qeo-java'])
+		apply from: System.properties['qeo.src.qeo-java'] + "/settings.gradle"
+	}
+
+	//define own sourcepaths
+    if (System.properties['qeo.src.qeo-android']) {
+        logger.debug("qeo-android source path set to: " + System.properties['qeo.src.qeo-android'])
+        File root = new File(System.properties['qeo.src.qeo-android']);
+        project(':qeo-android-core').projectDir = new File(root, "qeo-android-core")
+        project(':qeo-android').projectDir = new File(root, "qeo-android")
+        project(':qeo-android-service').projectDir = new File(root, "qeo-android-service")
+        project(':qeo-android-tests').projectDir = new File(root, "qeo-android-tests")
+        project(':qeo-android-tests-release').projectDir = new File(root, "qeo-android-tests-release")
+        project(':qeo-android-webview').projectDir = new File(root, "qeo-android-webview")
+    }
+
+}
+

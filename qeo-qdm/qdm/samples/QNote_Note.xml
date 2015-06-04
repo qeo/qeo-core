@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <module name="org::qeo::sample::note">
+    <struct behavior="state" name="Note">
+      <member name="id" type="int32" key="true">
+        <doc>Unique ID of every note. This ID is a random generated number by the client.</doc>
+      </member>
+      <member name="wallId" type="int32" key="true">
+        <doc>Unique ID of the wall to which this note belongs</doc>
+      </member>
+      <member name="message" type="string">
+        <doc>The content of the note</doc>
+      </member>
+    </struct>
+  </module>
+</types>

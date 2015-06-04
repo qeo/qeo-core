@@ -1,0 +1,20 @@
+ifneq ($($(sample-qsimplechat-c_INCLUDED)),1)
+
+override COMPONENT := sample-qsimplechat-c
+override COMPONENT_SEARCH_PATH_PREFIX :=  $(projectdir/)../../*/%/Makefile_component
+
+sample-qsimplechat-c_PARTS_INSTALL := qsimplechat-c@$$(bindir/)qsimplechat-c:755
+sample-qsimplechat-c_DEPS          := qeo-c
+
+include $(projectdir/)build/Makefile_component_top
+
+sample-qsimplechat-c.PROGRAMS = qsimplechat-c
+
+sample-qsimplechat-c.qsimplechat-c_LDADD         := $(qeo-c_LIBS)
+sample-qsimplechat-c.qsimplechat-c_LOCALDEFINES  := $(qeo-c_CFLAGS) -Wall -Werror
+sample-qsimplechat-c.qsimplechat-c_LOCALINCLUDES := $(qeo-c_INCLUDES)
+sample-qsimplechat-c.qsimplechat-c_SRCS          := $(addprefix src/, main.c QSimpleChat_ChatMessage.c QSimpleChat_ChatParticipant.c)
+
+include $(projectdir/)build/Makefile_component_bot
+
+endif

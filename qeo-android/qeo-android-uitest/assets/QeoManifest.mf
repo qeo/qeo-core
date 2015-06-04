@@ -1,0 +1,8 @@
+
+[meta]
+appname = "qeo-android-uitests"
+#version code currently not used
+version = 1
+
+[application]
+

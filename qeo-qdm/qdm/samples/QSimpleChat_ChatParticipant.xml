@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+    <module name="org::qeo::sample::simplechat">
+        <enum name="ChatState">
+            <doc>Possible chat participant states.</doc>
+            <enumerator name="AVAILABLE">
+                <doc>The user is available for chatting.</doc>
+            </enumerator>
+            <enumerator name="IDLE">
+                <doc>The user is idle.</doc>
+            </enumerator>
+            <enumerator name="BUSY">
+                <doc>The user is busy and will not respond to messages.</doc>
+            </enumerator>
+            <enumerator name="AWAY">
+                <doc>The user is unavailable.</doc>    
+            </enumerator>
+        </enum>
+        <struct name="ChatParticipant" behavior="state">
+            <doc>A participant in a chat session.</doc>
+            <member name="name" type="string" key="true"> 
+                <doc>The name of the participant.</doc>
+            </member>
+            <member name="state" type="nonBasic" nonBasicTypeName="ChatState">
+                <doc>The state of the participant.</doc>
+            </member>
+        </struct>
+    </module>
+</types>

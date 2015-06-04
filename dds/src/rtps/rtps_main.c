@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-# include <assert.h>
+#include <assert.h>
 #ifdef _WIN32
 #include "win.h"
 #else
@@ -34,6 +34,7 @@
 #include "log.h"
 #include "error.h"
 #include "prof.h"
+#include "random.h"
 #include "ctrace.h"
 #include "pool.h"
 #include "list.h"
@@ -75,11 +76,15 @@
 #include "rtps_sfrr.h"
 #include "rtps_trace.h"
 #include "rtps_check.h"
+#ifdef DDS_FORWARD
+#include "rtps_fwd.h"
+#endif
 #ifdef DDS_DEBUG
 #include "debug.h"
 #endif
 
 /*#define DUMP_LOCATORS */
+/*#define LOG_PART_LRLOC*/
 
 static Duration_t rtps_def_heartbeat  = { DEF_HEARTBEAT_S,  DEF_HEARTBEAT_NS  };
 static Duration_t rtps_def_nack_resp  = { DEF_NACK_RSP_S,   DEF_NACK_RSP_NS   };
@@ -95,10 +100,6 @@ VendorId_t rtps_vendor_id = VENDORID_TECHNICOLOR;
 
 int rtps_used = 1;
 int rtps_log;
-#ifdef DDS_DEBUG
-/* TODO: Remove this and all related code once dtls/tls are fully working */
-int rtps_no_security = 0;
-#endif
 
 RECEIVER rtps_receiver;
 TRANSMITTER rtps_transmitter;
@@ -454,6 +455,8 @@ static int rtps_locators_listen (DomainId_t    domain_id,
 
 #ifdef DDS_SECURITY
 
+#ifdef DTLS_SECURITY
+
 #define	RTPS_DTLS_PORT	4604	/* Default RTPS/DTLS server port. */
 
 /* rtps_dtls_listen -- Listen to incoming DTLS/UDP requests. */
@@ -492,6 +495,7 @@ static void rtps_dtls_listen (Domain_t *dp)
 			      dp->index);
 }
 
+#endif
 #ifdef DDS_TCP
 
 /* rtps_tls_enabled -- Indicate that we're listening to incoming TLS/TCP reqs. */
@@ -509,22 +513,54 @@ static void rtps_tls_enabled (Domain_t *dp)
 
 /* rtps_update_kinds -- Update the known locator types. */
 
-static void rtps_update_kinds (Domain_t *dp)
+void rtps_update_kinds (Participant_t *p)
 {
 	LocatorNode_t	*np;
 	LocatorRef_t	*rp;
 
-	dp->kinds = 0;
-	foreach_locator (dp->participant.p_def_ucast, rp, np)
-		dp->kinds |= np->locator.kind;
-	foreach_locator (dp->participant.p_meta_ucast, rp, np)
-		dp->kinds |= np->locator.kind;
+	p->p_kinds = 0;
+	foreach_locator (p->p_def_ucast, rp, np)
+		p->p_kinds |= np->locator.kind;
+	foreach_locator (p->p_meta_ucast, rp, np)
+		p->p_kinds |= np->locator.kind;
 }
+
+#ifdef RTPS_SPDP_BCAST
+
+static LocatorList_t rtps_udpv4_bcast_init (LocatorList_t mmc_list)
+{
+	LocatorList_t	mrp;
+	LocatorNode_t	*mnp, *np;
+	unsigned	port = 0;
+	unsigned char	addr [16];
+
+	memset (addr, 0, 12);
+	addr [12] = addr [13] = addr [14] = addr [15] = 0xff;
+	foreach_locator (mmc_list, mrp, mnp)
+		if (mnp->locator.kind == LOCATOR_KIND_UDPv4) {
+			port = mnp->locator.port;
+			break;
+		}
+
+	if (!port)
+		return (NULL);
+
+	mrp = NULL;
+	np = locator_list_add (&mrp, LOCATOR_KIND_UDPv4, addr, port,
+				0, SITE_LOCAL, (LOCF_META | LOCF_MCAST), 0);
+	return ((np) ? mrp : NULL);
+}
+
+#endif
 
 /* rtps_participant_create -- Create a new domain participant. */
 
 int rtps_participant_create (Domain_t *dp)
 {
+#ifdef DDS_FORWARD
+	if (dp->participant.p_forward)
+		rfwd_domain_init (dp->index);
+#endif
 	memcpy (dp->participant.p_proto_version, rtps_protocol_version, sizeof (ProtocolVersion_t));
 	memcpy (dp->participant.p_vendor_id, rtps_vendor_id, sizeof (VendorId_t));
 	dp->participant.p_exp_il_qos = 0;
@@ -553,8 +589,13 @@ int rtps_participant_create (Domain_t *dp)
 
 	if (rtps_locators_listen (dp->domain_id,
 				  dp->participant.p_def_ucast,
-				  dp->index) == DDS_RETCODE_PRECONDITION_NOT_MET)
+				  dp->index) == DDS_RETCODE_PRECONDITION_NOT_MET) {
+#ifdef DDS_FORWARD
+		if (dp->participant.p_forward)
+			rfwd_domain_final (dp->index);
+#endif
 		return (DDS_RETCODE_PRECONDITION_NOT_MET);
+	}
 
 #ifdef DDS_SECURITY
 	if (!dp->security
@@ -575,9 +616,9 @@ int rtps_participant_create (Domain_t *dp)
 				 &dp->participant.p_meta_ucast,
 				 &dp->participant.p_meta_mcast,
 				 &dp->dst_locs);
-	rtps_update_kinds (dp);
+	rtps_update_kinds (&dp->participant);
 #ifdef DDS_TCP
-	if ((dp->kinds & LOCATOR_KINDS_TCP) != 0)
+	if ((dp->participant.p_kinds & LOCATOR_KINDS_TCP) != 0)
 		rtps_tcp_add_mcast_locator (dp);
 #endif
 	rtps_locators_listen (dp->domain_id,
@@ -590,10 +631,19 @@ int rtps_participant_create (Domain_t *dp)
 	dp->participant.p_lease_duration = rtps_def_lease_per;
 	dp->resend_per = rtps_def_resend_per;
 
+#ifdef RTPS_SPDP_BCAST
+	dp->udpv4_bc_spdp = rtps_udpv4_bcast_init (dp->participant.p_meta_mcast);
+	if (dp->udpv4_bc_spdp)
+		rtps_locators_listen (dp->domain_id,
+				      dp->udpv4_bc_spdp,
+				      dp->index);
+#endif
 #ifdef DDS_SECURITY
 	if (dp->security) {
+#ifdef DTLS_SECURITY
 		if ((dp->participant.p_sec_caps & SECC_DTLS_UDP) != 0)
 			rtps_dtls_listen (dp);
+#endif
 #ifdef DDS_TCP
 		if ((dp->participant.p_sec_caps & SECC_TLS_TCP) != 0)
 			rtps_tls_enabled (dp);
@@ -695,16 +745,26 @@ int rtps_check_ep_guids (Domain_t *dp)
 
 # endif
 
+static int peer_participant_update (Skiplist_t *list, void *node, void *arg)
+{
+	Participant_t	*p, **pp = (Participant_t **) node;
+
+	ARG_NOT_USED (list)
+	ARG_NOT_USED (arg)
+
+	p = *pp;
+	p->p_local = 0;
+	rtps_participant_reset_reply_locators (p);
+	return (1);
+}
+
 int rtps_participant_update (Domain_t *dp)
 {
-	int	old_kinds, ret = DDS_RETCODE_OK;
+	int	ret = DDS_RETCODE_OK;
 
 	/*log_printf (RTPS_ID, 0, "rtps_participant_update().\r\n");*/
 
 	lock_take (dp->lock);
-
-	/* Remember the previous valid locator kinds. */
-	old_kinds = dp->kinds;
 
 	/* Notify that locator lists will be updated. */
 	rtps_locators_update (dp->domain_id, dp->index);
@@ -716,6 +776,10 @@ int rtps_participant_update (Domain_t *dp)
 	locator_list_delete_list (&dp->participant.p_meta_mcast);
 #ifdef DDS_SECURITY
 	locator_list_delete_list (&dp->participant.p_sec_locs);
+#endif
+	locator_list_delete_list (&dp->dst_locs);
+#ifdef RTPS_SPDP_BCAST
+	locator_list_delete_list (&dp->udpv4_bc_spdp);
 #endif
 
 	/* Fetch the new locator lists. */
@@ -731,7 +795,7 @@ int rtps_participant_update (Domain_t *dp)
 				 &dp->participant.p_meta_ucast,
 				 &dp->participant.p_meta_mcast,
 				 &dp->dst_locs);
-	rtps_update_kinds (dp);
+	rtps_update_kinds (&dp->participant);
 
 	/* Apply locator lists on transports. */
 	rtps_update_begin (dp);
@@ -748,7 +812,7 @@ int rtps_participant_update (Domain_t *dp)
 					  dp->index) != DDS_RETCODE_OK)
 			ret = DDS_RETCODE_ERROR;
 
-	rtps_update_kinds (dp);
+	rtps_update_kinds (&dp->participant);
 	if (rtps_locators_listen (dp->domain_id,
 				  dp->participant.p_meta_ucast,
 				  dp->index) != DDS_RETCODE_OK)
@@ -759,9 +823,18 @@ int rtps_participant_update (Domain_t *dp)
 				  dp->index) != DDS_RETCODE_OK)
 		ret = DDS_RETCODE_ERROR;
 
+#ifdef RTPS_SPDP_BCAST
+	dp->udpv4_bc_spdp = rtps_udpv4_bcast_init (dp->participant.p_meta_mcast);
+	if (dp->udpv4_bc_spdp)
+		rtps_locators_listen (dp->domain_id,
+				      dp->udpv4_bc_spdp,
+				      dp->index);
+#endif
 #ifdef DDS_SECURITY
+#ifdef DTLS_SECURITY
 	if (dp->security && (dp->participant.p_sec_caps & SECC_DTLS_UDP) != 0)
 		rtps_dtls_listen (dp);
+#endif
 #ifdef DDS_TCP
 	if (dp->security && (dp->participant.p_sec_caps & SECC_TLS_TCP) != 0)
 		rtps_tls_enabled (dp);
@@ -769,10 +842,13 @@ int rtps_participant_update (Domain_t *dp)
 #endif
 	rtps_update_end (dp);
 
+	/* Clear all peer participant locality flags. */
+	sl_walk (&dp->peers, peer_participant_update, dp);
+
 	/* Clear all local reply locators. */
-	sl_walk (&dp->participant.p_endpoints, 
+	sl_walk (&dp->participant.p_endpoints,
 		 endpoint_flush_reply_fct,
-		 (old_kinds != dp->kinds) ? dp : NULL);
+		 dp);
 
 	/* Notify peer participants. */
 	disc_participant_update (dp);
@@ -812,6 +888,10 @@ static int rtps_endpoint_delete (Skiplist_t *list, void *node, void *arg)
 
 int rtps_participant_delete (Domain_t *dp)
 {
+#ifdef DDS_FORWARD
+	if (dp->participant.p_forward)
+		rfwd_domain_final (dp->index);
+#endif
 	locator_list_delete_list (&dp->participant.p_def_ucast);
 	locator_list_delete_list (&dp->participant.p_def_mcast);
 	locator_list_delete_list (&dp->participant.p_meta_ucast);
@@ -819,9 +899,16 @@ int rtps_participant_delete (Domain_t *dp)
 #ifdef DDS_SECURITY
 	locator_list_delete_list (&dp->participant.p_sec_locs);
 #endif
-	locator_list_delete_list (&dp->dst_locs);
-
 	disc_stop (dp);
+
+	/* Can only delete the dst_locs list after disc_stop () has
+	   completed since reader_locators, as used in the SPDP writer,
+	   contain just a reference to a single dst_locs list item and
+	   these are *not* cleaned up automatically, just refcount adjusted! */
+	locator_list_delete_list (&dp->dst_locs);
+#ifdef RTPS_SPDP_BCAST
+	locator_list_delete_list (&dp->udpv4_bc_spdp);
+#endif
 
 	return (DDS_RETCODE_OK);
 }
@@ -1401,7 +1488,7 @@ static int reader_in_dests (RemReader_t *rrp, handle_t *handles, unsigned max)
 
 		if (stateless) {
 			ep = entity_ptr (*handles);
-			if (entity_type (ep) == ET_PARTICIPANT) {
+			if (ep && entity_type (ep) == ET_PARTICIPANT) {
 				pp = (Participant_t *) ep;
 				if (pp->p_src_locators &&
 				    pp->p_src_locators->data->locator.kind == 
@@ -2089,8 +2176,7 @@ int rtps_reader_locator_add (Writer_t      *w,
 		if (locator_eq (&rrp->rr_locator->locator, &np->locator))
 			return (DDS_RETCODE_PRECONDITION_NOT_MET);
 
-	/*
-	dp = w->w_publisher->domain;
+	/* dp = w->w_publisher->domain;
 	 *
 	 * No longer add locators for the reader locator.  The rx-locator has
 	 * already been added and for tx, it's not needed at all.  Also, it
@@ -2179,7 +2265,7 @@ void rtps_reader_locator_remove (Writer_t *w, const Locator_t *lp)
 	/* rtps_locator_remove (w->w_publisher->domain->participant_id, rrp->rr_locator); */
 
 	/* Cleanup locator. */
-	rrp->rr_locator->users--;
+	locator_unref (rrp->rr_locator);
 	rrp->rr_locator = NULL;
 
 	/* Remove from Writer's list. */
@@ -2248,15 +2334,10 @@ static int rtps_secure_tunnel (Domain_t *dp, Participant_t *pp)
 	if ((rcaps & lcaps) != 0)
 		return ((rcaps & lcaps & SECC_DDS_SEC) == 0 &&
 			(rcaps & lcaps & SECC_DTLS_UDP) != 0);
-
-#ifdef DDS_DEBUG
-	/* TODO: Remove this and all related code once dtls/tls are fully working */
-	else if (rtps_no_security)
-		return (0);
-#endif
 	else
 		return (-1);
 }
+
 #endif
 
 /* add_relay_locators -- Add locators to reach the relays. */
@@ -2275,14 +2356,14 @@ static void add_relay_locators (Domain_t *dp, Proxy_t *prp, LocatorList_t *list)
 		pp = *p;
 #ifdef DDS_SECURITY
 		if (prp->tunnel) {
-			if ((dp->kinds & LOCATOR_KINDS_UDP) != 0)
+			if ((dp->participant.p_kinds & LOCATOR_KINDS_UDP) != 0)
 				locators_add (list, pp->p_sec_locs, LOCATOR_KINDS_UDP);
-			if ((dp->kinds & ~LOCATOR_KINDS_UDP) != 0) {
+			if ((dp->participant.p_kinds & ~LOCATOR_KINDS_UDP) != 0) {
 				if (meta)
 					rlist = pp->p_meta_ucast;
 				else
 					rlist = pp->p_def_ucast;
-				locators_add (list, rlist, dp->kinds & ~LOCATOR_KINDS_UDP);
+				locators_add (list, rlist, dp->participant.p_kinds & ~LOCATOR_KINDS_UDP);
 			}
 		}
 		else {
@@ -2291,7 +2372,7 @@ static void add_relay_locators (Domain_t *dp, Proxy_t *prp, LocatorList_t *list)
 				rlist = pp->p_meta_ucast;
 			else
 				rlist = pp->p_def_ucast;
-			locators_add (list, rlist, dp->kinds);
+			locators_add (list, rlist, dp->participant.p_kinds);
 #ifdef DDS_SECURITY
 		}
 #endif
@@ -2303,14 +2384,26 @@ static void matched_reader_locators_set (RemReader_t *rrp)
 	DiscoveredReader_t	*dr = (DiscoveredReader_t *) rrp->rr_endpoint;
 	Domain_t		*dp;
 	unsigned		kinds;
+	int			local;
 
 	dp = dr->dr_participant->p_domain;
-	kinds = dp->kinds;
+	kinds = dp->participant.p_kinds & dr->dr_participant->p_kinds;
 #ifdef DDS_SECURITY
 	if (rrp->rr_tunnel && (kinds & LOCATOR_KINDS_UDP) != 0) {
 		rrp->rr_mc_locs = NULL;
 		locators_add (&rrp->rr_uc_locs, dr->dr_participant->p_sec_locs, LOCATOR_KINDS_UDP);
 		kinds &= ~LOCATOR_KINDS_UDP;
+		local = 0;
+	}
+	else {
+#endif
+		if (dr->dr_participant->p_local) {
+			local = 1;
+			kinds &= LOCATOR_KINDS_LOCAL;
+		}
+		else
+			local = 0;
+#ifdef DDS_SECURITY
 	}
 #endif
 	if (dr->dr_mcast)
@@ -2326,7 +2419,7 @@ static void matched_reader_locators_set (RemReader_t *rrp)
 	else 
 		locators_add (&rrp->rr_uc_locs, dr->dr_participant->p_def_ucast, kinds);
 
-	if (dp->nr_relays)
+	if (dp->nr_relays && !local)
 		add_relay_locators (dp, &rrp->proxy, &rrp->rr_uc_locs);
 }
 
@@ -2358,6 +2451,7 @@ static void matched_reader_locators_update (RemReader_t *rrp)
 	matched_reader_locators_clear (rrp);
 	matched_reader_locators_set (rrp);
 	CHECK_R_LOCATORS (rrp, "rtps_matched_reader_locators_update(end)");
+	rrp->rr_ir_locs = 0;
 	rrp->rr_uc_dreply = NULL;
 }
 
@@ -2368,17 +2462,18 @@ int rtps_matched_reader_add (Writer_t *w, DiscoveredReader_t *dr)
 	WRITER			*wp;
 	RemReader_t		*rrp;
 	RRType_t		type;
-	char            buffer[32];
 	const TypeSupport_t	*ts;
 #ifdef DDS_SECURITY
 	int			tunnel;
 #endif
+	char			buffer [32];
 
 	ctrc_printd (RTPS_ID, RTPS_W_PROXY_ADD, &w, sizeof (w));
 	prof_start (rtps_w_proxy_add);
 	if (rtps_log)
         	log_printf (RTPS_ID, 0, "RTPS: matched reader add (%s) to %s.\r\n",
-                        str_ptr (w->w_topic->name), guid_prefix_str(&dr->dr_participant->p_guid_prefix,buffer));
+                        str_ptr (w->w_topic->name), 
+			guid_prefix_str (&dr->dr_participant->p_guid_prefix, buffer));
 	wp = w->w_rtps;
 	if (!wp) {
 		log_printf (RTPS_ID, 0, "rtps_matched_reader_add: writer(%s) doesn't exist!\r\n", str_ptr (w->w_topic->name));
@@ -2490,15 +2585,15 @@ int rtps_matched_reader_remove (Writer_t *w, DiscoveredReader_t *dr)
 	WRITER		*wp;
 	RemReader_t	*rrp, *xrrp, *prev_rrp;
 	RRType_t	type;
-	char        buffer[32];
+	char		buffer [32];
 
 	ctrc_printd (RTPS_ID, RTPS_W_PROXY_REMOVE, &w, sizeof (w));
 	prof_start (rtps_w_proxy_rem);
 
 	if (rtps_log)
         	log_printf (RTPS_ID, 0, "RTPS: matched reader remove (%s) to %s.\r\n",
-                        str_ptr (w->w_topic->name), guid_prefix_str(&dr->dr_participant->p_guid_prefix,buffer));
-
+                        str_ptr (w->w_topic->name),
+			guid_prefix_str (&dr->dr_participant->p_guid_prefix, buffer));
 
 	/*log_printf ("Matched reader remove!\r\n");*/
 	wp = w->w_rtps;
@@ -2694,6 +2789,35 @@ static INLINE LocatorList_t best_locator (LocatorList_t list, LocatorKind_t kind
 	return (list);
 }
 
+# if 0
+/* muc_reply_locator -- Try to find a meta-unicast reply locator. */
+
+static void *muc_reply_locator (Participant_t *p, LocatorKind_t kinds, LocatorKind_t pref)
+{
+	Domain_t	*dp = p->p_domain;
+	LocatorNode_t	*np;
+	LocatorRef_t	*rp;
+	Locator_t	*first = NULL;
+	unsigned	n = 0;
+
+	if ((dp->participant.p_kinds & p->p_kinds) == 0)
+		return (NULL);
+
+	foreach_locator (p->p_meta_ucast, rp, np) {
+		if ((np->locator.kind & (dp->participant.p_kinds & kinds)) == 0)
+			continue;
+
+		if (!first ||
+		    (pref && first->kind != pref) ||
+		    (fastrand () & 1) != 0) {
+			first = &np->locator;
+			n++;
+		}
+	}
+	return (first);
+}
+# endif
+
 /* writer_best_locator -- Return the best locator for a proxy context. */
 
 static void *writer_best_locator (Domain_t *dp, Proxy_t *pp, RMBUF *mp, int *dlist)
@@ -2702,6 +2826,12 @@ static void *writer_best_locator (Domain_t *dp, Proxy_t *pp, RMBUF *mp, int *dli
 	Participant_t	*p;
 	RME		*mep;
 	void		*dest;
+# if 0
+	unsigned	i;
+# endif
+#ifdef RTPS_LOG_REPL_LOC
+	char		buf [40];
+#endif
 
 	rrp = proxy2rr (pp);
 	if (pp->u.writer->endpoint.stateful) {
@@ -2721,15 +2851,42 @@ static void *writer_best_locator (Domain_t *dp, Proxy_t *pp, RMBUF *mp, int *dli
 		else
 			dest = NULL;
 	}
-	else if ((mp->element.flags & RME_MCAST) == 0 &&
+	else if ((mp->element.flags & (RME_MCAST | RME_BCAST)) == 0 &&
 		 (mep = mp->first) != NULL &&
 		 (mep->flags & RME_HEADER) != 0 &&
 		 mep->header.id == ST_INFO_DST &&
-		 (p = participant_lookup (dp, (GuidPrefix_t *) mep->data)) != NULL &&
-		 p->p_src_locators) {
-		*dlist = 1;
-		dest = best_locator (p->p_src_locators, rtps_mux_mode);
+		 (p = participant_lookup (dp, (GuidPrefix_t *) mep->data)) != NULL) {
+
+		lrloc_print1 ("RTPS: writer_best_locator: [stateless] to %s -> ",
+					guid_prefix_str (&p->p_guid_prefix, buf));
+		if (p->p_uc_dreply) {
+			*dlist = 0;
+			dest = &p->p_uc_dreply->locator;
+			lrloc_print ("using dreply: ");
+		}
+		else {
+			*dlist = 1;
+			dest = p->p_uc_locs;
+		}
+#ifdef RTPS_LOG_REPL_LOC
+		if (dest && !*dlist)
+			lrloc_print1 ("%s", locator_str (/*(const Locator_t *)*/ dest));
+		else if (dest)
+			locator_list_log (RTPS_ID, 0, (LocatorList_t) dest);
+		else
+			lrloc_print ("no route!");
+		lrloc_print ("\r\n");
+#endif
 	}
+#ifdef RTPS_SPDP_BCAST
+	else if ((mp->element.flags & RME_BCAST) != 0) {
+		*dlist = 0;
+		if (dp->udpv4_bc_spdp)
+			dest = &dp->udpv4_bc_spdp->data->locator;
+		else
+			dest = NULL;
+	}
+#endif
 	else {
 		*dlist = 0;
 		dest = &rrp->rr_locator->locator;
@@ -3108,7 +3265,7 @@ static void rtps_send_messages (unsigned id, void *dest, int dlist, RMBUF *mp)
 
 		/* No destination + messages to transmit.
 		   Cleanup the messages. */
-		warn_printf ("rtps_send_changes: no route to remote reader!");
+		log_printf (RTPS_ID, 0, "rtps_send_changes: no route to remote reader!\r\n");
 		txp->last_error = T_NO_DEST;
 		txp->no_locator++;
 
@@ -3144,6 +3301,7 @@ void rtps_send_changes (void)
 		PROF_INC (n);
 
 		dest = NULL;
+		dlist = 0;
 		mp = NULL;
 		if (pp->is_writer) {
 
@@ -3168,35 +3326,35 @@ void rtps_send_changes (void)
 				txp->no_memory++;
 			}
 			else {
-				if ((mp = pp->head) != NULL) {
-					pp->tail->next = NULL;
-					pp->head = NULL;	/* Detach messages from proxy. */
+				while ((mp = pp->head) != NULL) {
+					if (!type) {
+						pp->head = mp->next;
+						mp->next = NULL;
+					}
+					else {
+						pp->tail->next = NULL;
+						pp->head = NULL;	/* Detach messages from proxy. */
+					}
 #ifdef RTPS_TRACE
 					if (wp->endpoint.trace_frames)
 						mp->element.flags |= RME_TRACE;
 #endif
 					if (pp->uc_dreply &&
-					    (mp->element.flags & RME_MCAST) == 0) {
+					    (mp->element.flags & RME_MCAST) == 0)
 						dest = &pp->uc_dreply->locator;
-						dlist = 0;
-					}
 					else
 						dest = writer_best_locator (dp,
-									    pp, 
+									    pp,
 									    mp,
 									    &dlist);
-				}
-				else
-					dlist = 0;
-
-				/* Reset proxy context. */
-				proxy_deactivate (pp);
-				if (mp) {
-					if ((w->w_flags & ENTITY_KIND_BUILTIN) == 0)
+					if ((w->w_flags & EF_BUILTIN) == 0)
 						mp->element.flags |= RME_USER;
 					rtps_send_messages (w->w_publisher->domain->index,
 							    dest, dlist, mp);
 				}
+
+				/* Reset proxy context. */
+				proxy_deactivate (pp);
 			}
 			lock_release (w->w_lock);
 		}
@@ -3213,22 +3371,18 @@ void rtps_send_changes (void)
 					mp->element.flags |= RME_TRACE;
 #endif
 				if (pp->uc_dreply &&
-				    (mp->element.flags & RME_MCAST) == 0) {
+				    (mp->element.flags & RME_MCAST) == 0)
 					dest = &pp->uc_dreply->locator;
-					dlist = 0;
-				}
 				else
 					dest = reader_best_locator (pp,
 							mp->element.flags & RME_MCAST,
 							&dlist);
 			}
-			else
-				dlist = 0;
 
 			/* Reset proxy context. */
 			proxy_deactivate (pp);
 			if (mp) {
-				if ((r->r_flags & ENTITY_KIND_BUILTIN) == 0)
+				if ((r->r_flags & EF_BUILTIN) == 0)
 					mp->element.flags |= RME_USER;
 				rtps_send_messages (r->r_subscriber->domain->index,
 						    dest, dlist, mp);
@@ -3391,14 +3545,26 @@ static void matched_writer_locators_set (RemWriter_t *rwp)
 	DiscoveredWriter_t	*dw = (DiscoveredWriter_t *) rwp->rw_endpoint;
 	Domain_t		*dp;
 	unsigned		kinds;
+	int			local;
 
 	dp = dw->dw_participant->p_domain;
-	kinds = dp->kinds & dw->dw_participant->p_domain->kinds;
+	kinds = dp->participant.p_kinds & dw->dw_participant->p_kinds;
 #ifdef DDS_SECURITY
 	if (rwp->rw_tunnel && (kinds & LOCATOR_KINDS_UDP) != 0) {
 		rwp->rw_mc_locs = NULL;
 		locators_add (&rwp->rw_uc_locs, dw->dw_participant->p_sec_locs, LOCATOR_KINDS_UDP);
 		kinds &= ~LOCATOR_KINDS_UDP;
+		local = 0;
+	}
+	else {
+#endif
+		if (dw->dw_participant->p_local) {
+			local = 1;
+			kinds &= LOCATOR_KINDS_LOCAL;
+		}
+		else
+			local = 0;
+#ifdef DDS_SECURITY
 	}
 #endif
 	if (dw->dw_mcast)
@@ -3414,7 +3580,7 @@ static void matched_writer_locators_set (RemWriter_t *rwp)
 	else
 		locators_add (&rwp->rw_uc_locs, dw->dw_participant->p_def_ucast, kinds);
 
-	if (dp->nr_relays)
+	if (dp->nr_relays && !local)
 		add_relay_locators (dp, &rwp->proxy, &rwp->rw_uc_locs);
 }
 
@@ -3434,6 +3600,7 @@ static void matched_writer_locators_update (RemWriter_t *rwp)
 	matched_writer_locators_clear (rwp);
 	matched_writer_locators_set (rwp);
 	CHECK_W_LOCATORS (rwp, "rtps_matched_writer_locators_update(end)");
+	rwp->rw_ir_locs = 0;
 	rwp->rw_uc_dreply = NULL;
 }
 
@@ -3444,17 +3611,18 @@ int rtps_matched_writer_add (Reader_t *r, DiscoveredWriter_t *dw)
 	READER		*rp;
 	RemWriter_t	*rwp;
 	RWType_t	type;
-	char buffer[32];
 #ifdef DDS_SECURITY
 	int		tunnel;
 #endif
+	char		buffer [32];
 
 	ctrc_printd (RTPS_ID, RTPS_R_PROXY_ADD, &r, sizeof (r));
 	prof_start (rtps_r_proxy_add);
 
 	if (rtps_log)
         	log_printf (RTPS_ID, 0, "RTPS: matched writer add (%s) to %s.\r\n",
-                        str_ptr (r->r_topic->name), guid_prefix_str(&dw->dw_participant->p_guid_prefix,buffer));
+                        str_ptr (r->r_topic->name),
+			guid_prefix_str (&dw->dw_participant->p_guid_prefix, buffer));
 
 	rp = (READER *) r->r_rtps;
 	if (!rp) {
@@ -3892,19 +4060,13 @@ void rtps_endpoint_locators_update (Endpoint_t *r, int mcast)
 	if (!mcast) {
 		if (entity_writer (entity_type (&r->entity))) {
 			rwp = (RemWriter_t *) r->rtps;
-			for (; rwp; rwp = (RemWriter_t *) rwp->rw_next_guid) {
-				rwp->rw_uc_dreply = NULL;
-				rwp->rw_ir_locs = 0;
+			for (; rwp; rwp = (RemWriter_t *) rwp->rw_next_guid)
 				matched_writer_locators_update (rwp);
-			}
 		}
 		else {
 			rrp = (RemReader_t *) r->rtps;
-			for (; rrp; rrp = (RemReader_t *) rrp->rr_next_guid) {
-				rrp->rr_uc_dreply = NULL;
-				rrp->rr_ir_locs = 0;
+			for (; rrp; rrp = (RemReader_t *) rrp->rr_next_guid)
 				matched_reader_locators_update (rrp);
-			}
 		}
 	}
 	lock_release (r->topic->lock);
@@ -3918,6 +4080,8 @@ void rtps_endpoint_locality_update (Endpoint_t *r, int local)
 	RemReader_t	*rrp;
 	RemWriter_t	*rwp;
 
+	ARG_NOT_USED (local)
+
 	/*dbg_printf ("rtps_endpoint_locality_update (%p, %d);\r\n", r, local);*/
 	if (lock_take (r->topic->lock)) {
 		warn_printf ("endpoint_locality_update: topic lock error");
@@ -3925,23 +4089,13 @@ void rtps_endpoint_locality_update (Endpoint_t *r, int local)
 	}
 	if (entity_writer (entity_type (&r->entity))) {
 		rwp = (RemWriter_t *) r->rtps;
-		for (; rwp; rwp = (RemWriter_t *) rwp->rw_next_guid) {
-			if (local && rwp->rw_ir_locs) {
-				rwp->rw_ir_locs = 0;
-				matched_writer_locators_update (rwp);
-			}
-			rwp->rw_uc_dreply = NULL;
-		}
+		for (; rwp; rwp = (RemWriter_t *) rwp->rw_next_guid)
+			matched_writer_locators_update (rwp);
 	}
 	else {
 		rrp = (RemReader_t *) r->rtps;
-		for (; rrp; rrp = (RemReader_t *) rrp->rr_next_guid) {
-			if (local && rrp->rw_ir_locs) {
-				rrp->rr_ir_locs = 0;
-				matched_reader_locators_update (rrp);
-			}
-			rrp->rr_uc_dreply = NULL;
-		}
+		for (; rrp; rrp = (RemReader_t *) rrp->rr_next_guid)
+			matched_reader_locators_update (rrp);
 	}
 	lock_release (r->topic->lock);
 }
@@ -4030,7 +4184,8 @@ void rtps_endpoint_marker_notify (unsigned markers, RMNTFFCT fct)
 #endif
 
 static void reply_locators_update (LocatorKind_t kinds,
-				   Proxy_t       *pp,
+				   Proxy_t       *p,
+				   Participant_t *pp,
 				   LocatorList_t *list,
 				   unsigned      nlocs,
 				   Locator_t     *locs)
@@ -4070,8 +4225,14 @@ static void reply_locators_update (LocatorKind_t kinds,
 		if (!len)
 			return;		/* No change! */
 	}
-	lrloc_print1 ("\r\n  ==> updating reply locators list of {%u} -> ", pp->endpoint->entity.handle);
-	pp->uc_dreply = NULL;
+	if (p) {
+		lrloc_print1 ("\r\n  ==> updating reply locators list of {%u} -> ", p->endpoint->entity.handle);
+		p->uc_dreply = NULL;
+	}
+	else {
+		lrloc_print1 ("\r\n  ==> updating reply locators list of {%u} -> ", pp->p_handle);
+		pp->p_uc_dreply = NULL;
+	}
 	locator_list_delete_list (list);
 	for (n = 0, lp1 = locs;
 	     n < nlocs;
@@ -4096,17 +4257,57 @@ static void reply_locators_update (LocatorKind_t kinds,
 	else
 		lrloc_print ("<empty>");
 	lrloc_print ("\r\n");
-#else
-	ARG_NOT_USED (pp)
 #endif
+}
+
+#ifdef RTPS_LOG_REPL_LOC
+
+static void lrloc_print_locators (void          *proxy,
+				  Participant_t *p, 
+				  LocatorList_t uc,
+				  LocatorList_t mc,
+				  Locator_t     *src)
+{
+	char	buf [32];
+
+	log_printf (RTPS_ID, 0, "RTPS: %p@%s - UC: ", proxy, guid_prefix_str (&p->p_guid_prefix, buf));
+	locator_list_log (RTPS_ID, 0, uc);
+	log_printf (RTPS_ID, 0, ", MC: ");
+	locator_list_log (RTPS_ID, 0, mc);
+	if (src)
+		log_printf (RTPS_ID, 0, " from %s", locator_str (src));
+	log_printf (RTPS_ID, 0, "\r\n");
+}
+
+#endif
+
+void rtps_direct_reply_set (LocatorNode_t       **reply,
+			    const LocatorList_t list,
+			    const Locator_t     *lp)
+{
+	LocatorRef_t	*rp;
+	LocatorNode_t	*np;
+
+ 	foreach_locator (list, rp, np)
+ 		if (locator_addr_equal (&np->locator, lp)) {
+			if (((np->locator.kind & LOCATOR_KINDS_LOCAL) != 0 ||
+ 			     np->locator.port == lp->port) &&
+ 			    (*reply == NULL ||
+			     np->locator.kind <= (*reply)->locator.kind))
+	 			*reply = np;
+		}
+		else if (np->locator.kind == lp->kind &&
+		         ((np->locator.kind & LOCATOR_KINDS_LOCAL) == 0 &&
+		         np->locator.port == lp->port &&
+			 (!*reply ||
+ 			  np->locator.kind < (*reply)->locator.kind)))
+			*reply = np;
 }
 
 void proxy_update_reply_locators (LocatorKind_t kinds, Proxy_t *pp, RECEIVER *rxp)
 {
 	RemReader_t	*rrp;
 	RemWriter_t	*rwp;
-	LocatorRef_t	*rp;
-	LocatorNode_t	*np;
 
 	lrloc_print ("update reply locators for ");
 	if (pp->is_writer) {
@@ -4114,40 +4315,42 @@ void proxy_update_reply_locators (LocatorKind_t kinds, Proxy_t *pp, RECEIVER *rx
 		lrloc_print1 ("RemWriter {%u} -> ", rrp->rr_endpoint->entity.handle);
 
 		/* If an InfoReply was received: always update the locators. */
-		if (rxp->n_uc_replies || rxp->n_mc_replies) {
+		if (rxp->n_uc_replies) {
 			lrloc_print ("[InfoReply] ");
 			pp->ir_locs = 1;
 			reply_locators_update (kinds,
 					       pp,
+					       NULL,
 					       &rrp->rr_uc_locs,
 					       rxp->n_uc_replies,
 					       (Locator_t *) rxp->reply_locs);
 			reply_locators_update (kinds,
 					       pp,
+					       NULL,
 					       &rrp->rr_mc_locs,
 					       rxp->n_mc_replies,
 					       (Locator_t *) &rxp->reply_locs [rxp->n_uc_replies * MSG_LOCATOR_SIZE]);
 		}
 		else if (pp->ir_locs) {
 			lrloc_print ("[Reset]");
-			pp->ir_locs = 0;
 			matched_reader_locators_update (rrp);
-			pp->uc_dreply = NULL;
 		}
 		if (!rrp->rr_uc_locs ||
-		    (pp->uc_dreply && pp->uc_dreply->locator.kind <= rxp->src_locator.kind)) {
+		    (pp->uc_dreply && pp->uc_dreply->locator.kind < rxp->src_locator.kind)) {
 			lrloc_print (" - nothing to do.\r\n");
+#ifdef RTPS_LOG_REPL_LOC
+			lrloc_print_locators (rrp, rrp->rr_endpoint->u.participant, rrp->rr_uc_locs, rrp->rr_mc_locs, &rxp->src_locator);
+#endif
 			return;
 		}
 #ifdef RTPS_LOG_REPL_LOC
 		if (pp->uc_dreply && pp->uc_dreply->locator.kind > rxp->src_locator.kind)
 			lrloc_print (" - improved reply locator found!");
 #endif
-		foreach_locator (rrp->rr_uc_locs, rp, np)
-			if (locator_addr_equal (&np->locator, &rxp->src_locator)) {
-				pp->uc_dreply = np;
-				break;
-			}
+		rtps_direct_reply_set (&pp->uc_dreply, rrp->rr_uc_locs, &rxp->src_locator);
+#ifdef RTPS_LOG_REPL_LOC
+		lrloc_print_locators (rrp, rrp->rr_endpoint->u.participant, rrp->rr_uc_locs, rrp->rr_mc_locs, &rxp->src_locator);
+#endif
 	}
 	else {
 		rwp = proxy2rw (pp);
@@ -4159,35 +4362,38 @@ void proxy_update_reply_locators (LocatorKind_t kinds, Proxy_t *pp, RECEIVER *rx
 			pp->ir_locs = 1;
 			reply_locators_update (kinds,
 					       pp,
+					       NULL,
 					       &rwp->rw_uc_locs,
 					       rxp->n_uc_replies,
 					       (Locator_t *) rxp->reply_locs);
 			reply_locators_update (kinds,
 					       pp,
+					       NULL,
 					       &rwp->rw_mc_locs,
 					       rxp->n_mc_replies,
 					       (Locator_t *) &rxp->reply_locs [rxp->n_uc_replies * MSG_LOCATOR_SIZE]);
 		}
 		else if (pp->ir_locs) {
 			lrloc_print ("[Reset] ");
-			pp->ir_locs = 0;
 			matched_writer_locators_update (rwp);
-			pp->uc_dreply = NULL;
 		}
 		if (!rwp->rw_uc_locs ||
-		    (pp->uc_dreply && pp->uc_dreply->locator.kind <= rxp->src_locator.kind)) {
+		    (pp->uc_dreply && 
+		     pp->uc_dreply->locator.kind < rxp->src_locator.kind)) {
 			lrloc_print ("nothing to do.\r\n");
+#ifdef RTPS_LOG_REPL_LOC
+			lrloc_print_locators (rwp, rwp->rw_endpoint->u.participant, rwp->rw_uc_locs, rwp->rw_mc_locs, &rxp->src_locator);
+#endif
 			return;
 		}
 #ifdef RTPS_LOG_REPL_LOC
-		if (pp->uc_dreply && pp->uc_dreply->locator.kind > rxp->src_locator.kind)
+		if (pp->uc_dreply && pp->uc_dreply->locator.kind >= rxp->src_locator.kind)
 			lrloc_print (" - improved reply locator found!");
 #endif
-		foreach_locator (rwp->rw_uc_locs, rp, np)
-			if (locator_addr_equal (&np->locator, &rxp->src_locator)) {
-				pp->uc_dreply = np;
-				break;
-			}
+		rtps_direct_reply_set (&pp->uc_dreply, rwp->rw_uc_locs, &rxp->src_locator);
+#ifdef RTPS_LOG_REPL_LOC
+		lrloc_print_locators (rwp, rwp->rw_endpoint->u.participant, rwp->rw_uc_locs, rwp->rw_mc_locs, &rxp->src_locator);
+#endif
 	}
 #ifdef RTPS_LOG_REPL_LOC
 	if (pp->uc_dreply)
@@ -4195,7 +4401,31 @@ void proxy_update_reply_locators (LocatorKind_t kinds, Proxy_t *pp, RECEIVER *rx
 	else
 		lrloc_print1 ("can't set reply locator from %s!\r\n", locator_str (&rxp->src_locator));
 #endif
-	lrloc_print ("\r\n");
+}
+
+/* endpoint_locators_local -- Update the locators of an endpoint due to locality
+			      changes. */
+
+static int endpoint_locators_local (Skiplist_t *list, void *node, void *arg)
+{
+	Endpoint_t	*ep, **epp = (Endpoint_t **) node;
+	Ticks_t		local, *p_local = (Ticks_t *) arg;
+
+	ARG_NOT_USED (list)
+
+	ep = *epp;
+	local = *p_local;
+	rtps_endpoint_locality_update (ep, local);
+
+	return (1);
+}
+
+/* rtps_participant_locality_update -- Locality attribute of a participant changed. */
+
+void rtps_participant_locality_update (Participant_t *p)
+{
+	lrloc_print1 ("RTPS: update locality for participant {%u}\r\n", p->p_handle);
+	sl_walk (&p->p_endpoints, endpoint_locators_local, &p->p_local);
 }
 
 /* proxy_reset_reply_locators -- Reset the locator lists to default values. */
@@ -4208,23 +4438,28 @@ void proxy_reset_reply_locators (Proxy_t *pp)
 	lrloc_print ("RTPS: reset reply locators for ");
 	if (pp->is_writer) {
 		rrp = proxy2rr (pp);
-		lrloc_print1 ("RemWriter {%u}", rrp->rr_endpoint->entity.handle);
-		if (pp->ir_locs) {
-			pp->ir_locs = 0;
+		lrloc_print1 ("RemWriter {%u}\r\n", rrp->rr_endpoint->entity.handle);
+		/*if (pp->ir_locs) {*/
 			matched_reader_locators_update (rrp);
-		}
-		rrp->rr_uc_dreply = NULL;
+#ifdef RTPS_LOG_REPL_LOC
+			lrloc_print_locators (rrp, rrp->rr_endpoint->u.participant, rrp->rr_uc_locs, rrp->rr_mc_locs, NULL);
+#endif
+		/*}
+		  else
+			rrp->rr_uc_dreply = NULL;*/
 	}
 	else {
 		rwp = proxy2rw (pp);
-		lrloc_print1 ("RemReader {%u}", rwp->rw_endpoint->entity.handle);
-		if (pp->ir_locs) {
-			pp->ir_locs = 0;
+		lrloc_print1 ("RemReader {%u}\r\n", rwp->rw_endpoint->entity.handle);
+		/*if (pp->ir_locs) {*/
 			matched_writer_locators_update (rwp);
-		}
-		rwp->rw_uc_dreply = NULL;
+#ifdef RTPS_LOG_REPL_LOC
+			lrloc_print_locators (rwp, rwp->rw_endpoint->u.participant, rwp->rw_uc_locs, rwp->rw_mc_locs, NULL);
+#endif
+		/*}
+		  else
+			rwp->rw_uc_dreply = NULL;*/
 	}
-	lrloc_print ("\r\n");
 }
 
 /* proxy_add_relay -- Update a proxy to use a new relay. */
@@ -4244,43 +4479,37 @@ static int proxy_add_relay (Skiplist_t *list, void *node, void *arg)
 
 	ARG_NOT_USED (list);
 
+	if (pp->p_local)
+		return (1);
+
 	ep = *epp;
 	rep = ep->rtps;
 	dp = pp->p_domain;
-	
 	if (rep && rep->stateful) {
 		if (rep->is_reader) {
 			rp = (READER *) rep;
 			r = (Reader_t *) (rp->endpoint.endpoint);
 			lock_take (r->r_lock);
-			LIST_FOREACH (rp->rem_writers, rwp) {
-				add_relay_locators (dp, &rwp->proxy, &rwp->rw_uc_locs);
-				rwp->rw_uc_dreply = NULL;
-			}
+			LIST_FOREACH (rp->rem_writers, rwp)
+				if (!rwp->rw_endpoint->u.participant->p_local) {
+					add_relay_locators (dp, &rwp->proxy, &rwp->rw_uc_locs);
+					rwp->rw_uc_dreply = NULL;
+				}
 			lock_release (r->r_lock);
 		}
 		else {
 			wp = (WRITER *) rep;
 			w = (Writer_t *) (wp->endpoint.endpoint);
 			lock_take (w->w_lock);
-			LIST_FOREACH (wp->rem_readers, rrp) {
-				add_relay_locators (dp, &rrp->proxy, &rrp->rr_uc_locs);
-				rrp->rr_uc_dreply = NULL;
-			}
+			LIST_FOREACH (wp->rem_readers, rrp)
+				if (!rrp->rr_endpoint->u.participant->p_local) {
+					add_relay_locators (dp, &rrp->proxy, &rrp->rr_uc_locs);
+					rrp->rr_uc_dreply = NULL;
+				}
 			lock_release (w->w_lock);
 		}
 	}
 	return (1);
-}
-
-/* rtps_relay_add -- A new relay is added to a DDS domain: update all proxies.*/
-
-void rtps_relay_add (Participant_t *pp)
-{
-	Domain_t	*dp = pp->p_domain;
-
-	relay_add (pp);
-	sl_walk (&dp->participant.p_endpoints, proxy_add_relay, pp);
 }
 
 /* proxy_relay_update -- Update a proxy since a relay was removed. */
@@ -4306,24 +4535,182 @@ static int proxy_relay_update (Skiplist_t *list, void *node, void *arg)
 			rp = (READER *) rep;
 			r = (Reader_t *) (rp->endpoint.endpoint);
 			lock_take (r->r_lock);
-			LIST_FOREACH (rp->rem_writers, rwp) {
-				matched_writer_locators_update (rwp);
-				rwp->rw_uc_dreply = NULL;
-			}
+			LIST_FOREACH (rp->rem_writers, rwp)
+				if (!rwp->rw_endpoint->u.participant->p_local) {
+					matched_writer_locators_update (rwp);
+#ifdef RTPS_LOG_REPL_LOC
+					lrloc_print_locators (rwp, rwp->rw_endpoint->u.participant, rwp->rw_uc_locs, rwp->rw_mc_locs, NULL);
+#endif
+				}
 			lock_release (r->r_lock);
 		}
 		else {
 			wp = (WRITER *) rep;
 			w = (Writer_t *) (wp->endpoint.endpoint);
 			lock_take (w->w_lock);
-			LIST_FOREACH (wp->rem_readers, rrp) {
-				matched_reader_locators_update (rrp);
-				rrp->rr_uc_dreply = NULL;
-			}
+			LIST_FOREACH (wp->rem_readers, rrp)
+				if (!rrp->rr_endpoint->u.participant->p_local) {
+					matched_reader_locators_update (rrp);
+#ifdef RTPS_LOG_REPL_LOC
+					lrloc_print_locators (rrp, rrp->rr_endpoint->u.participant, rrp->rr_uc_locs, rrp->rr_mc_locs, NULL);
+#endif
+				}
 			lock_release (w->w_lock);
 		}
 	}
 	return (1);
+}
+
+#ifdef LOG_PART_LRLOC
+#undef lrloc_print
+#undef lrloc_print1
+#define lrloc_print(s)  log_printf (RTPS_ID, 0, s)
+#define lrloc_print1(s,a1)  log_printf (RTPS_ID, 0, s, a1)
+#define RTPS_LOG_REPL_LOC
+#endif
+
+static void add_participant_relay_locators (Participant_t *p)
+{
+	Domain_t	*dp = p->p_domain;
+	Participant_t	**rp, *pp;
+	unsigned	i;
+
+	for (i = 0, rp = dp->relays; i < dp->nr_relays; i++, rp++) {
+		pp = *rp;
+		locators_add (&p->p_uc_locs, pp->p_meta_ucast, dp->participant.p_kinds);
+	}
+}
+
+static void participant_locators_update (Participant_t *p)
+{
+	unsigned	kinds;
+
+	if (p->p_uc_locs)
+		locator_list_delete_list (&p->p_uc_locs);
+	kinds = p->p_domain->participant.p_kinds & p->p_kinds;
+	if (p->p_local)
+		kinds &= LOCATOR_KINDS_LOCAL;
+	if (p->p_meta_ucast)
+		locators_add (&p->p_uc_locs, p->p_meta_ucast, kinds);
+	if (p->p_domain->nr_relays && !p->p_local)
+		add_participant_relay_locators (p);
+	p->p_ir_locs = 0;
+	p->p_uc_dreply = NULL;
+}
+
+void rtps_participant_init_reply_locators (Participant_t *p)
+{
+	lrloc_print1 ("RTPS: init reply locators for Participant {%u} -> ", p->p_handle);
+	p->p_uc_locs = NULL;
+	p->p_ir_locs = 0;
+	participant_locators_update (p);
+#ifdef RTPS_LOG_REPL_LOC
+	if (p->p_uc_locs)
+		locator_list_log (RTPS_ID, 0, p->p_uc_locs);
+	else
+		lrloc_print ("<none>");
+#endif
+	lrloc_print ("\r\n");
+}
+
+void participant_update_reply_locators (Participant_t *p, RECEIVER *rxp)
+{
+	lrloc_print1 ("RTPS: update reply locators for Participant {%u} -> ", p->p_handle);
+	if (rxp->n_uc_replies) {
+		lrloc_print ("[InfoReply] ");
+		p->p_ir_locs = 1;
+		reply_locators_update (p->p_kinds & p->p_domain->participant.p_kinds,
+				       NULL,
+				       p,
+				       &p->p_uc_locs,
+				       rxp->n_uc_replies,
+				       (Locator_t *) rxp->reply_locs);
+	}
+	else if (p->p_ir_locs) {
+		lrloc_print ("[Reset]");
+		participant_locators_update (p);
+	}
+	if (!p->p_uc_locs ||
+	     (p->p_uc_dreply && p->p_uc_dreply->locator.kind < rxp->src_locator.kind)) {
+		lrloc_print ("nothing to do -> ");
+#ifdef RTPS_LOG_REPL_LOC
+		if (p->p_uc_locs)
+			locator_list_log (RTPS_ID, 0, p->p_uc_locs);
+		else
+			lrloc_print ("<none>");
+#endif
+		lrloc_print ("\r\n");
+		return;
+	}
+#ifdef RTPS_LOG_REPL_LOC
+	if (p->p_uc_dreply && p->p_uc_dreply->locator.kind > rxp->src_locator.kind)
+		lrloc_print (" - improved reply locator found! ");
+#endif
+	rtps_direct_reply_set (&p->p_uc_dreply, p->p_uc_locs, &rxp->src_locator);
+
+#ifdef RTPS_LOG_REPL_LOC
+	if (p->p_uc_dreply)
+		lrloc_print1 ("%s\r\n", locator_str (&p->p_uc_dreply->locator));
+	else
+		lrloc_print1 ("can't set reply locator from %s!\r\n", locator_str (&rxp->src_locator));
+#endif
+}
+
+void rtps_participant_reset_reply_locators (Participant_t *p)
+{
+	lrloc_print1 ("RTPS: reset reply locators for Participant {%u}", p->p_handle);
+	participant_locators_update (p);
+	lrloc_print ("\r\n");
+}
+
+static int participant_add_relay (Skiplist_t *list, void *node, void *arg)
+{
+	Participant_t	**pp = (Participant_t **) node, *p, *rp;
+
+	ARG_NOT_USED (list);
+
+	rp = (Participant_t *) arg;
+	p = *pp;
+	if (p->p_local)
+		return (1);
+
+	lrloc_print1 ("RTPS: add relay locators for Participant {%u} -> ", p->p_handle);
+	locators_add (&p->p_uc_locs, rp->p_meta_ucast, p->p_domain->participant.p_kinds);
+#ifdef RTPS_LOG_REPL_LOC
+	if (p->p_uc_locs)
+		locator_list_log (RTPS_ID, 0, p->p_uc_locs);
+	else
+		lrloc_print ("<none>");
+#endif
+	lrloc_print ("\r\n");
+	p->p_uc_dreply = NULL;
+	return (1);
+}
+
+static void participant_update_relay (Participant_t *p)
+{
+	participant_locators_update (p);
+}
+
+/* rtps_relay_add -- A new relay is added to a DDS domain: update all proxies.*/
+
+void rtps_relay_add (Participant_t *pp)
+{
+	Domain_t	*dp = pp->p_domain;
+
+	relay_add (pp);
+	sl_walk (&dp->peers, participant_add_relay, pp);
+	sl_walk (&dp->participant.p_endpoints, proxy_add_relay, pp);
+}
+
+/* rtps_relay_update -- An existing relay was updated: update the proxy locators. */
+
+void rtps_relay_update (Participant_t *pp)
+{
+	Domain_t	*dp = pp->p_domain;
+
+	participant_update_relay (pp);
+	sl_walk (&dp->participant.p_endpoints, proxy_relay_update, pp);
 }
 
 /* rtps_relay_remove -- An existing relay is gone: update the proxy locators. */
@@ -4333,15 +4720,7 @@ void rtps_relay_remove (Participant_t *pp)
 	Domain_t	*dp = pp->p_domain;
 
 	relay_remove (pp);
-	sl_walk (&dp->participant.p_endpoints, proxy_relay_update, pp);
-}
-
-/* rtps_relay_update -- An existing relay was updated: update the proxy locators. */
-
-void rtps_relay_update (Participant_t *pp)
-{
-	Domain_t	*dp = pp->p_domain;
-
+	participant_update_relay (pp);
 	sl_walk (&dp->participant.p_endpoints, proxy_relay_update, pp);
 }
 
@@ -4578,11 +4957,6 @@ int rtps_init (const RTPS_CONFIG *cp)
 	PROF_INIT ("R:RRAliveTO", rtps_rr_alive_to);
 	PROF_INIT ("R:RRDoAck", rtps_rr_do_ack);
 	PROF_INIT ("R:RRProc", rtps_rr_proc);
-
-#ifdef DDS_DEBUG
-	/* TODO: Remove this and all related code once dtls/tls are fully working */
-	rtps_no_security = config_get_number (DC_NoSecurity, 0);
-#endif
 
 	if (config_defined (DC_RTPS_Mode))
 		rtps_used = config_get_mode (DC_RTPS_Mode, MODE_ENABLED);

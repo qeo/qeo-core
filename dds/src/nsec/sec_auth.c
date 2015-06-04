@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -120,9 +120,10 @@ static void remove_handshake (Handshake_t handle)
 	if (!p)
 		return;
 
-	id_release (p->initiator->id);
-	id_release (p->replier->id);
-
+	if (p->initiator)
+		id_release (p->initiator->id);
+	if (p->replier)
+		id_release (p->replier->id);
 	if (p->pdata)
 		xfree (p->pdata);
 
@@ -366,7 +367,7 @@ AuthState_t sec_validate_remote_id (Identity_t       local_id,
 			    (r = (*ap->valid_remote) (ap,
 			    			      local_id, local_key,
 						      token->data,
-						      perm_tok->data,
+						      (perm_tok) ? perm_tok->data : NULL,
 						      rem_key, rem_id)) != 
 							      AS_FAILED)
 				break;
@@ -486,10 +487,10 @@ AuthState_t sec_begin_handshake_reply (DDS_HandshakeToken *msg_in,
 		    ap->create_reply)
 			break;
 	}
-	if (!ap || i >= nauth_plugins) {
+	if (!ap || i >= nauth_plugins || !init_p || !reply_p) {
 		*error = DDS_RETCODE_BAD_PARAMETER;
 		sec_log_ret ("%s", "FAILED");
-		return (AS_PENDING_HANDSHAKE_REQ);
+		return (AS_FAILED);
 	}
 	handshake = add_handshake (init_p, reply_p);
 	if (!handshake) {
@@ -668,8 +669,12 @@ void sec_release_id_tokens (Token_t *list)
 
 void sec_release_handshake (Handshake_t handshake)
 {
+	HandshakeData_t	*p;
+
 	sec_log_fct ("release_handshake");
-	sec_release_shared_secret ((get_handshake (handshake))->secret);
+	p = get_handshake (handshake);
+	if (p)
+		sec_release_shared_secret (p->secret);
 	remove_handshake (handshake);
 	sec_log_retv ();
 }

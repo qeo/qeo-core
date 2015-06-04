@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -104,11 +104,7 @@ void DDS_Security_log (unsigned   log_level,
 {
 	struct timeval	tv;
 	FILE		*f;
-#ifdef _WIN32
-	struct tm	tm_data, *tm = &tm_data;
-#else
-	struct tm	*tm;
-#endif
+	struct tm	tm_data, *tm;
 	char		tmbuf [40];
 	DDS_LogInfo	log_info;
 
@@ -124,8 +120,9 @@ void DDS_Security_log (unsigned   log_level,
 			gettimeofday (&tv, NULL);
 #ifdef _WIN32
 			_localtime32_s (&tm_data, &tv.tv_sec);
+			tm = &tm_data;
 #else
-			tm = localtime (&tv.tv_sec);
+			tm = localtime_r (&tv.tv_sec, &tm_data);
 			if (!tm) {
 #ifdef LOG_DATE
 				fprintf (f, "\?\?\?\?-\?\?\?-\?\? ");

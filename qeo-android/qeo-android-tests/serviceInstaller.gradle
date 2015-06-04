@@ -1,0 +1,102 @@
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidInstallerTools.gradle'
+
+configurations {
+    testApkDependencies {
+        description = 'download and install apk\'s to which we have dependencies'
+    }
+}
+
+if (System.properties['noRoot']) {
+    //add -DnoRoot=true to gradle commandline in order to be able to test on non-rooted device
+    logger.warn("noRoot parameter given, not installing certificates, you need to make sure the service is properly registered")
+    tasks.uninstallApk.enabled = false
+    tasks.installCertFile.enabled = false
+}
+
+//Depending from an android library project (this project) on a regular android project (the service) is ignored as the plugin does not know what to do in that case.
+task compileServiceDebug() {
+    afterEvaluate {
+        dependsOn project(":qeo-android-service").assembleDebug
+        //dependsOn project(":qeo-android-service").getDebugSo
+    }
+}
+
+task compileServiceRelease() {
+    afterEvaluate {
+        dependsOn project(":qeo-android-service").assembleRelease
+        dependsOn project(":qeo-android-service").artifactDownloadUnzip
+        //dependsOn project(":qeo-android-service").getDebugSo
+    }
+}
+
+task compileServiceJunit() {
+    afterEvaluate {
+        dependsOn project(":qeo-android-service").assembleUnittest
+        dependsOn project(":qeo-android-service").artifactDownloadUnzip
+        //dependsOn project(":qeo-android-service").getDebugSo
+    }
+}
+
+//define which apk's need to be installed
+installExtraApk {
+    //install the qeo-android-service from the qeo-android-service subproject
+    def classifier = "unittest" //default service to install
+    if (project.hasProperty("serviceClassifier")) {
+        classifier = project.serviceClassifier
+    }
+    if (classifier == "debug") { 
+        project.tasks.installExtraApk.dependsOn(compileServiceDebug) //make sure to compile the service before installing
+    }
+    else if (classifier == "unittest") { 
+        project.tasks.installExtraApk.dependsOn(compileServiceJunit) //make sure to compile the service before installing
+    }
+    else {
+        //assume release
+        classifier = null
+        project.tasks.installExtraApk.dependsOn(compileServiceRelease) //make sure to compile the service before installing
+    }
+
+    doFirst {
+        //we have a project dependency here, hence some extra logic is required to figure out the apk filename
+        project.configurations.testApkDependencies.dependencies.each { a ->
+            if (a instanceof ProjectDependency) {
+                a.dependencyProject.configurations.archives.artifacts.each {
+                    if (it.file.name.endsWith(".apk") && it.classifier == classifier) {
+                        files += it.file
+                    }
+                    else {
+                        logger.debug("Ignoring extra file ${it.file} (${it.classifier})")
+                    }
+                }
+            }
+        }
+        if (ext.files.isEmpty()) {
+            throw new GradleException("No service found to install, classifier: ${classifier}")
+        }
+    }
+}
+
+//define which apk's need to be uninstalled
+uninstallApk {
+    //uninstall the qeo-android-service package
+    packages = ["org.qeo.android.service"]
+}
+
+
+
+afterEvaluate {
+    project.tasks.installExtraApk.dependsOn(uninstallApk) //uninstall existing service before installing
+    project.tasks.installCertFile.dependsOn(installExtraApk) //install service before putting certificates
+    if (!System.properties['qeo.noServiceInstall']) {
+        //don't uninstall/reinstall service if this property is set
+        project.tasks.connectedAndroidTest.dependsOn(installCertFile) //install certificates before tests
+        project.tasks.singleTest.dependsOn(installCertFile) //install certificates before tests
+    }
+}
+
+dependencies {
+    //To be able to run android tests on android the qeo service is required on the device
+    testApkDependencies project(":qeo-android-service")
+}
+

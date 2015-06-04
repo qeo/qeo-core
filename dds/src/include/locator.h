@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -91,6 +91,7 @@ extern Locator_t	locator_invalid;
 #define	LOCATOR_KINDS_IPv6	(LOCATOR_KIND_UDPv6 | LOCATOR_KIND_TCPv6)
 #define	LOCATOR_KINDS_UDP	(LOCATOR_KIND_UDPv4 | LOCATOR_KIND_UDPv6)
 #define	LOCATOR_KINDS_TCP	(LOCATOR_KIND_TCPv4 | LOCATOR_KIND_TCPv6)
+#define	LOCATOR_KINDS_LOCAL	LOCATOR_KINDS_UDP
 
 int locator_pool_init (const POOL_LIMITS *locrefs, const POOL_LIMITS *locators);
 
@@ -206,6 +207,17 @@ int locator_list_no_mcast (unsigned domain, LocatorList_t l);
 void locator_list_flags_set (LocatorList_t l, unsigned mask, unsigned flags);
 
 /* Set the masked bits to the value of flags in all locators of the list. */
+
+LocatorNode_t *locator_new (LocatorKind_t       kind,
+			    const unsigned char *addr,
+			    uint32_t            port);
+
+/* Get a new locator node from the given data. Use locator_unref() to free
+   it afterwards. */
+
+void locator_ref (LocatorNode_t *np);
+
+/* Add an extra reference to an existing locator node. */
 
 void locator_unref (LocatorNode_t *np);
 

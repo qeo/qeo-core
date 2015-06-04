@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -75,17 +75,18 @@ void log_actions_default (unsigned id, unsigned level);
 /* Error level action management: */
 /* - - - - - - - - - - - - - - -  */
 
-void err_actions_set (ErrLevel_t level, unsigned actions);
+unsigned err_actions_set (ErrLevel_t level, unsigned actions);
 
-/* Set/replace all actions for the given error level. */
+/* Set/replace all actions for the given error level and returns the previous
+   state. */
 
-void err_actions_add (ErrLevel_t level, unsigned actions);
+unsigned err_actions_add (ErrLevel_t level, unsigned actions);
 
-/* Add actions to the given error level. */
+/* Add actions to the given error level, returning the previous state. */
 
-void err_actions_remove (ErrLevel_t level, unsigned actions);
+unsigned err_actions_remove (ErrLevel_t level, unsigned actions);
 
-/* Remove actions from the given error level. */
+/* Remove actions from the given error level, returning the previous state. */
 
 
 /* Level-specific notification functions: */
@@ -110,6 +111,10 @@ void log_print_region (unsigned   id,
 /* Log the contents of a memory region {*p,length}.  If show_addr is set,
    each line is prepended with either the memory address (offset=0) or the data
    offset (offset=1). */
+
+void log_print_time (unsigned id, unsigned level, const FTime_t *t);
+
+/* Log an NTP timestamp. */
 
 void log_flush (unsigned id, unsigned level);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <assert.h>
 #ifdef _WIN32
 #include "win.h"
 #include "Ws2IpDef.h"
@@ -36,10 +37,11 @@
 #define ERRNO errno
 #endif
 #include "sys.h"
+#include "pool.h"
 #include "log.h"
 #include "error.h"
+#include "libx.h"
 #include "debug.h"
-#include "pool.h"
 #include "db.h"
 #include "random.h"
 #include "rtps.h"
@@ -57,6 +59,9 @@
 #ifdef DDS_SECURITY
 #include "ri_tls.h"
 #endif
+#ifdef TCP_SUSPEND
+#include "ri_bgcp.h"
+#endif
 
 #ifdef DDS_DEBUG
 /*#define TCP_SIMULATE_TLS	** Force usage of direct TCP i.o. TLS/TCP. */
@@ -66,6 +71,7 @@
 /*#define TCP_TRC_DATA		** Trace all messages if defined. */
 /*#define LOG_TCP_SEND		** Trace rtps_tcp_send() decisions. */
 /*#define TCP_VALIDATE_CXS	** Verify connection consistency regularly. */
+/*#define TCP_TRC_REDUNDANT	** Trace redundant context operations. */
 #endif
 
 #ifdef DDS_ACT_LOG
@@ -97,6 +103,7 @@
 
 #define	MAX_IP_Q_DESTS	64	/* Max. # of TCP channel sends per multicast. */
 
+#define	MAX_Q_TIME	(TICKS_PER_SEC * 300)
 
 /**********************************************************************/
 /*   TCP Control protocol.					      */
@@ -119,31 +126,46 @@
 /* Control protocol fields. */
 
 /* Message types: */
-#define	CMT_ID_BIND_REQ		0x0c01
-#define	CMT_ID_BIND_SUCC	0x0d01
-#define	CMT_ID_BIND_FAIL	0x0e01
+#define	CMT_ID_BIND_REQ		0x0c01	/* IdentityBindRequest () */
+#define	CMT_ID_BIND_SUCC	0x0d01	/* IdentityBindSuccess () */
+#define	CMT_ID_BIND_FAIL	0x0e01	/* IdentityBindFailure () */
 
-#define CMT_SLPORT_REQ		0x0c02
-#define	CMT_SLPORT_SUCC		0x0d02
-#define	CMT_SLPORT_FAIL		0x0e02
+#define CMT_SLPORT_REQ		0x0c02	/* ServerLogicalPortRequest (). */
+#define	CMT_SLPORT_SUCC		0x0d02	/* ServerLogicalPortSuccess (). */
+#define	CMT_SLPORT_FAIL		0x0e02	/* ServerLogicalPortFailure (). */
 
-#define	CMT_CLPORT_REQ		0x0c03
-#define	CMT_CLPORT_SUCC		0x0d03
-#define	CMT_CLPORT_FAIL		0x0e03
+#define	CMT_CLPORT_REQ		0x0c03	/* ClientLogicalPortRequest (). */
+#define	CMT_CLPORT_SUCC		0x0d03	/* ClientLogicalPortSuccess (). */
+#define	CMT_CLPORT_FAIL		0x0e03	/* ClientLogicalPortFailure (). */
 
-#define	CMT_CX_BIND_REQ		0x0c04
-#define	CMT_CX_BIND_SUCC	0x0d04
-#define	CMT_CX_BIND_FAIL	0x0e04
+#define	CMT_CX_BIND_REQ		0x0c04	/* ConnectionBindRequest (). */
+#define	CMT_CX_BIND_SUCC	0x0d04	/* ConnectionBindSuccess (). */
+#define	CMT_CX_BIND_FAIL	0x0e04	/* ConnectionBindFailure (). */
 
-#define	CMT_FINALIZE		0x0c0f
+#define	CMT_FINALIZE		0x0c0f	/* Finalize (). */
 
 
-#define	MK_VENDOR_SPEC	0x8000
+#define	MK_VENDOR_SPEC		0x8000
 
 #define	PROTOCOL_RPSC	{ 'R', 'P', 'S', 'C' }
+
 ProtocolId_t			rpsc_protocol_id = PROTOCOL_RPSC;
 static uint16_t			rpsc_protocol_version = 0x10;
 static uint32_t			rpsc_transaction;	/* Next transaction id*/
+
+#ifdef TCP_SUSPEND
+
+#define	PROTOCOL_BGCP	{ 'B', 'G', 'C', 'P' }
+
+ProtocolId_t			bgcp_protocol_id = PROTOCOL_BGCP;
+static TCP_SR_IND		bgcp_client_fct;
+static uintptr_t		bgcp_client_user;
+static IP_CX			*bgcp_client_cxs;
+static TCP_SR_IND		bgcp_server_fct;
+static uintptr_t		bgcp_server_user;
+static IP_CX			*bgcp_server_cxs;
+
+#endif
 
 /* Following the control header are a number of variable length parameters
    encoded as a Parameter_t type (see pid.h). */
@@ -153,9 +175,8 @@ static uint32_t			rpsc_transaction;	/* Next transaction id*/
 #define	CAID_UNKN_ATTR		0x000a	/* Unknown attributes. */
 #define	CAID_LOCATOR		0x3d01	/* 128-bit RTPS locator address. */
 #define	CAID_LOC_PORT		0x3d02	/* 32-bit RTPS locator port. */
-/*#define CAID_CX_TYPE		0x3d03	** 8-bit flags (0x40=WAN):deprecated.*/
-#define	CAID_CX_COOKIE		0x3d04	/* Connection identifier. */
-#define	CAID_PORT_OPTIONS	0x3d05	/* 8-bit flags (0x80=share Ctrl/Data)*/
+#define	CAID_COOKIE		0x3d04	/* Connection identifier. */
+#define	CAID_FLAGS		0x3d05	/* 8-bit flags. */
 #define	CAID_ALLOW_SHARED	0x3d06	/* TCP connection is shared. */
 #define	CAID_FORWARD		0x3d07	/* TCP endpoint can forward. */
 #define	CAID_GUID_PREFIX	0x3d08	/* GUID prefix. */
@@ -177,18 +198,18 @@ static uint32_t			rpsc_transaction;	/* Next transaction id*/
 			 (1 << (CAID_GUID_PREFIX & 0xff)))
 #define	IDBFAIL_PIDS	 (1 << (CAID_ERROR & 0xff))
 #define	SLPREQ_PIDS	((1 << (CAID_LOC_PORT & 0xff)) |	\
-			 (1 << (CAID_PORT_OPTIONS & 0xff)))
-#define	SLPSUCC_PIDS	((1 << (CAID_CX_COOKIE & 0xff)) |	\
+			 (1 << (CAID_FLAGS & 0xff)))
+#define	SLPSUCC_PIDS	((1 << (CAID_COOKIE & 0xff)) |	\
 			 (1 << (CAID_ALLOW_SHARED & 0xff)) |	\
 			 (1 << (CAID_GUID_PREFIX & 0xff)))
 #define	SLPFAIL_PIDS	 (1 << (CAID_ERROR & 0xff))
 #define	CLPREQ_PIDS	((1 << (CAID_LOC_PORT & 0xff)) |	\
-			 (1 << (CAID_CX_COOKIE & 0xff)) |	\
-			 (1 << (CAID_PORT_OPTIONS & 0xff)))
+			 (1 << (CAID_COOKIE & 0xff)) |	\
+			 (1 << (CAID_FLAGS & 0xff)))
 #define	CLPSUCC_PIDS	 (1 << (CAID_ALLOW_SHARED & 0xff) |	\
 			 (1 << (CAID_GUID_PREFIX & 0xff)))
 #define	CLPFAIL_PIDS	 (1 << (CAID_ERROR & 0xff))
-#define	CXBREQ_PIDS	 (1 << (CAID_CX_COOKIE & 0xff))
+#define	CXBREQ_PIDS	 (1 << (CAID_COOKIE & 0xff))
 #define	CXBSUCC_PIDS	 0
 #define	CXBFAIL_PIDS	 (1 << (CAID_ERROR & 0xff))
 #define	FINALIZE_PIDS	 0
@@ -228,7 +249,7 @@ typedef struct ctrl_info_st {
 	/* Parse results: */
 	ParseError_t	 result;
 	ControlMsgKind_t type;
-	unsigned char	 transaction [12];
+	TransactionId_t	 transaction;
 	unsigned	 pids;
 
 	/* Parameter values: */
@@ -261,7 +282,7 @@ static struct err_kind_st {
 
 #define	N_CTRL_ERRS	(sizeof (ctrl_errs) / sizeof (struct err_kind_st))
 
-static void tcp_trace_ctrl (int tx, int fd, unsigned char *buf, unsigned len)
+static void tcp_trace_ctrl (int tx, int fd, const unsigned char *buf, unsigned len)
 {
 	CtrlHeader	*hp;
 	Parameter_t	*pp;
@@ -269,6 +290,9 @@ static void tcp_trace_ctrl (int tx, int fd, unsigned char *buf, unsigned len)
 	unsigned char	*dp;
 	unsigned	i, j, h, l, c, left, n;
 	uint32_t	u;
+	uint16_t	hpversion, ppparameter_id, pplength;
+	ControlMsgKind_t hpmsg_kind;
+	unsigned short	hplength;
 	char		sbuf [28];
 	static const char *cmd_str [] = { "IdBind", "SLPort", "CLPort", "CxBind" },
 			  *mode_str [] = { "Request", "Success", "Fail" },
@@ -278,9 +302,12 @@ static void tcp_trace_ctrl (int tx, int fd, unsigned char *buf, unsigned len)
 
 	log_printf (RTPS_ID, 0, "RPSC: %c [%d] - %3u: ", (tx) ? 'T' : 'R', fd, len);
 	hp = (CtrlHeader *) buf;
+	hpversion = TTOHS (hp->version);
+	hpmsg_kind = TTOHS (hp->msg_kind);
+	hplength = TTOHS (hp->length);
 	i = 0;
 	if (!ctrl_protocol_valid (hp->protocol) ||
-	    hp->version < rpsc_protocol_version) {
+	    hpversion < rpsc_protocol_version) {
 		log_printf (RTPS_ID, 0, "???");
 		goto dump;
 	}
@@ -289,48 +316,50 @@ static void tcp_trace_ctrl (int tx, int fd, unsigned char *buf, unsigned len)
 			log_printf (RTPS_ID, 0, ":");
 		log_printf (RTPS_ID, 0, "%02x", buf [i]);
 	}
-	c = hp->msg_kind;
+	c = hpmsg_kind;
 	i += 2;
 	if ((c & MK_VENDOR_SPEC) != 0) {
 		log_printf (RTPS_ID, 0, " ?(%u)", c);
 		goto dump;
 	}
-	h = hp->msg_kind >> 8;
-	l = hp->msg_kind & 0xff;
+	h = hpmsg_kind >> 8;
+	l = hpmsg_kind & 0xff;
 	log_printf (RTPS_ID, 0, " - ");
 	if (h < 12 || h > 14 || l < 1 || (l > 4 && (l != 15 || h != 12))) {
-		log_printf (RTPS_ID, 0, "?(%u)", hp->msg_kind);
+		log_printf (RTPS_ID, 0, "?(%u)", hpmsg_kind);
 		goto dump;
 	}
 	if (l == 15)
 		log_printf (RTPS_ID, 0, "Finalize\r\n");
 	else
 		log_printf (RTPS_ID, 0, "%s%s\r\n", cmd_str [l - 1], mode_str [h - 12]);
-	if (!hp->length || (hp->length == 4 && buf [24] == 1 && buf [25] == 0))
+	if (!hplength || (hplength == 4 && buf [24] == 1 && buf [25] == 0))
 		return;
 
 	i += 2;
-	left = hp->length;
+	left = hplength;
 	dp = (unsigned char *) (hp + 1);
 	while (left >= 2) {
 		pp = (Parameter_t *) dp;
-		if (pp->parameter_id == PID_SENTINEL)
+		ppparameter_id = TTOHS (pp->parameter_id);
+		pplength = TTOHS (pp->length);
+		if (ppparameter_id == PID_SENTINEL)
 			return;
 
-		n = pp->length + 4U;
+		n = pplength + 4U;
 		if (n > left ||
-		    (pp->length & 0x3) != 0) {
+		    (pplength & 0x3) != 0) {
 		    	log_printf (RTPS_ID, 0, "\t? ");
 			goto dump;
 		}
 		dp += n;
 		left -= n;
-		h = pp->parameter_id >> 8;
+		h = ppparameter_id >> 8;
 		if (h >= 0x80) { /* Vendor-specific parameter. */
 		    	log_printf (RTPS_ID, 0, "\t? ");
 			goto dump;
 		}
-		l = pp->parameter_id & 0xff;
+		l = ppparameter_id & 0xff;
 		if ((!h && !(l == 9 || l == 10)) ||
 		    (h == 0x3d && (l < 1 || l > 8)) ||
 		    (h != 0 && h != 0x3d)) {
@@ -342,12 +371,12 @@ static void tcp_trace_ctrl (int tx, int fd, unsigned char *buf, unsigned len)
 			log_printf (RTPS_ID, 0, "\t%10s: ", par_str [l - 1]);
 		else
 			log_printf (RTPS_ID, 0, "\t%10d?: ", l);
-		if (pp->parameter_id == CAID_ERROR ||
-		    pp->parameter_id == CAID_LOC_PORT) {
+		if (ppparameter_id == CAID_ERROR ||
+		    ppparameter_id == CAID_LOC_PORT) {
 			memcpy (&u, &buf [i], 4);
 			log_printf (RTPS_ID, 0, "%u", u);
-			i += pp->length;
-			if (pp->parameter_id == CAID_ERROR) {
+			i += pplength;
+			if (ppparameter_id == CAID_ERROR) {
 				for (j = 0; j < N_CTRL_ERRS; j++)
 					if (ctrl_errs [j].error == u)
 						break;
@@ -360,7 +389,7 @@ static void tcp_trace_ctrl (int tx, int fd, unsigned char *buf, unsigned len)
 			else
 				log_printf (RTPS_ID, 0, ".");
 		}
-		else if (pp->parameter_id == CAID_PORT_OPTIONS) {
+		else if (ppparameter_id == CAID_FLAGS) {
 			if ((buf [i] & PO_DATA) != 0)
 				log_printf (RTPS_ID, 0, "User ");
 			if ((buf [i] & PO_META) != 0)
@@ -373,26 +402,26 @@ static void tcp_trace_ctrl (int tx, int fd, unsigned char *buf, unsigned len)
 				log_printf (RTPS_ID, 0, "Share");
 			else
 				log_printf (RTPS_ID, 0, "NoShare");
-			i += pp->length;
+			i += pplength;
 		}
-		else if (pp->parameter_id == CAID_ALLOW_SHARED) {
+		else if (ppparameter_id == CAID_ALLOW_SHARED) {
 			if (buf [i])
 				log_printf (RTPS_ID, 0, "Share");
 			else
 				log_printf (RTPS_ID, 0, "NoShare");
-			i += pp->length;
+			i += pplength;
 		}
-		else if (pp->parameter_id == CAID_FORWARD) {
+		else if (ppparameter_id == CAID_FORWARD) {
 			log_printf (RTPS_ID, 0, "%u", buf [i]);
-			i += pp->length;
+			i += pplength;
 		}
-		else if (pp->parameter_id == CAID_GUID_PREFIX) {
+		else if (ppparameter_id == CAID_GUID_PREFIX) {
 			prp = (GuidPrefix_t *) &buf [i];
 			i += 12;
 			log_printf (RTPS_ID, 0, "%s", guid_prefix_str (prp, sbuf));
 		}
 		else {
-			for (j = 0; j < pp->length; j++)
+			for (j = 0; j < pplength; j++)
 				log_printf (RTPS_ID, 0, "%02x", buf [i++]);
 		}
 		log_printf (RTPS_ID, 0, "\r\n");
@@ -447,7 +476,7 @@ static void tcp_trace_p_state (const char *type, IP_CX *cxp, int ns)
 			log_printf (RTPS_ID, 0, "C: %s -> %s\r\n",
 				c_state_str [cxp->p_state], 
 				c_state_str [ns]);
-		else
+		else if (cxp->cx_mode == ICM_DATA)
 			log_printf (RTPS_ID, 0, "D: %s -> %s\r\n",
 				d_state_str [cxp->p_state], 
 				d_state_str [ns]);
@@ -466,6 +495,7 @@ static void tcp_trace_p_state (const char *type, IP_CX *cxp, int ns)
 static void info_cleanup (CtrlInfo_t *info)
 {
 	if (info->cookie) {
+		/*dbg_printf ("RPSC: info_cleanup() : free cookie (%p)\r\n", info->cookie);*/
 		xfree (info->cookie);
 		info->cookie = NULL;
 	}
@@ -477,28 +507,31 @@ static void rpsc_parse_pids (CtrlHeader *hp, unsigned pid_set, CtrlInfo_t *info)
 	unsigned char	*dp, *p;
 	unsigned	left, id, n;
 	uint32_t	u;
-	uint16_t	s;
+	uint16_t	s, pplength, ppparameter_id, hplength;
 
-	left = hp->length;
+	hplength = TTOHS (hp->length);
+	left = hplength;
 	dp = (unsigned char *) (hp + 1);
 	info->result = RPSC_OK;
 	while (left >= 2) {
 		pp = (Parameter_t *) dp;
-		if (pp->parameter_id == PID_SENTINEL)
+		ppparameter_id = TTOHS (pp->parameter_id);
+		pplength = TTOHS (pp->length);
+		if (ppparameter_id == PID_SENTINEL)
 			break;
 
-		n = pp->length + 4U;
+		n = pplength + 4U;
 		if (n > left ||
-		    (pp->length & 0x3) != 0) {
+		    (pplength & 0x3) != 0) {
 			info->result = RPSC_ERR_INV_LENGTH;
 			return;
 		}
 		dp += n;
 		left -= n;
-		if (pp->parameter_id >= 0x8000)
+		if (ppparameter_id >= 0x8000)
 			continue;	/* Ignore vendor-specific parameters. */
 
-		id = pp->parameter_id & 0xff;
+		id = ppparameter_id & 0xff;
 		if (id > 31 || ((1 << id) & pid_set) == 0) {
 			info->result = RPSC_ERR_INV_PAR;
 			break;
@@ -509,72 +542,73 @@ static void rpsc_parse_pids (CtrlHeader *hp, unsigned pid_set, CtrlInfo_t *info)
 		info->pids |= (1 << id);
 		switch (id) {
 			case CAID_ERROR:
-				if (pp->length != 4) {
+				if (pplength != 4) {
 					info->result = RPSC_ERR_INV_LENGTH;
 					break;
 				}
 				memcpy (&u, pp->value, sizeof (uint32_t));
-				info->error_kind = u;
+				info->error_kind = TTOHL (u);
 				break;
 			case CAID_UNKN_ATTR:
-				if (pp->length != 4) {
+				if (pplength != 4) {
 					info->result = RPSC_ERR_INV_LENGTH;
 					break;
 				}
 				memcpy (&s, pp->value, sizeof (uint16_t));
-				info->parameter_id = s;
+				info->parameter_id = TTOHS (s);
 				break;
 			case CAID_LOCATOR & 0xff:
-				if (pp->length != 16) {
+				if (pplength != 16) {
 					info->result = RPSC_ERR_INV_LENGTH;
 					break;
 				}
 				memcpy (info->address, pp->value, 16);
 				break;
 			case CAID_LOC_PORT & 0xff:
-				if (pp->length != 4) {
+				if (pplength != 4) {
 					info->result = RPSC_ERR_INV_LENGTH;
 					break;
 				}
 				memcpy (&u, pp->value, sizeof (uint32_t));
-				info->port = u;
+				info->port = TTOHL (u);
 				break;
-			case CAID_CX_COOKIE & 0xff:
+			case CAID_COOKIE & 0xff:
 				if (info->cookie)
-					p = xrealloc (info->cookie, pp->length);
+					p = xrealloc (info->cookie, pplength);
 				else
 					p = xmalloc (pp->length);
 				if (!p) {
 					info->result = RPSC_ERR_NOMEM;
 					break;
 				}
+				/*dbg_printf ("RPSC: new cookie (%p)!\r\n", p);*/
 				info->cookie = p;
-				info->cookie_length = pp->length;
-				memcpy (info->cookie, pp->value, pp->length);
+				info->cookie_length = pplength;
+				memcpy (info->cookie, pp->value, pplength);
 				break;
-			case CAID_PORT_OPTIONS & 0xff:
-				if (pp->length != 4) {
+			case CAID_FLAGS & 0xff:
+				if (pplength != 4) {
 					info->result = RPSC_ERR_INV_LENGTH;
 					break;
 				}
 				info->port_options = pp->value [0];
 				break;
 			case CAID_ALLOW_SHARED & 0xff:
-				if (pp->length != 4) {
+				if (pplength != 4) {
 					info->result = RPSC_ERR_INV_LENGTH;
 					break;
 				}
 				info->shared = (pp->value [0] != 0);
 				break;
 			case CAID_FORWARD & 0xff:
-				if (pp->length != 4) {
+				if (pplength != 4) {
 					info->result = RPSC_ERR_INV_LENGTH;
 					break;
 				}
 				info->forward = pp->value [0];
 				break;
 			case CAID_GUID_PREFIX & 0xff:
-				if (pp->length != 12) {
+				if (pplength != 12) {
 					info->result = RPSC_ERR_INV_LENGTH;
 					break;
 				}
@@ -588,30 +622,34 @@ static void rpsc_parse_pids (CtrlHeader *hp, unsigned pid_set, CtrlInfo_t *info)
 		info_cleanup (info);
 }
 
-static void rpsc_parse (unsigned char *rx, size_t length, CtrlInfo_t *info)
+static void rpsc_parse (const unsigned char *rx, size_t length, CtrlInfo_t *info)
 {
 	unsigned		h, l;
 	CtrlHeader		*chp;
+	uint16_t		chpversion;
+	ControlMsgKind_t	chpmsg_kind;
 
 	ARG_NOT_USED (length)
 
 	memset (info, 0, sizeof (CtrlInfo_t));
 	chp = (CtrlHeader *) rx;
+	chpversion = TTOHS (chp->version);
+	chpmsg_kind = TTOHS (chp->msg_kind);
 
 	/* Validate protocol type and version. */
 	if (!ctrl_protocol_valid (chp->protocol) ||
-	    chp->version < rpsc_protocol_version) {
+	    chpversion < rpsc_protocol_version) {
 		info->result = RPSC_ERR_INV_MSG;
 		return;
 	}
-	if ((chp->msg_kind & MK_VENDOR_SPEC) != 0) {
+	if ((chpmsg_kind & MK_VENDOR_SPEC) != 0) {
 		info->result = RPSC_ERR_VENDOR_KIND;
 		return;
 	}
-	info->type = chp->msg_kind;
+	info->type = chpmsg_kind;
 	memcpy (info->transaction, chp->transaction, 12);
-	h = chp->msg_kind >> 8;
-	l = chp->msg_kind & 0xff;
+	h = chpmsg_kind >> 8;
+	l = chpmsg_kind & 0xff;
 	if (h < 12 || h > 14) {
 		info->result = RPSC_ERR_UNKNOWN_KIND;
 		return;
@@ -663,7 +701,10 @@ static void rpsc_parse (unsigned char *rx, size_t length, CtrlInfo_t *info)
 	}
 }
 
-static size_t rpsc_create (unsigned char *tx, CtrlInfo_t *info, int new_tr)
+static size_t rpsc_create (unsigned char *tx,
+			   CtrlInfo_t    *info,
+			   int           new_tr,
+			   unsigned char **buf)
 {
 	CtrlHeader		*chp;
 	Parameter_t		*pp;
@@ -673,13 +714,21 @@ static size_t rpsc_create (unsigned char *tx, CtrlInfo_t *info, int new_tr)
 	uint32_t		u;
 	uint16_t		s;
 
-	if (!tx || !info)
+	if (!info)
 		return (0);
 
-	length = 0;
+#ifdef TCP_SUSPEND
+	if (!tx && info->type == CMT_ID_BIND_REQ)
+		tx = xmalloc (128);
+#endif
+	if (!tx)
+		return (0);
+
+	*buf = tx;
 	chp = (CtrlHeader *) tx;
+	length = 0;
 	memcpy (chp->protocol, rpsc_protocol_id, 4);
-	chp->version = 0x10;
+	chp->version = HTOTS (0x10);
 	vendor_id_init (chp->vendor_id);
 	if (new_tr) {
 		memcpy (info->transaction, guid_local (), 8);
@@ -687,7 +736,7 @@ static size_t rpsc_create (unsigned char *tx, CtrlInfo_t *info, int new_tr)
 		memcpy (info->transaction + 8, &rpsc_transaction, 4);
 	}
 	memcpy (chp->transaction, info->transaction, 12);
-	chp->msg_kind = info->type;
+	chp->msg_kind = HTOTS (info->type);
 	chp->length = 0;
 	length = sizeof (CtrlHeader);
 	if (!info->pids)
@@ -701,18 +750,18 @@ static size_t rpsc_create (unsigned char *tx, CtrlInfo_t *info, int new_tr)
 
 		pids &= ~m;
 		pp = (Parameter_t *) dp;
-		pp->parameter_id = i;
+		pp->parameter_id = HTOTS (i);
 		if (i < 9)
-			pp->parameter_id |= 0x3d00;
+			pp->parameter_id |= HTOTS (0x3d00);
 		switch (i) {
 			case CAID_ERROR:
 				n = 4;
-				u = info->error_kind;
+				u = HTOTL (info->error_kind);
 				memcpy (pp->value, &u, sizeof (uint32_t));
 				break;
 			case CAID_UNKN_ATTR:
 				n = 4;
-				s = info->parameter_id;
+				s = HTOTS (info->parameter_id);
 				memcpy (pp->value, &s, sizeof (uint16_t));
 				pp->value [2] = pp->value [3] = 0;
 				break;
@@ -722,7 +771,7 @@ static size_t rpsc_create (unsigned char *tx, CtrlInfo_t *info, int new_tr)
 				break;
 			case CAID_LOC_PORT & 0xff:
 				n = 4;
-				u = info->port;
+				u = HTOTL (info->port);
 				memcpy (pp->value, &u, sizeof (uint32_t));
 				break;
 /*			case CAID_CX_TYPE & 0xff: deprecated!
@@ -730,14 +779,14 @@ static size_t rpsc_create (unsigned char *tx, CtrlInfo_t *info, int new_tr)
 				pp->value [0] = info->cx_type;
 				pp->value [1] = pp->value [2] = pp->value [3] = 0;
 				break;*/
-			case CAID_CX_COOKIE & 0xff:
+			case CAID_COOKIE & 0xff:
 				n = info->cookie_length;
 				n = (n + 3) & ~3;
 				memcpy (pp->value, info->cookie, info->cookie_length);
 				for (j = info->cookie_length; j < n; j++)
 					pp->value [j] = 0;
 				break;
-			case CAID_PORT_OPTIONS & 0xff:
+			case CAID_FLAGS & 0xff:
 				n = 4;
 				pp->value [0] = info->port_options;
 				pp->value [1] = pp->value [2] = pp->value [3] = 0;
@@ -760,16 +809,17 @@ static size_t rpsc_create (unsigned char *tx, CtrlInfo_t *info, int new_tr)
 				n = 0;
 				break;
 		}
-		pp->length = n;
+		pp->length = HTOTS (n);
 		n += 4;
 		chp->length += n;
 		length += n;
 		dp += n;
 	}
 	pp = (Parameter_t *) dp;
-	pp->parameter_id = PID_SENTINEL;
+	pp->parameter_id = HTOTS (PID_SENTINEL);
 	pp->length = 0;
 	chp->length += 4;
+	chp->length = HTOTS (chp->length);
 	return (length + 4);
 }
 
@@ -779,14 +829,19 @@ static WR_RC tcp_send_ctrl (IP_CX *cxp, CtrlInfo_t *info, int new_tr)
 {
 	size_t		n;
 	WR_RC		rc;
-	unsigned char	*txp;
+	unsigned char	*txp, *buf;
+	int		new_buffer;
 
-	n = rpsc_create (rtps_tx_buf, info, new_tr);
+	if (cxp->suspended)
+		return (WRITE_OK);
+
+	n = rpsc_create (rtps_tx_buf, info, new_tr, &buf);
 	if (!n) {
 		warn_printf ("TCP: can't create control message!");
 		cxp->stats.nomem++;
 		return (WRITE_ERROR);
 	}
+	new_buffer = (buf != rtps_tx_buf);
 
 	/* Set txp either to a newly allocated buffer (TLS expects to reuse the
 	   same buffer data in some situations) or to rtps_tx_buf (for UDP).
@@ -794,42 +849,56 @@ static WR_RC tcp_send_ctrl (IP_CX *cxp, CtrlInfo_t *info, int new_tr)
 	   doesn't need it anymore. */
 #ifdef DDS_SECURITY
 	if (cxp->stream_fcts == &tls_functions) {
-		txp = xmalloc (n);
-		if (!txp) {
-			warn_printf ("tcp_send_ctrl: out-of-memory for send buffer!");
-			cxp->stats.nomem++;
-			return (WRITE_ERROR);
+		if (new_buffer) {
+			txp = buf;
+			new_buffer = 0;
 		}
-		memcpy (txp, rtps_tx_buf, n);
+		else {
+			txp = xmalloc (n);
+			if (!txp) {
+				warn_printf ("tcp_send_ctrl: out-of-memory for send buffer!");
+				cxp->stats.nomem++;
+				return (WRITE_ERROR);
+			}
+			memcpy (txp, rtps_tx_buf, n);
+		}
 	}
 	else
 #endif
-		txp = rtps_tx_buf;
+		txp = buf;
 
 	trc_print1 ("C:T[%d:", cxp->fd);
 	rc = cxp->stream_fcts->write_msg (cxp, txp, n);
 	if (rc == WRITE_FATAL) {
 		log_printf (RTPS_ID, 0, "tcp_send_ctrl: fatal error sending control message [%d] {rc=%d} (%s).\r\n", cxp->fd, rc, strerror (ERRNO));
+		if (new_buffer)
+			xfree (buf);
 		return (rc);
 	}
 	else if (rc == WRITE_ERROR) {
 		log_printf (RTPS_ID, 0, "tcp_send_ctrl: error sending control message [%d] {rc=%d} (%s).\r\n", cxp->fd, rc, strerror (ERRNO));
 		cxp->stats.write_err++;
+		if (new_buffer)
+			xfree (buf);
 		return (rc);
 	}
 	else if (rc == WRITE_BUSY) {
 		log_printf (RTPS_ID, 0, "tcp_send_ctrl: Write still busy from previous control message [%d] {rc=%d} (%s).\r\n", cxp->fd, rc, strerror (ERRNO));
 		if (info->type != CMT_CX_BIND_SUCC ||	/* Retry after time-out! */
-		    cxp->cxbs_queued) 			/* Already pending! */
+		    cxp->cxbs_queued) {			/* Already pending! */
+			if (new_buffer)
+				xfree (buf);
 			return (rc);
-
-		txp = xmalloc (n);
-		if (!txp) {
-			warn_printf ("tcp_send_ctrl: out-of-memory for retry buffer(2)!");
-			cxp->stats.nomem++;
-			return (WRITE_ERROR);
 		}
-		memcpy (txp, rtps_tx_buf, n);
+		if (!new_buffer) {
+			txp = xmalloc (n);
+			if (!txp) {
+				warn_printf ("tcp_send_ctrl: out-of-memory for retry buffer(2)!");
+				cxp->stats.nomem++;
+				return (WRITE_ERROR);
+			}
+			memcpy (txp, buf, n);
+		}
 		cxp->data = txp;
 		cxp->data_length = n;
 		cxp->cxbs_queued = 1;
@@ -838,13 +907,15 @@ static WR_RC tcp_send_ctrl (IP_CX *cxp, CtrlInfo_t *info, int new_tr)
 	else if (rc == WRITE_PENDING) {
 		log_printf (RTPS_ID, 0, "tcp_send_ctrl: Write pending of following control message [%d] {rc=%d} (%s).\r\n", cxp->fd, rc, strerror (ERRNO));
 	}
-	trc_print_region (rtps_tx_buf, n, 0, 0);
+	trc_print_region (buf, n, 0, 0);
 	trc_print ("]\r\n");
 	ADD_ULLONG (cxp->stats.octets_sent, n);
 	cxp->stats.packets_sent++;
 #ifdef TCP_TRC_CONTROL
-	tcp_trace_ctrl (1, cxp->fd, rtps_tx_buf, n);
+	tcp_trace_ctrl (1, cxp->fd, buf, n);
 #endif
+	if (new_buffer)
+		xfree (buf);
 	return (rc);
 }
 
@@ -884,12 +955,20 @@ static DDS_ReturnCode_t tcp_send_id_bind_request (IP_CX *cxp, TMR_FCT fct, Ticks
 	/*log_printf (RTPS_ID, 0, "TCP(CC): Sending IdentityBindRequest\r\n");*/
 	memset (&info, 0, sizeof (info));
 	info.type = CMT_ID_BIND_REQ;
-	info.pids = IDBREQ_PIDS;
-	if ((cxp->locator->locator.kind & LOCATOR_KINDS_IPv4) != 0)
-		memcpy (info.address + 12, ipv4_proto.own, 4);
+	info.pids = IDBREQ_PIDS & ~(1 << (CAID_LOCATOR & 0xff));
+	if ((cxp->locator->locator.kind & LOCATOR_KINDS_IPv4) != 0) {
+		if (ipv4_proto.own) {
+			memcpy (info.address + 12, ipv4_proto.own, 4);
+			info.pids |= (1 << (CAID_LOCATOR & 0xff));
+		}
+	}
 #ifdef DDS_IPV6
-	else if ((cxp->locator->locator.kind & LOCATOR_KINDS_IPv6) != 0)
-		memcpy (info.address, ipv6_proto.own, 16);
+	else if ((cxp->locator->locator.kind & LOCATOR_KINDS_IPv6) != 0) {
+		if (ipv6_proto.own) {
+			memcpy (info.address, ipv6_proto.own, 16);
+			info.pids |= (1 << (CAID_LOCATOR & 0xff));
+		}
+	}
 #endif
 	else
 		warn_printf ("TCP: can't set IdentityBindRequest address!");
@@ -1056,7 +1135,7 @@ static DDS_ReturnCode_t tcp_send_clport_request (IP_CX    *cxp,
 		info.cookie_length = length;
 	}
 	else
-		info.pids &= ~(1 << (CAID_CX_COOKIE & 0xff));
+		info.pids &= ~(1 << (CAID_COOKIE & 0xff));
 	ret = tcp_send_request (cxp->parent, cxp, &info, fct, t);
 	if (ret == DDS_RETCODE_ALREADY_DELETED) {
 		tcp_close_fd (cxp);
@@ -1170,10 +1249,10 @@ static DDS_ReturnCode_t tcp_send_finalize (IP_CX *cxp)
 		return (DDS_RETCODE_OK);
 }
 
-static int tcp_rx_parse_msg (int           fd,
-                             CtrlInfo_t    *info,
-			     unsigned char *rx_buf,
-			     size_t        size)
+static int tcp_rx_parse_msg (int                 fd,
+                             CtrlInfo_t          *info,
+			     const unsigned char *rx_buf,
+			     size_t              size)
 {
 	int		rpsc_msg;
 	CtrlHeader	*hp;
@@ -1223,40 +1302,55 @@ static char		public_buf [64];
 static unsigned char	tcp_mcast_ip [] = { 239, 255, 0, 1 };
 
 int			tcp_available = 1;
+unsigned long		tcp_qdropped;
 
 #ifdef TCP_VALIDATE_CXS
 
-static void tcp_cxs_validate (void)
+static void tcp_cxs_validate (IP_CX *p)
 {
 	IP_CX		*ccxp, *cxp;
 	unsigned	i;
 
+	if (p && p == tcpv4_server)
+		abort ();
+
 	if (tcpv4_server)
 		for (ccxp = tcpv4_server->clients; ccxp; ccxp = ccxp->next) {
+			if (p && p == ccxp)
+				abort ();
 			if (ccxp == ccxp->next || ccxp->parent != tcpv4_server)
 				abort ();
-			if (!cxp->fd)
-				abort;
+			if (ccxp->fd_owner && !ccxp->fd)
+				abort ();
 
 			for (cxp = ccxp->clients; cxp; cxp = cxp->next) {
+				if (p && p == cxp)
+					abort ();
 				if (cxp == cxp->next || cxp->parent != ccxp)
 					abort ();
-				if (!cxp->fd)
+				if (cxp->fd_owner && !cxp->fd)
 					abort ();
 			}
 		}
 #ifdef DDS_IPV6
+	if (p && p == tcpv6_server)
+		abort ();
+
 	if (tcpv6_server)
 		for (ccxp = tcpv6_server->clients; ccxp; ccxp = ccxp->next) {
+			if (p && p == ccxp)
+				abort ();
 			if (ccxp == ccxp->next || ccxp->parent != tcpv6_server)
 				abort ();
-			if (!cxp->fd)
+			if (ccxp->fd_owner && !ccxp->fd)
 				abort ();
 
 			for (cxp = ccxp->clients; cxp; cxp = cxp->next) {
+				if (p && p == cxp)
+					abort ();
 				if (cxp == cxp->next || cxp->parent != ccxp)
 					abort ();
-				if (!cxp->fd)
+				if (cxp->fd_owner && !cxp->fd)
 					abort ();
 			}
 		}
@@ -1264,31 +1358,90 @@ static void tcp_cxs_validate (void)
 	for (i = 0; i < TCP_MAX_CLIENTS; i++) {
 		ccxp = tcp_client [i];
 		if (!ccxp)
-			continue;
+			break;
+
+		if (p && p == ccxp)
+			abort ();
 
 		for (cxp = ccxp->clients; cxp; cxp = cxp->next) {
+			if (p && p == cxp)
+				abort ();
 			if (cxp == cxp->next || cxp->parent != ccxp)
 				abort ();
-			if (!cxp->fd)
+			if (cxp->fd_owner && !cxp->fd)
 				abort ();
 		}
 	}
 }
 
-#define	VALIDATE_CXS()	tcp_cxs_validate()
+static void tcp_cx_check (IP_CX *p)
+{
+	IP_CX		*ccxp, *cxp;
+	unsigned	i;
+
+	if (p == tcpv4_server)
+		abort ();
+
+	if (tcpv4_server)
+		for (ccxp = tcpv4_server->clients; ccxp; ccxp = ccxp->next) {
+			if (p == ccxp)
+				abort ();
+
+			for (cxp = ccxp->clients; cxp; cxp = cxp->next)
+				if (p == cxp)
+					abort ();
+		}
+#ifdef DDS_IPV6
+	if (p == tcpv6_server)
+		abort ();
+
+	if (tcpv6_server)
+		for (ccxp = tcpv6_server->clients; ccxp; ccxp = ccxp->next) {
+			if (p == ccxp)
+				abort ();
+
+			for (cxp = ccxp->clients; cxp; cxp = cxp->next)
+				if (p == cxp)
+					abort ();
+		}
+#endif
+	for (i = 0; i < TCP_MAX_CLIENTS; i++) {
+		ccxp = tcp_client [i];
+		if (!ccxp)
+			break;
+
+		if (p == ccxp)
+			abort ();
+
+		for (cxp = ccxp->clients; cxp; cxp = cxp->next)
+			if (p == cxp)
+				abort ();
+	}
+}
+
+#define	VALIDATE_CXS(p)	tcp_cxs_validate(p)
+#define	VALIDATE_NEW(p)	tcp_cx_check(p)
 #else
-#define	VALIDATE_CXS()
+#define	VALIDATE_CXS(p)
+#define	VALIDATE_NEW(p)
 #endif
 
 static void tcp_cx_closed (IP_CX *cxp)
 {
 	if (cxp->fd_owner)
 		log_printf (RTPS_ID, 0, "TCP(*:%u): [%d] connection closed - %p.\r\n", cxp->handle, cxp->fd, (void *) cxp);
-	if ((cxp->fd_owner || cxp->cx_state == CXS_CONREQ) && 
-	    cxp->stream_fcts &&
-	    cxp->stream_fcts->disconnect)
-		cxp->stream_fcts->disconnect (cxp);
 
+	if (cxp->fd_owner || cxp->cx_state == CXS_CONREQ) {
+		if (cxp->stream_fcts && cxp->stream_fcts->disconnect)
+			cxp->stream_fcts->disconnect (cxp);
+		else {
+			close (cxp->fd);
+			sock_fd_remove_socket (cxp->fd);
+			cxp->cx_state = CXS_CLOSED;
+			cxp->fd_owner = 0;
+			cxp->fd = 0;
+		}
+	}
 	TCP_NCX_STATE ("*", cxp, CXS_CLOSED);
 	TCP_NP_STATE ("*", cxp, TCS_IDLE);
 }
@@ -1296,6 +1449,7 @@ static void tcp_cx_closed (IP_CX *cxp)
 static void tcp_free_data (IP_CX *cxp)
 {
 	if (cxp->data && cxp->data_length) {
+		/*dbg_printf ("RPSC: tcp_free_data() : free cookie (%p)\r\n", cxp->data);*/
 		xfree (cxp->data);
 		cxp->data = NULL;
 		cxp->data_length = 0;
@@ -1306,7 +1460,7 @@ static void tcp_close_data (IP_CX *cxp)
 {
 	IP_CX	*p, *prev, *paired;
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 	/*log_printf (RTPS_ID, 0, "tcp_close_data(%p:%d);\r\n", (void *) cxp, cxp->handle);*/
 	/* Unpair connections if paired. */
@@ -1340,7 +1494,7 @@ static void tcp_close_data (IP_CX *cxp)
 	/* Close the file descriptor and adjust the state. */
 	tcp_cx_closed (cxp);
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 	/* Remove timer if still running. */
 	if (cxp->timer) {
@@ -1356,14 +1510,14 @@ static void tcp_close_data (IP_CX *cxp)
 		cxp->head = NULL;
 	}
 
-	/* Free cookie if still present. */
+	/* Free stale cookie. */
 	tcp_free_data (cxp);
 
 	/* Cleanup all child contexts. */
 	while (cxp->clients)
 		tcp_close_data (cxp->clients);
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 	/* Remove context from parent list. */
 	if (cxp->parent)
@@ -1378,7 +1532,7 @@ static void tcp_close_data (IP_CX *cxp)
 				break;
 			}
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 	/* Remove context handle if it was set. */
 	if (cxp->handle) {
@@ -1390,7 +1544,7 @@ static void tcp_close_data (IP_CX *cxp)
 		cxp->handle = 0;
 	}
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 	/* Free the locator. */
 	if (cxp->locator) {
@@ -1404,34 +1558,34 @@ static void tcp_close_data (IP_CX *cxp)
 	/* Free the context. */
 	rtps_ip_free (cxp);
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (cxp);
 }
 
 static void tcp_close_fd (IP_CX *cxp)
 {
-	IP_CX	*cxp_fd, *cxp_nfd;
+	IP_CX	*cxp_fd;
 
-	if (cxp->paired && cxp->paired->fd == cxp->fd) {
-		if (cxp->fd_owner) {
-			cxp_fd = cxp;
-			cxp_nfd = cxp->paired;
-		}
-		else {
+	if (cxp->paired &&
+	    cxp->paired != cxp &&
+	    cxp->paired->fd == cxp->fd) {
+		if (cxp->fd_owner && !cxp->paired->fd_owner)
+			tcp_close_data (cxp->paired);
+		else if (!cxp->fd_owner && cxp->paired->fd_owner) {
 			cxp_fd = cxp->paired;
-			cxp_nfd = cxp;
+			tcp_close_data (cxp);
+			cxp = cxp_fd;
 		}
-		tcp_close_data (cxp_nfd);
-		tcp_close_data (cxp_fd);
 	}
-	else
-		tcp_close_data (cxp);
+	tcp_close_data (cxp);
 }
+
+#define	MAX_TX_LATENCY	(TICKS_PER_SEC * 2)
 
 static WR_RC tcp_send_msg (IP_CX *cxp)
 {
 	RMBUF		*mp;
 	RME		*mep;
-	RMREF		*next_mrp;
+	RMREF		*next_mrp, *mrp;
 	unsigned char	*txp;
 	size_t		max_size;
 	unsigned	ofs;
@@ -1439,8 +1593,25 @@ static WR_RC tcp_send_msg (IP_CX *cxp)
 	WR_RC		rc;
 
 	/* Get the first message from the queue. */
-	mp = cxp->head->message;
-	next_mrp = cxp->head->next;
+	while ((mrp = cxp->head) != NULL && 
+	       sys_ticksdiff (mrp->ticks, sys_ticks_last) > MAX_TX_LATENCY) {
+		next_mrp = mrp->next;
+		mrp->next = NULL;
+		rtps_unref_message (mrp);
+		cxp->head = next_mrp;
+		cxp->nqueued--;
+		tcp_qdropped++;
+		cxp->qstart = sys_ticks_last;
+		if (next_mrp == NULL) { /* Update tail if list becomes empty. */
+			cxp->tail = NULL;
+			return (WRITE_OK);
+		}
+	}
+	if (!mrp)
+		return (WRITE_OK);
+
+	next_mrp = mrp->next;
+	mp = mrp->message;
 
 	/* Set txp either to a newly allocated buffer for TLS, since it expects
 	   to reuse the buffer data in some situations.  TLS will xfree() the
@@ -1469,7 +1640,7 @@ static WR_RC tcp_send_msg (IP_CX *cxp)
 	else {
 #endif
 		txp = rtps_tx_buf;
-		max_size = MAX_TX_SIZE;
+		max_size = rtps_max_tx_size;
 #ifdef DDS_SECURITY
 	}
 #endif
@@ -1504,9 +1675,14 @@ static WR_RC tcp_send_msg (IP_CX *cxp)
 		goto done;
 	}
 	n = ofs - sizeof (mp->header) - sizeof (uint32_t);
-	*((uint32_t *) (txp + sizeof (mp->header))) = n;
+	*((uint32_t *) (txp + sizeof (mp->header))) = HTOTL (n);
 
 	trc_print1 ("D:T[%d:", cxp->fd);
+#ifdef MSG_TRACE
+	if (cxp->trace)
+		rtps_ip_trace (cxp->handle, 'T', &cxp->locator->locator,
+			       cxp->dst_addr, cxp->dst_port, mp);
+#endif
 	rc = cxp->stream_fcts->write_msg (cxp, txp, ofs);
 	if (rc == WRITE_FATAL) {
 		trc_print ("] WRITE_FATAL\r\n");
@@ -1535,7 +1711,8 @@ static WR_RC tcp_send_msg (IP_CX *cxp)
 	cxp->head = next_mrp;
 	if (next_mrp == NULL) /* Update tail if list becomes empty. */
 		cxp->tail = NULL;
-	cxp->stats.nqueued--;
+	cxp->nqueued--;
+	cxp->qstart = sys_ticks_last;
 	return (rc);
 }
 
@@ -1602,12 +1779,26 @@ static void tcp_forward_meta_mcast (IP_CX *cxp, RMBUF *msg)
 
 #endif
 
+static void tcp_pair_cx (IP_CX *rx_cxp, IP_CX *tx_cxp)
+{
+#ifdef TCP_TRC_STATE
+	log_printf (RTPS_ID, 0, "TCP: pair Rx {%u} and Tx {%u}!\r\n", rx_cxp->handle, tx_cxp->handle);
+#endif
+	assert (rx_cxp != tx_cxp && rx_cxp->paired == NULL && tx_cxp->paired == NULL);
+	tx_cxp->paired = rx_cxp;
+	rx_cxp->paired = tx_cxp;
+	if (!rx_cxp->has_prefix && tx_cxp->has_prefix) {
+		rx_cxp->dst_prefix = tx_cxp->dst_prefix;
+		rx_cxp->has_prefix = 1;
+	}
+}
+
 /* tcp_rx_buffer -- An RTPS message was received over a TCP connection. */
 
-static void tcp_rx_buffer (IP_CX *cxp,
-			   IP_CX *paired_cxp,
-			   unsigned char *buffer,
-			   size_t length)
+static void tcp_rx_buffer (IP_CX               *cxp,
+			   IP_CX               *paired_cxp,
+			   const unsigned char *buffer,
+			   size_t              length)
 {
 	IP_CX	*tx_cxp;
 	RMBUF	*mp;
@@ -1618,10 +1809,16 @@ static void tcp_rx_buffer (IP_CX *cxp,
 		for (tx_cxp = cxp->parent->clients; tx_cxp; tx_cxp = tx_cxp->next)
 			if (tx_cxp->id == cxp->id &&
 			    tx_cxp->tx_data &&
-			    tx_cxp != cxp  &&
-			    (tx_cxp->locator->locator.flags == cxp->locator->locator.flags)) {
-				tx_cxp->paired = cxp;
-				cxp->paired = tx_cxp;
+			    tx_cxp != cxp &&
+			    tx_cxp->p_state > TDS_WPORTOK &&
+			    tx_cxp->locator->locator.flags == cxp->locator->locator.flags) {
+
+				/* If already paired: kill old (obsolete) connection. */
+				if (tx_cxp->paired && tx_cxp->paired != cxp)
+					tcp_close_data (tx_cxp->paired);
+
+				/* Pair new connection with tx_cxp. */
+				tcp_pair_cx (cxp, tx_cxp);
 				break;
 			}
 	}
@@ -1641,7 +1838,7 @@ static void tcp_rx_buffer (IP_CX *cxp,
 		}
 	}
 	else {
-		/*log_printf (RTPS_ID, 0, "(TCP-RTPS-NoCx:%u)", cxp->locator->locator.port);*/
+		/*log_printf (RTPS_ID, 0, "(TCP-RTPS-NoCx:%u)\r\n", cxp->locator->locator.port);*/
 		rtps_rx_buffer (cxp, buffer, length, NULL, 0);
 	}
 }
@@ -1750,7 +1947,7 @@ static void cdt_connected (IP_CX *cxp)
 	TCP_NP_STATE ("CDT", cxp, TDS_WCBINDOK);
 }
 
-static int cdt_control (IP_CX *cxp, unsigned char *msg, size_t size);
+static int cdt_control (IP_CX *cxp, const unsigned char *msg, size_t size);
 
 static void continue_write (IP_CX *cxp)
 {
@@ -1862,7 +2059,7 @@ static IP_CX *reverse_cx (IP_CX *cxp)
 					rxp = xp;
 			}
 		}
-		VALIDATE_CXS ();
+		VALIDATE_CXS (NULL);
 	}
 #else
 	ARG_NOT_USED (cxp)
@@ -1872,7 +2069,7 @@ static IP_CX *reverse_cx (IP_CX *cxp)
 
 static void cdt_wp_succ (IP_CX *cxp)
 {
-	CtrlInfo_t	 *info = (CtrlInfo_t *) cxp->data;
+	CtrlInfo_t	 *info = (CtrlInfo_t *) cxp->info;
 	IP_CX		 *rcxp;
 	/*unsigned	 port, handle;*/
 	DDS_ReturnCode_t r;
@@ -1886,7 +2083,6 @@ static void cdt_wp_succ (IP_CX *cxp)
 	};
 
 	cxp->stream_cb = &cdt_control_cb;
-
 	cxp->data = info->cookie;
 	cxp->data_length = info->cookie_length;
 	info->cookie = NULL;
@@ -1895,8 +2091,7 @@ static void cdt_wp_succ (IP_CX *cxp)
 		cdt_connect (cxp);
 	else {
 		log_printf (RTPS_ID, 0, "TCP(CDT:%u): data connection (%u) shared on %p(%u) [%u]\r\n", cxp->handle, cxp->dst_port, (void *) rcxp, rcxp->handle, rcxp->fd);
-		cxp->paired = rcxp;
-		rcxp->paired = cxp;
+		tcp_pair_cx (rcxp, cxp);
 		cxp->fd = rcxp->fd;
 		TCP_NCX_STATE ("CDT", cxp, CXS_OPEN);
 		/*handle = cxp->handle;
@@ -1911,6 +2106,10 @@ static void cdt_wp_succ (IP_CX *cxp)
 	if ((info->pids & (1 << (CAID_GUID_PREFIX & 0xff))) != 0) {
 		cxp->dst_prefix = info->prefix;
 		cxp->has_prefix = 1;
+		if (cxp->paired && !cxp->paired->has_prefix) {
+			cxp->paired->dst_prefix = info->prefix;
+			cxp->paired->has_prefix = 1;
+		}
 	}
 }
 
@@ -2052,7 +2251,7 @@ static void cdt_finalize (IP_CX *cxp)
 		(*fct) (cxp);
 }
 
-static int cdt_control (IP_CX *cxp, unsigned char *msg, size_t size)
+static int cdt_control (IP_CX *cxp, const unsigned char *msg, size_t size)
 {
 	uint32_t	*wp;
 	CtrlInfo_t	info;
@@ -2073,11 +2272,15 @@ static int cdt_control (IP_CX *cxp, unsigned char *msg, size_t size)
 		if (cxp->paired->p_state < TDS_DATA)
 			return (1);	/* RTPS messages only allowed after successful bind! */
 
+		if (cxp->paired->fd != cxp->fd)
+			log_printf (RTPS_ID, 0, "TCP(CDT:%u): RTPS message received!\r\n", cxp->handle);
+
 		ADD_ULLONG (cxp->paired->stats.octets_rcvd, size);
 		cxp->paired->stats.packets_rcvd++;
 
 		for (i = 0, wp = (uint32_t *) (msg + 20); i < 5; i++, wp--)
 			*wp = *(wp - 1);
+
 		tcp_rx_buffer (cxp->paired, cxp, msg + 4, size - 4);
 		return (1);
 	}
@@ -2085,8 +2288,10 @@ static int cdt_control (IP_CX *cxp, unsigned char *msg, size_t size)
 	cxp->stats.packets_rcvd++;
 
 	memcpy (&tid, info.transaction + 8, 4);
-	cxp->data = &info;
-	cxp->data_length = 0;
+	if (info.type == CMT_CX_BIND_SUCC)
+		tcp_free_data (cxp);	/* Free stale cookie. */
+
+	cxp->info = &info;
 	switch (info.type) {
 		case CMT_CX_BIND_SUCC:
 			/*log_printf (RTPS_ID, 0, "TCP(CDT): ConnectionBindSuccess received.\r\n");*/
@@ -2111,8 +2316,6 @@ static int cdt_control (IP_CX *cxp, unsigned char *msg, size_t size)
 			else
 				cdt_finalize (cxp);
 			info_cleanup (&info);
-                        cxp->data = NULL;
-                        cxp->data_length = 0;
 			return (0);
 
 		default:
@@ -2120,8 +2323,6 @@ static int cdt_control (IP_CX *cxp, unsigned char *msg, size_t size)
 	  		break;
 	}
 	info_cleanup (&info);
-        cxp->data = NULL;
-        cxp->data_length = 0;
 	return (1);
 }
 
@@ -2171,7 +2372,6 @@ static void cdr_connected (IP_CX *cxp)
 {
 	DDS_ReturnCode_t	r;
 
-	log_printf (RTPS_ID, 0, "TCP(CDR:%u): data connection (%u) established on [%d].\r\n", cxp->handle, cxp->group->locator->locator.port, cxp->fd);
 	TCP_NCX_STATE ("CDR", cxp, CXS_OPEN);
 	r = tcp_send_cx_bind_request (cxp, cdr_timeout, CXBREQ_TO);
 	if (r == DDS_RETCODE_ALREADY_DELETED)
@@ -2179,7 +2379,7 @@ static void cdr_connected (IP_CX *cxp)
 
 	cxp->retries = CXBREQ_RETRIES;
 	TCP_NP_STATE ("CDR", cxp, TDS_WCBINDOK);
-	if (cxp->paired)
+	if (cxp->paired && cxp->fd_owner && !cxp->paired->fd_owner)
 		cxp->paired->fd = cxp->fd;
 }
 
@@ -2189,7 +2389,20 @@ static void cdr_closed (IP_CX *cxp)
 	tcp_close_fd (cxp);
 }
 
-#define cdr_cx_cxok	cdr_connected
+static void cdr_cx_cxok (IP_CX *cxp)
+{
+	log_printf (RTPS_ID, 0, "TCP(CDR:%u): data connection (%u) established on [%d].\r\n", cxp->handle, cxp->group->locator->locator.port, cxp->fd);
+	cdr_connected (cxp);
+}
+
+static void cdr_x_cxok (IP_CX *cxp)
+{
+	log_printf (RTPS_ID, 0, "TCP(CDR:%u): data connection (%u) rebind on [%d].\r\n", cxp->handle, cxp->group->locator->locator.port, cxp->fd);
+	cdr_connected (cxp);
+}
+
+#define cdr_cb_cxok	cdr_x_cxok
+#define cdr_d_cxok	cdr_x_cxok
 #define cdr_x_cerr	tcp_close_fd
 
 static void cdr_cb_succ (IP_CX *cxp)
@@ -2212,14 +2425,14 @@ static CDTFCT cdr_fsm [CDR_NEVENTS][CDR_NSTATES] = {
 	      /*IDLE    WCONTROL WPORTOK  WCXOK        WCBINDOK     DATA*/
 /*CCFAIL  */  {	NULL,   NULL,    NULL,    cdr_x_ctrl,  cdr_x_ctrl,  cdr_x_ctrl },
 /*TO      */  {	NULL,   NULL,    NULL,    cdr_cx_to,   cdr_cb_to,   NULL       },
-/*CXOK    */  {	NULL,   NULL,    NULL,    cdr_cx_cxok, NULL,        NULL       },
+/*CXOK    */  {	NULL,   NULL,    NULL,    cdr_cx_cxok, cdr_cb_cxok, cdr_d_cxok },
 /*CXERR   */  {	NULL,   NULL,    NULL,    cdr_x_cerr,  cdr_x_cerr,  cdr_x_cerr },
 /*CXBSUCC */  { NULL,   NULL,    NULL,    NULL,        cdr_cb_succ, NULL       },
 /*CXBFAIL */  { NULL,   NULL,    NULL,    NULL,        cdr_cb_fail, NULL       },
 /*FINALIZE*/  {	NULL,   NULL,    NULL,    NULL,        cdr_cb_fin,  cdr_d_fin  }
 };
 
-static int cdr_control (IP_CX *cxp, unsigned char *msg, size_t size);
+static int cdr_control (IP_CX *cxp, const unsigned char *msg, size_t size);
 
 static void cdr_connect (IP_CX *cxp)
 {
@@ -2253,12 +2466,23 @@ static void cdr_port_req (IP_CX *ccxp, CtrlInfo_t *info)
 {
 	IP_CX			*cxp, *gcxp, *rcxp;
 	GuidPrefix_t		*sprefix;
+	CDTFCT			fct;
 	DDS_ReturnCode_t	ret;
 
 	/* Try to find existing context with the requested port. */
 	for (cxp = ccxp->clients; cxp; cxp = cxp->next)
 		if (cxp->locator->locator.port == info->port && cxp->group) {
-			tcp_send_clport_fail (ccxp, info, CERR_ALLOC_MISMATCH);
+			if (cxp->p_state >= TDS_WCBINDOK) {
+				cxp->data = info->cookie;
+				cxp->data_length = info->cookie_length;
+				info->cookie = NULL;
+				fct = cdr_fsm [CDRE_CXOK][cxp->p_state];
+				(*fct) (cxp);
+				sprefix = cxp->group->has_prefix ? &cxp->group->dst_prefix : NULL;
+				tcp_send_clport_success (ccxp, info, 1, sprefix);
+			}
+			else
+				tcp_send_clport_fail (ccxp, info, CERR_ALLOC_MISMATCH);
 			return;
 		}
 
@@ -2305,10 +2529,9 @@ static void cdr_port_req (IP_CX *ccxp, CtrlInfo_t *info)
 	cxp->locator->locator.handle = cxp->handle;
 
 	rcxp = ((info->port_options & PO_SHARE) != 0) ? reverse_cx (cxp) : NULL;
-	if (rcxp) {
-		cxp->paired = rcxp;
-		rcxp->paired = cxp;
-	}
+	if (rcxp)
+		tcp_pair_cx (cxp, rcxp);
+
 	sprefix = gcxp->has_prefix ? &gcxp->dst_prefix : NULL;
 	if (rcxp && rcxp->fd) {
 		log_printf (RTPS_ID, 0, "TCP(CDR:%u): data connection (%u) shared on %p(%u) [%u]\r\n", cxp->handle, cxp->group->locator->locator.port, (void *) rcxp, rcxp->handle, rcxp->fd);
@@ -2362,7 +2585,7 @@ static void cdr_timeout (uintptr_t user)
 
 static void cdr_cxbind_succ (IP_CX *cxp)
 {
-	CDTFCT		fct;
+	CDRFCT		fct;
 
 	fct = cdr_fsm [CDRE_CXBSUCC][cxp->p_state];
 	if (fct)
@@ -2373,7 +2596,7 @@ static void cdr_cxbind_succ (IP_CX *cxp)
 
 static void cdr_cxbind_fail (IP_CX *cxp)
 {
-	CDTFCT		fct;
+	CDRFCT		fct;
 
 	fct = cdr_fsm [CDRE_CXBFAIL][cxp->p_state];
 	if (fct)
@@ -2382,14 +2605,14 @@ static void cdr_cxbind_fail (IP_CX *cxp)
 
 static void cdr_finalize (IP_CX *cxp)
 {
-	CDTFCT		fct;
+	CDRFCT		fct;
 
 	fct = cdr_fsm [CDRE_FINALIZE][cxp->p_state];
 	if (fct)
 		(*fct) (cxp);
 }
 
-static int cdr_control (IP_CX *cxp, unsigned char *msg, size_t size)
+static int cdr_control (IP_CX *cxp, const unsigned char *msg, size_t size)
 {
 	uint32_t	*wp;
 	CtrlInfo_t	info;
@@ -2412,16 +2635,20 @@ static int cdr_control (IP_CX *cxp, unsigned char *msg, size_t size)
 		if (cxp->p_state < TDS_DATA)
 			return (1); /* RTPS messages only allowed after successful bind! */
 
-		for (i = 0, wp = (uint32_t *) (msg + 20); i < 5; i++, wp--)
-			*wp = *(wp - 1);
-		tcp_rx_buffer (cxp, cxp->paired, msg + 4, size - 4);
 		ADD_ULLONG (cxp->group->stats.octets_rcvd, (unsigned) (size - 4));
 		cxp->group->stats.packets_rcvd++;
+
+		for (i = 0, wp = (uint32_t *) (msg + 20); i < 5; i++, wp--)
+			*wp = *(wp - 1);
+
+		tcp_rx_buffer (cxp, cxp->paired, msg + 4, size - 4);
 		return (1);
 	}
 	memcpy (&tid, info.transaction + 8, 4);
-	cxp->data = &info;
-	cxp->data_length = 0;
+	if (info.type == CMT_CX_BIND_SUCC)
+		tcp_free_data (cxp);	/* Stale cookie. */
+
+	cxp->info = &info;
 	switch (info.type) {
 		case CMT_CX_BIND_SUCC:
 			/*log_printf (RTPS_ID, 0, "TCP(CDR): ConnectionBindSuccess received.\r\n");*/
@@ -2440,8 +2667,6 @@ static int cdr_control (IP_CX *cxp, unsigned char *msg, size_t size)
 			else if (cxp->paired && tid == cxp->paired->transaction_id)
 				cdt_cxbind_fail (cxp->paired);
 			info_cleanup (&info);
-                        cxp->data = NULL;
-                        cxp->data_length = 0;
 			return (0);
 
 		case CMT_FINALIZE:
@@ -2451,8 +2676,6 @@ static int cdr_control (IP_CX *cxp, unsigned char *msg, size_t size)
 			else
 				cdr_finalize (cxp);
 			info_cleanup (&info);
-                        cxp->data = NULL;
-                        cxp->data_length = 0;
 			return (0);
 
 		default:
@@ -2460,8 +2683,6 @@ static int cdr_control (IP_CX *cxp, unsigned char *msg, size_t size)
 	  		break;
 	}
 	info_cleanup (&info);
-        cxp->data = NULL;
-        cxp->data_length = 0;
 	return (1);
 }
 
@@ -2515,7 +2736,10 @@ static void cc_connect (IP_CX *cxp);
 
 static void cc_timeout (uintptr_t user);
 
-static void cc_retry (IP_CX *cxp, int delayed)
+#define	TCP_CC_RETRY_TO		(TICKS_PER_SEC * 2)
+#define	TCP_CC_CONNECT_TO	1
+
+static void cc_retry (IP_CX *cxp, unsigned delay)
 {
 	if (!cxp->timer) {
 		cxp->timer = tmr_alloc ();
@@ -2524,11 +2748,10 @@ static void cc_retry (IP_CX *cxp, int delayed)
 			return;
 		}
 		tmr_init (cxp->timer, "TCP-Client");
-		if (delayed)
-			tmr_start (cxp->timer, TICKS_PER_SEC * 2, 
-					(uintptr_t) cxp, cc_timeout);
 	}
-	if (delayed) {
+	if (delay) {
+		tmr_start (cxp->timer, delay, 
+					(uintptr_t) cxp, cc_timeout);
 		TCP_NCX_STATE ("CC", cxp, CXS_WRETRY);
 		TCP_NP_STATE ("CC", cxp, TCS_WCXOK);
 	}
@@ -2559,7 +2782,7 @@ static void cc_connect (IP_CX *cxp)
 	TCP_NP_STATE ("CC", cxp, TCS_WCXOK);
 	r = cxp->stream_fcts->connect (cxp, cxp->dst_port);
 	if (r < 0) {
-		tmr_start (cxp->timer, TICKS_PER_SEC * 2, (uintptr_t) cxp, cc_timeout);
+		tmr_start (cxp->timer, TCP_CC_RETRY_TO, (uintptr_t) cxp, cc_timeout);
 		if (r == -1) {
 			log_printf (RTPS_ID, 0, "TCP(CC:%u): connecting to server ... \r\n", cxp->handle);
 			return;
@@ -2571,7 +2794,7 @@ static void cc_connect (IP_CX *cxp)
 	cc_connected (cxp);
 }
 
-static void cc_reconnect (IP_CX *cxp, int delay)
+static void cc_reconnect (IP_CX *cxp, unsigned delay)
 {
 	cc_closed (cxp);
 	cc_retry (cxp, delay);
@@ -2602,7 +2825,34 @@ static void cc_i_start (IP_CX *cxp)
 
 static void cc_x_stop (IP_CX *cxp)
 {
-	tcp_close_fd (cxp);
+	tcp_cx_closed (cxp);
+
+	/* Remove timer if still running. */
+	if (cxp->timer) {
+		log_printf (RTPS_ID, 0, "TCP(%u): Stop timer (%u).\r\n", cxp->handle, cxp->dst_port);
+		tmr_stop (cxp->timer);
+		tmr_free (cxp->timer);
+		cxp->timer = NULL;
+	}
+
+	/* Free cookie if still present. */
+	tcp_free_data (cxp);
+
+	/* Cleanup all child contexts. */
+	while (cxp->clients)
+		tcp_close_data (cxp->clients);
+
+	/* Free the locator. */
+	if (cxp->locator) {
+		if (!cxp->locator->users)
+			xfree (cxp->locator);
+		else
+			locator_unref (cxp->locator);
+		cxp->locator = NULL;
+	}
+
+	/* Free the context. */
+	Free (cxp);
 }
 
 static void cc_wc_stop (IP_CX *cxp)
@@ -2615,7 +2865,7 @@ static void cc_x_cxerr (IP_CX *cxp)
 {
 	int	delay;
 
-	delay = cxp->p_state != TCS_CONTROL;
+	delay = (cxp->p_state != TCS_CONTROL) ? TCP_CC_RETRY_TO : TCP_CC_CONNECT_TO;
 	cc_reconnect (cxp, delay);
 }
 
@@ -2626,7 +2876,7 @@ static void cc_wc_to (IP_CX *cxp)
 	if (cxp->cx_state == CXS_WRETRY)
 		cc_connect (cxp);
 	else
-		cc_reconnect (cxp, 0);
+		cc_reconnect (cxp, TCP_CC_CONNECT_TO);
 }
 
 #define cc_wi_stop	cc_x_stop
@@ -2651,7 +2901,7 @@ static void cc_x_final (IP_CX *cxp)
 	log_printf (RTPS_ID, 0, "TCP(CC): Stop timer.\r\n");
 	tmr_stop (cxp->timer);
 	cc_req_purge_all (cxp);
-	cc_reconnect (cxp, 1);
+	cc_reconnect (cxp, TCP_CC_RETRY_TO);
 }
 
 #define cc_wi_final cc_x_final
@@ -2659,7 +2909,7 @@ static void cc_x_final (IP_CX *cxp)
 static void cc_wi_ifail (IP_CX *cxp)
 {
 	log_printf (RTPS_ID, 0, "TCP(CC): Identity rejected by server.\r\n");
-	cc_reconnect (cxp, 1);
+	cc_reconnect (cxp, TCP_CC_RETRY_TO);
 }
 
 static void cc_wi_isucc (IP_CX *cxp)
@@ -2671,20 +2921,43 @@ static void cc_wi_isucc (IP_CX *cxp)
 	cxp->timer = NULL;
 	TCP_NP_STATE ("CC", cxp, TCS_CONTROL);
 	cc_req_port_all (cxp);
+#ifdef TCP_SUSPEND
+	if (bgcp_client_fct)
+		(*bgcp_client_fct) (bgcp_client_user, SRN_OPEN, cxp, NULL, 0);
+#endif
 }
 
-#define cc_a_stop	cc_x_stop
-#define cc_a_cxerr	cc_x_cxerr
+static void cc_a_stop (IP_CX *cxp)
+{
+#ifdef TCP_SUSPEND
+	if (bgcp_client_fct)
+		(*bgcp_client_fct) (bgcp_client_user, SRN_CLOSED, cxp, NULL, 0);
+#endif
+	cc_x_stop (cxp);
+}
+
+static void cc_a_cxerr (IP_CX *cxp)
+{
+#ifdef TCP_SUSPEND
+	if (bgcp_client_fct)
+		(*bgcp_client_fct) (bgcp_client_user, SRN_CLOSED, cxp, NULL, 0);
+#endif
+	cc_x_cxerr (cxp);
+}
 
 static void cc_a_final (IP_CX *cxp)
 {
+#ifdef TCP_SUSPEND
+	if (bgcp_client_fct)
+		(*bgcp_client_fct) (bgcp_client_user, SRN_CLOSED, cxp, NULL, 0);
+#endif
 	if (tcp_send_finalize (cxp) != DDS_RETCODE_ALREADY_DELETED)
 		cc_x_final (cxp);
 }
 
 static void cc_a_cprq (IP_CX *cxp)
 {
-	CtrlInfo_t	*info = cxp->data;
+	CtrlInfo_t	*info = cxp->info;
 
 	cdr_port_req (cxp, info);
 }
@@ -2692,15 +2965,14 @@ static void cc_a_cprq (IP_CX *cxp)
 static void cc_a_spsucc (IP_CX *cxp)
 {
 	IP_CX		*ccxp;
-	CtrlInfo_t	*info = cxp->data;
+	CtrlInfo_t	*info = cxp->info;
 	uint32_t	tid;
 
 	log_printf (RTPS_ID, 0, "TCP(CC): data connection allowed!\r\n");
 	memcpy (&tid, info->transaction + 8, 4);
 	for (ccxp = cxp->clients; ccxp; ccxp = ccxp->next)
 		if (tid == ccxp->transaction_id) {
-			ccxp->data = info;
-			ccxp->data_length = 0;
+			ccxp->info = info;
 			cdt_spsucc (ccxp);
 			break;
 		}
@@ -2709,7 +2981,7 @@ static void cc_a_spsucc (IP_CX *cxp)
 static void cc_a_spfail (IP_CX *cxp)
 {
 	IP_CX		*ccxp, *next = NULL;
-	CtrlInfo_t	*info = cxp->data;
+	CtrlInfo_t	*info = cxp->info;
 	uint32_t	tid;
 
 	log_printf (RTPS_ID, 0, "TCP(CC): data connection not allowed!\r\n");
@@ -2753,7 +3025,7 @@ static void cc_on_close (IP_CX *cxp)
 	if (fct)
 		fct (cxp);
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 }
 
 static void cc_start (IP_CX *cxp)
@@ -2761,7 +3033,7 @@ static void cc_start (IP_CX *cxp)
 	cc_fsm [CCE_START][TCS_IDLE] (cxp);
 }
 
-static int cc_control (IP_CX *cxp, unsigned char *msg, size_t size)
+static int cc_control (IP_CX *cxp, const unsigned char *msg, size_t size)
 {
 	uint32_t	*wp;
 	CtrlInfo_t	info;
@@ -2771,11 +3043,17 @@ static int cc_control (IP_CX *cxp, unsigned char *msg, size_t size)
 	CCFCT		fct;
 	uint32_t	tid;
 
+#ifdef TCP_SUSPEND
+	if (bgcp_client_fct && bgcp_protocol_valid (msg)) {
+		(*bgcp_client_fct) (bgcp_client_user, SRN_DATA, cxp, msg, size);
+		return (1);
+	}
+#endif
 	n = tcp_rx_parse_msg (cxp->fd, &info, msg, size);
 	if (n < 0 || info.result > RPSC_ERR_RTPS) {
 		log_printf (RTPS_ID, 0, "TCP(CC): message error (%u)!\r\n", info.result);
 		info_cleanup (&info);
-		cc_reconnect (cxp, 1);
+		cc_reconnect (cxp, TCP_CC_RETRY_TO);
 		return (0);
 	}
 
@@ -2788,12 +3066,12 @@ static int cc_control (IP_CX *cxp, unsigned char *msg, size_t size)
 
 		for (i = 0, wp = (uint32_t *) (msg + 20); i < 5; i++, wp--)
 			*wp = *(wp - 1);
+
 		tcp_rx_buffer (cxp, NULL, msg + 4, size - 4);
 		return (1);
 	}
 	memcpy (&tid, info.transaction + 8, 4);
-	cxp->data = &info;
-	cxp->data_length = 0;
+	cxp->info = &info;
 	switch (info.type) {
 		case CMT_ID_BIND_SUCC:
 			/*log_printf (RTPS_ID, 0, "TCP(CC): IdentityBindSuccess received.\r\n");*/
@@ -2815,8 +3093,6 @@ static int cc_control (IP_CX *cxp, unsigned char *msg, size_t size)
 				if (fct) {
 					(*fct) (cxp);
 					info_cleanup (&info);
-                                        cxp->data = NULL;
-                                        cxp->data_length = 0;
 					return (0);
 				}
 			}
@@ -2837,8 +3113,11 @@ static int cc_control (IP_CX *cxp, unsigned char *msg, size_t size)
 				else
 					e = CCE_SLPFAIL;
 				fct = cc_fsm [e][TCS_CONTROL];
-				if (fct)
+				if (fct) {
 					(*fct) (cxp);
+					info_cleanup (&info);
+					return (0);
+				}
 			}
 			break;
 		case CMT_CLPORT_REQ:
@@ -2853,16 +3132,12 @@ static int cc_control (IP_CX *cxp, unsigned char *msg, size_t size)
 			if (fct)
 				(*fct) (cxp);
 			info_cleanup (&info);
-                        cxp->data = NULL;
-                        cxp->data_length = 0;
 			return (0);
 		default:
 			log_printf (RTPS_ID, 0, "TCP(CC): Unexpected message (%u) received!\r\n", info.type);
 	  		break;
 	}
 	info_cleanup (&info);
-        cxp->data = NULL;
-        cxp->data_length = 0;
 	return (1);
 }
 
@@ -2876,15 +3151,41 @@ static void rtps_tcp_client_start (RTPS_TCP_RSERV *sp, int index, unsigned delay
 		cc_on_close		/* on_close */
 	};
 	IP_CX			*cxp;
+#ifdef TCP_SUSPEND
+	IP_CX			*prev_cxp;
+#endif
 	struct hostent		*he;
 	struct in_addr		addr;
+	unsigned		c;
 
 	log_printf (RTPS_ID, 0, "TCP: Client %d start.\r\n", index);
-	tcp_client [index] = cxp = rtps_ip_alloc ();
+
+	for (c = 0; c < TCP_MAX_CLIENTS; c++)
+		if (!tcp_client [c])
+			break;
+
+	if (c >= TCP_MAX_CLIENTS)
+		return;
+
+#ifdef TCP_SUSPEND
+	for (cxp = bgcp_client_cxs, prev_cxp = NULL;
+	     cxp;
+	     prev_cxp = cxp, cxp = cxp->next)
+		if ((int) cxp->id == index) {
+			if (prev_cxp)
+				prev_cxp->next = cxp->next;
+			else
+				bgcp_client_cxs = cxp->next;
+			tcp_client [c] = cxp;
+			return;
+		}
+#endif
+	tcp_client [c] = cxp = Alloc (sizeof (IP_CX));
 	if (!cxp) {
 		warn_printf ("TCP: not enough memory for TCP Client!");
 		return;
 	}
+	memset (cxp, 0, sizeof (IP_CX));
 	cxp->id = index;
 
 #ifdef DDS_SECURITY
@@ -2934,7 +3235,7 @@ static void rtps_tcp_client_start (RTPS_TCP_RSERV *sp, int index, unsigned delay
 	tmr_init (cxp->timer, "TCP-Client");
 	if (sp->name) {
 		he = gethostbyname (sp->addr.name);
-		if (!he) {
+		if (!he || he->h_addrtype != AF_INET) {
 			warn_printf ("TCP: server name could not be resolved!");
 			goto free_timer;
 		}
@@ -2964,7 +3265,7 @@ static void rtps_tcp_client_start (RTPS_TCP_RSERV *sp, int index, unsigned delay
 		tmr_start (cxp->timer, delay, (uintptr_t) cxp, cc_timeout);
 	else
 		cc_start (cxp);
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 	return;
 
     free_timer:
@@ -2973,21 +3274,62 @@ static void rtps_tcp_client_start (RTPS_TCP_RSERV *sp, int index, unsigned delay
 	xfree (cxp->locator);
     free_cx:
 	rtps_ip_free (cxp);
-	tcp_client [index] = NULL;
+	tcp_client [c] = NULL;
 }
 
-static void rtps_tcp_client_stop (int index)
+static void rtps_tcp_client_stop (int index, int suspend)
 {
-	IP_CX		*cxp;
+	IP_CX		*cxp 
+#ifdef TCP_VALIDATE_TXS
+			    , *ccxp
+#endif
+			           ;
+	unsigned	c;
+
+#ifndef TCP_SUSPEND
+	ARG_NOT_USED (suspend)
+#endif
 
 	log_printf (RTPS_ID, 0, "TCP: Client %d stop.\r\n", index);
-	cxp = tcp_client [index];
-	if (!cxp)
+	for (c = 0; c < TCP_MAX_CLIENTS; c++)
+		if ((cxp = tcp_client [c]) == NULL)
+			return;
+
+		else if ((int) cxp->id == index)
+			break;
+
+	if (c >= TCP_MAX_CLIENTS)
 		return;
 
-	cc_fsm [CCE_STOP][cxp->p_state] (cxp);
-	tcp_client [index] = NULL;
-	VALIDATE_CXS ();
+#ifdef TCP_VALIDATE_TXS
+	ccxp = tcp_client [c];
+#endif
+#ifdef TCP_SUSPEND
+	if (suspend && cxp->p_state == TCS_CONTROL && bgcp_client_fct) {
+
+		/* Add to BGCP client connections list. */
+		cxp->next = bgcp_client_cxs;
+		bgcp_client_cxs = cxp;
+
+		/* Cleanup all child data contexts. */
+		while (cxp->clients)
+			tcp_close_data (cxp->clients);
+	}
+	else
+#endif
+		cc_fsm [CCE_STOP][cxp->p_state] (cxp);
+
+	for (; c < TCP_MAX_CLIENTS - 1; c++) {
+		tcp_client [c] = cxp = tcp_client [c + 1];
+		if (!cxp)
+			break;
+	}
+	if (c == TCP_MAX_CLIENTS - 1)
+		tcp_client [c] = NULL;
+
+#ifdef TCP_VALIDATE_TXS
+	VALIDATE_CXS (ccxp);
+#endif
 }
 
 static void cc_restart (unsigned id)
@@ -3030,7 +3372,7 @@ static void sdr_i_preq (IP_CX *cxp)
 	CtrlInfo_t	*info;
 	GuidPrefix_t	*prefix;
 
-	info = (CtrlInfo_t *) cxp->data;
+	info = (CtrlInfo_t *) cxp->info;
 	if ((info->pids & (1 << (CAID_GUID_PREFIX & 0xff))) != 0)
 		prefix = &info->prefix;
 	else
@@ -3043,7 +3385,7 @@ static void sdr_i_preq (IP_CX *cxp)
 	}
 	tmr_init (cxp->timer, "TCP-SRxData");
 	tmr_start (cxp->timer, TICKS_PER_SEC * 2, (uintptr_t) cxp, sdr_timeout);
-	sdr_send_error = tcp_send_slport_success (cxp->parent, cxp->data,
+	sdr_send_error = tcp_send_slport_success (cxp->parent, cxp->info,
 				 (unsigned char *) &cxp->label, sizeof (cxp->label),
 				 prefix);
 }
@@ -3099,7 +3441,7 @@ static void sdr_finalize (IP_CX *cxp)
 		(*fct) (cxp);
 }
 
-static int sdr_control (IP_CX *cxp, unsigned char *msg, size_t size)
+static int sdr_control (IP_CX *cxp, const unsigned char *msg, size_t size)
 {
 	uint32_t	*wp;
 	CtrlInfo_t	info;
@@ -3122,18 +3464,18 @@ static int sdr_control (IP_CX *cxp, unsigned char *msg, size_t size)
 		if (cxp->p_state < TDS_DATA)
 			return (1); /* RTPS messages only allowed after successful bind! */
 
+		ADD_ULLONG (cxp->group->stats.octets_rcvd, (unsigned) (size - 4));
+		cxp->group->stats.packets_rcvd++;
+
 		for (i = 0, wp = (uint32_t *) (msg + 20); i < 5; i++, wp--)
 			*wp = *(wp - 1);
+
 		tcp_rx_buffer (cxp, cxp->paired, msg + 4, size - 4);
-		/*ADD_ULLONG (cxp->group->stats.octets_rcvd, (unsigned) (size - 4));
-		cxp->group->stats.packets_rcvd++;*/
 		return (1);
 	}
-	cxp->data = &info;
-	cxp->data_length = 0;
+	cxp->info = &info;
 	if (info.type == CMT_FINALIZE) {
 		/*log_printf (RTPS_ID, 0, "TCP(SDR): Finalize received.\r\n");*/
-                cxp->data = NULL;
 		if (cxp->paired)
 			sdt_finalize (cxp);
 		else
@@ -3151,9 +3493,8 @@ static int sdr_control (IP_CX *cxp, unsigned char *msg, size_t size)
 	}
 	else
 		log_printf (RTPS_ID, 0, "TCP(SDR:%u): Unexpected message (%u) received!\r\n", cxp->handle, info.type);
+
 	info_cleanup (&info);
-        cxp->data = NULL;
-        cxp->data_length = 0;
 	return (1);
 }
 
@@ -3244,6 +3585,10 @@ static DDS_ReturnCode_t sdr_start (IP_CX *server_cxp, CtrlInfo_t *info)
 	server_cxp->clients = cxp;
 	rcxp = ((info->port_options & PO_SHARE) != 0) ? reverse_cx (cxp) : NULL;
 	if (rcxp) {
+#ifdef TCP_TRC_STATE
+		log_printf (RTPS_ID, 0, "TCP: SDR-pair cx {%u} and rcx {%u}!\r\n", cxp->handle, rcxp->handle);
+#endif
+		assert (cxp != rcxp && cxp->paired == NULL && rcxp->paired == NULL);
 		cxp->paired = rcxp;
 		rcxp->paired = cxp;
 	}
@@ -3266,8 +3611,7 @@ static DDS_ReturnCode_t sdr_start (IP_CX *server_cxp, CtrlInfo_t *info)
 		fct = sdr_fsm [SDRE_SLPREQ][TDS_IDLE];
 		TCP_NCX_STATE ("SDR", cxp, CXS_CLOSED);
 		TCP_NP_STATE ("SDR", cxp, TDS_WCBINDOK);
-		cxp->data = info;
-		cxp->data_length = 0;
+		cxp->info = info;
 		if (sprefix) {
 			info->prefix = *sprefix;
 			info->pids = SLPSUCC_PIDS;
@@ -3279,7 +3623,7 @@ static DDS_ReturnCode_t sdr_start (IP_CX *server_cxp, CtrlInfo_t *info)
 		else
 			return (sdr_send_error);
 	}
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 	return (DDS_RETCODE_OK);
 
     free_cx:
@@ -3381,16 +3725,19 @@ static void sdt_wp_succ (IP_CX *cxp)
 	CtrlInfo_t	*info;
 	IP_CX		*rcxp = NULL;
 
-	info = (CtrlInfo_t *) cxp->data;
-	if (cxp->data && cxp->share) {
-		if (info->shared)
-			rcxp = reverse_cx (cxp);
-	}
+	info = (CtrlInfo_t *) cxp->info;
+	if (cxp->data && cxp->share && info->shared)
+		rcxp = reverse_cx (cxp);
+
 	if ((info->pids & (1 << (CAID_GUID_PREFIX & 0xff))) != 0) {
 		cxp->dst_prefix = info->prefix;
 		cxp->has_prefix = 1;
 	}
 	if (rcxp) {
+#ifdef TCP_TRC_STATE
+		log_printf (RTPS_ID, 0, "TCP: SDT-pair cx {%u} and rcx {%u}!\r\n", cxp->handle, rcxp->handle);
+#endif
+		assert (cxp != rcxp && rcxp->paired == NULL && cxp->paired == NULL);
 		cxp->paired = rcxp;
 		rcxp->paired = cxp;
 		cxp->fd = rcxp->fd;
@@ -3427,11 +3774,15 @@ static void sdt_wp_cbind (IP_CX *cxp)
 	IP_CX		*rcxp = NULL;
 
 	if (cxp->data && cxp->share) {
-		info = (CtrlInfo_t *) cxp->data;
+		info = (CtrlInfo_t *) cxp->info;
 		if (info->shared)
 			rcxp = reverse_cx (cxp);
 	}
 	if (rcxp) {
+#ifdef TCP_TRC_STATE
+		log_printf (RTPS_ID, 0, "TCP: SDT-pair cx {%u} and rcx {%u}!\r\n", cxp->handle, rcxp->handle);
+#endif
+		assert (rcxp != cxp && rcxp->paired == NULL && cxp->paired == NULL);
 		cxp->paired = rcxp;
 		rcxp->paired = cxp;
 		cxp->fd = rcxp->fd;
@@ -3447,7 +3798,7 @@ static void sdt_d_succ (IP_CX *cxp)
 {
 	CtrlInfo_t	*info;
 
-	info = (CtrlInfo_t *) cxp->data;
+	info = (CtrlInfo_t *) cxp->info;
 	if ((info->pids & (1 << (CAID_GUID_PREFIX & 0xff))) != 0) {
 		cxp->dst_prefix = info->prefix;
 		cxp->has_prefix = 1;
@@ -3519,8 +3870,7 @@ static void sdt_success (IP_CX *cxp, CtrlInfo_t *info)
 
 	fct = sdt_fsm [SDTE_CLPSUCC][ccxp->p_state];
 	if (fct) {
-		ccxp->data = info;
-		ccxp->data_length = 0;
+		ccxp->info = info;
 		(*fct) (ccxp);
 	}
 }
@@ -3536,8 +3886,7 @@ static void sdt_failed (IP_CX *cxp, CtrlInfo_t *info)
 
 	fct = sdt_fsm [SDTE_CLPFAIL][ccxp->p_state];
 	if (fct) {
-		ccxp->data = info;
-		ccxp->data_length = 0;
+		ccxp->info = info;
 		(*fct) (ccxp);
 	}
 }
@@ -3560,7 +3909,7 @@ static void sdt_stop (IP_CX *cxp)
 		(*fct) (cxp);
 }
 
-static int sdt_control (IP_CX *cxp, unsigned char *msg, size_t size)
+static int sdt_control (IP_CX *cxp, const unsigned char *msg, size_t size)
 {
 	uint32_t	*wp;
 	CtrlInfo_t	info;
@@ -3581,21 +3930,23 @@ static int sdt_control (IP_CX *cxp, unsigned char *msg, size_t size)
 		if (cxp->paired->p_state < TDS_DATA)
 			return (1); /* RTPS messages only allowed after successful bind! */
 
+		if (cxp->paired->fd != cxp->fd)
+			log_printf (RTPS_ID, 0, "TCP(SDT:%u): RTPS messages received!\r\n", cxp->handle);
+
 		ADD_ULLONG (cxp->paired->stats.octets_rcvd, (unsigned) size);
 		cxp->paired->stats.packets_rcvd++;
 
 		for (i = 0, wp = (uint32_t *) (msg + 20); i < 5; i++, wp--)
 			*wp = *(wp - 1);
+
 		tcp_rx_buffer (cxp->paired, cxp, msg + 4, size - 4);
 		return (1);
 	}
 	ADD_ULLONG (cxp->stats.octets_rcvd, (unsigned) size);
 	cxp->stats.packets_rcvd++;
-	cxp->data = &info;
-	cxp->data_length = 0;
+	cxp->info = &info;
 	if (info.type == CMT_FINALIZE) {
 		/*log_printf (RTPS_ID, 0, "TCP(CDT): Finalize received.\r\n");*/
-                cxp->data = NULL;
 		if (cxp->paired)
 			sdr_finalize (cxp->paired);
 		else
@@ -3613,10 +3964,9 @@ static int sdt_control (IP_CX *cxp, unsigned char *msg, size_t size)
 	}
 	else
 		log_printf (RTPS_ID, 0, "TCP(SDT:%u): Unexpected message (%u) received!\r\n", cxp->handle, info.type);
-	VALIDATE_CXS ();
+
+	VALIDATE_CXS (NULL);
 	info_cleanup (&info);
-        cxp->data = NULL;
-        cxp->data_length = 0;
 	return (1);
 }
 
@@ -3647,20 +3997,39 @@ static void tcp_server_ctrl_stop (IP_CX *cxp)
 {
 	IP_CX	*dcxp;
 
+#ifdef TCP_SUSPEND
+	if (bgcp_server_fct)
+		(*bgcp_server_fct) (bgcp_server_user, SRN_CLOSED, cxp, NULL, 0);
+#endif
 	while ((dcxp = cxp->clients) != NULL)
 		if (dcxp->tx_data)
 			sdt_stop (dcxp);
 		else
 			sdr_stop (dcxp);
 	tcp_close_fd (cxp);
-	log_printf (RTPS_ID, 0, "TCP(SC): stop!");
+	log_printf (RTPS_ID, 0, "TCP(SC): stop!\r\n");
 }
 
-static int tcp_server_ctrl_in (IP_CX *cxp, unsigned char *msg, size_t size)
+static void tcp_server_close_fd (IP_CX *cxp)
+{
+#ifdef TCP_SUSPEND
+	if (bgcp_server_fct)
+		(*bgcp_server_fct) (bgcp_server_user, SRN_CLOSED, cxp, NULL, 0);
+#endif
+	tcp_close_fd (cxp);
+}
+
+static int tcp_server_ctrl_in (IP_CX *cxp, const unsigned char *msg, size_t size)
 {
 	CtrlInfo_t	info;
 	int		n;
 
+#ifdef TCP_SUSPEND
+	if (bgcp_server_fct && bgcp_protocol_valid (msg)) {
+		(*bgcp_server_fct) (bgcp_server_user, SRN_DATA, cxp, msg, size);
+		return (1);
+	}
+#endif
 	n = tcp_rx_parse_msg (cxp->fd, &info, msg, size);
 	if (n < 0 || info.result >= RPSC_ERR_RTPS) {
 		log_printf (RTPS_ID, 0, "TCP(SC): message error!\r\n");
@@ -3700,7 +4069,7 @@ static int tcp_server_ctrl_in (IP_CX *cxp, unsigned char *msg, size_t size)
 	  		break;
 	}
 	info_cleanup (&info);
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 	return (1);
 }
 
@@ -3714,7 +4083,7 @@ static IP_CX *tcp_server_ctrl_start (TCP_FD *pp, CtrlInfo_t *info)
 		NULL,			/* on_connected */
 		NULL,			/* on_write_completed */
 		tcp_server_ctrl_in,	/* on_new_message */
-		tcp_close_fd		/* on_close */
+		tcp_server_close_fd	/* on_close */
 	};
 
 	cxp = rtps_ip_alloc ();
@@ -3774,7 +4143,11 @@ static IP_CX *tcp_server_ctrl_start (TCP_FD *pp, CtrlInfo_t *info)
 		return (NULL);
 
 	log_printf (RTPS_ID, 0, "TCP(SC): control connection ready!\r\n");
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
+#ifdef TCP_SUSPEND
+	if (bgcp_server_fct)
+		(*bgcp_server_fct) (bgcp_server_user, SRN_OPEN, cxp, NULL, 0);
+#endif
 	return (cxp);
 
     free_cx:
@@ -3809,9 +4182,6 @@ static IP_CX *tcp_server_data_add (IP_CX *dcxp, CtrlInfo_t *info)
 		return (NULL);
 	}
 	TCP_NCX_STATE ("SD", xp, CXS_OPEN);
-	xp->fd = dcxp->fd;
-	xp->paired = dcxp;
-	dcxp->paired = xp;
 	xp->dst_forward = info->forward;
 	xp->associated = 1;
 	if (tcp_send_cx_bind_success (xp, info) == DDS_RETCODE_ALREADY_DELETED)
@@ -3821,7 +4191,7 @@ static IP_CX *tcp_server_data_add (IP_CX *dcxp, CtrlInfo_t *info)
 		sdr_cbind_ok (xp);
 	else
 		sdt_cbind_ok (xp);
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 	return (xp);
 }
 
@@ -3888,11 +4258,11 @@ static IP_CX *tcp_server_data_start (TCP_FD *pp, CtrlInfo_t *info)
 		log_printf (RTPS_ID, 0, "TCP(SDT:%u): CxBind successful!\r\n", xp->handle);
 		sdt_cbind_ok (xp);
 	}
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 	return (xp);
 }
 
-static IP_CX *tcp_pending_in (TCP_FD *pp, unsigned char *msg, size_t size)
+static IP_CX *tcp_pending_in (TCP_FD *pp, const unsigned char *msg, size_t size)
 {
 	IP_CX		*cxp;
 	CtrlInfo_t	info;
@@ -3913,7 +4283,7 @@ static IP_CX *tcp_pending_in (TCP_FD *pp, unsigned char *msg, size_t size)
 				ADD_ULLONG (cxp->stats.octets_rcvd, (unsigned) n);
 				cxp->stats.packets_rcvd++;
 			}
-			VALIDATE_CXS ();
+			VALIDATE_CXS (NULL);
 			break;
 
 		case CMT_CX_BIND_REQ:
@@ -3922,7 +4292,7 @@ static IP_CX *tcp_pending_in (TCP_FD *pp, unsigned char *msg, size_t size)
 				ADD_ULLONG (cxp->stats.octets_rcvd, (unsigned) n);
 				cxp->stats.packets_rcvd++;
 			}
-			VALIDATE_CXS ();
+			VALIDATE_CXS (NULL);
 			break;
 
 		default:
@@ -3958,6 +4328,9 @@ static int rtps_tcp_server_start (unsigned family)
 		NULL,			/* on_new_message */
 		NULL			/* on_close */
 	};
+#ifdef TCP_SUSPEND
+	IP_CX			*ccxp, *prev_cxp, *next_cxp;
+#endif
 
 #ifndef DDS_IPV6
 	ARG_NOT_USED (family)
@@ -4027,6 +4400,29 @@ static int rtps_tcp_server_start (unsigned family)
 	else
 		tcpv6_server = cxp;
 #endif
+#ifdef TCP_SUSPEND
+
+	/* Add remembered control connections of the right family to the new
+	   server context.  They can be used from now on for establishing
+	   new data paths. */
+	for (ccxp = bgcp_server_cxs, prev_cxp = NULL;
+	     ccxp;
+	     ccxp = next_cxp) {
+		next_cxp = ccxp->next;
+		if ((family == AF_INET && ccxp->locator->locator.kind == LOCATOR_KIND_TCPv4) ||
+		    (family == AF_INET6 && ccxp->locator->locator.kind == LOCATOR_KIND_TCPv6)) {
+			if (prev_cxp)
+				prev_cxp->next = ccxp->next;
+			else
+				bgcp_server_cxs = ccxp->next;
+			ccxp->parent = cxp;
+			ccxp->next = cxp->clients;
+			cxp->clients = ccxp;
+		}
+		else
+			prev_cxp = ccxp;
+	}
+#endif
 	if (!cxp->stream_fcts->start_server (cxp))
 		return (DDS_RETCODE_OK);
 
@@ -4047,14 +4443,17 @@ static int rtps_tcp_server_start (unsigned family)
 	tmr_init (cxp->timer, "TCP_S_RETRY");
 	TCP_NCX_STATE ("S", cxp, CXS_WRETRY);
 	tmr_start (cxp->timer, TICKS_PER_SEC * 5, (uintptr_t) cxp, rtps_tcp_server_timeout);
-	VALIDATE_CXS ();
+	VALIDATE_CXS (cxp);
 	return (DDS_RETCODE_ALREADY_DELETED);
 }
 
-static void rtps_tcp_server_stop (unsigned family)
+static void rtps_tcp_server_stop (unsigned family, int suspend)
 {
 	IP_CX	*cxp, *hcxp, *next_hcxp;
 
+#ifndef TCP_SUSPEND
+	ARG_NOT_USED (suspend)
+#endif
 	act_printf ("TCP: Stop server.\r\n");
 	if (family == AF_INET)
 		cxp = tcpv4_server;
@@ -4076,7 +4475,28 @@ static void rtps_tcp_server_stop (unsigned family)
 	/* Cleanup all existing connections */
 	for (hcxp = cxp->clients; hcxp; hcxp = next_hcxp) {
 		next_hcxp = hcxp->next;
+#ifdef TCP_SUSPEND
+		if (suspend &&
+		    hcxp->p_state == TCS_CONTROL &&
+		    bgcp_server_fct) {
+
+			/* Add to BGCP server connections. */
+			hcxp->next = bgcp_server_cxs;
+			bgcp_server_cxs = hcxp;
+			hcxp->parent = NULL;
+
+			/* Cleanup all child data contexts. */
+			while (hcxp->clients)
+				tcp_close_data (hcxp->clients);
+		}
+		else {
+			if (bgcp_server_fct)
+				(*bgcp_server_fct) (bgcp_server_user, SRN_CLOSED, hcxp, NULL, 0);
+			tcp_close_fd (hcxp);
+		}
+#else
 		tcp_close_fd (hcxp);
+#endif
 	}
 	xfree (cxp->locator);
 	rtps_ip_free (cxp);
@@ -4086,7 +4506,7 @@ static void rtps_tcp_server_stop (unsigned family)
 	else if (family == AF_INET6)
 		tcpv6_server = NULL;
 #endif
-	VALIDATE_CXS ();
+	VALIDATE_CXS (cxp);
 }
 
 static int rtps_tcpv4_enable (void)
@@ -4102,7 +4522,7 @@ static int rtps_tcpv4_enable (void)
 
 		/* Connect to remote server. */
 		rtps_tcp_client_start (rp, i, 0);
-		VALIDATE_CXS ();
+		VALIDATE_CXS (NULL);
 	}
 	if (tcp_v4_pars.sport_s || tcp_v4_pars.sport_ns)
 		rtps_tcp_server_start (AF_INET);
@@ -4110,21 +4530,26 @@ static int rtps_tcpv4_enable (void)
 	return (DDS_RETCODE_OK);
 }
 
-static void rtps_tcpv4_disable (void)
+static void rtps_tcpv4_disable_x (int suspend)
 {
 	unsigned	i;
 
 	act_printf ("rtps_tcpv4_disable()\r\n");
 	if (tcp_v4_pars.sport_s || tcp_v4_pars.sport_ns)
-		rtps_tcp_server_stop (AF_INET);
+		rtps_tcp_server_stop (AF_INET, suspend);
 
 	for (i = 0; i < tcp_v4_pars.nrservers && i < RTPS_MAX_TCP_SERVERS; i++) {
 
 		/* Disconnect from remote server. */
-		rtps_tcp_client_stop (i);
-		VALIDATE_CXS ();
+		rtps_tcp_client_stop (i, suspend);
+		VALIDATE_CXS (NULL);
 	}
 	tcp_v4_pars.enabled = 0;
+}
+
+static void rtps_tcpv4_disable (void)
+{
+	rtps_tcpv4_disable_x (0);
 }
 
 static void tcp_port_change (Config_t c)
@@ -4153,7 +4578,7 @@ static void tcp_port_change (Config_t c)
 	if (config_defined (c)) {
 		if ((i = config_get_number (c, 0)) >= 1024 && i <= 65530) {
 			if (tcp_v4_pars.enabled && oport && (secure || !osecure))
-				rtps_tcp_server_stop (AF_INET);
+				rtps_tcp_server_stop (AF_INET, 0);
 
 			if (secure)
 				tcp_v4_pars.sport_s = i;
@@ -4166,7 +4591,7 @@ static void tcp_port_change (Config_t c)
 	}
 	else {
 		if (tcp_v4_pars.enabled && oport && secure == osecure)
-			rtps_tcp_server_stop (AF_INET);
+			rtps_tcp_server_stop (AF_INET, 0);
 
 		if (secure)
 			tcp_v4_pars.sport_s = 0;
@@ -4185,26 +4610,9 @@ static void tcp_port_change (Config_t c)
 		n = 0;
 		while ((dp = domain_next (&n, NULL)) != NULL) {
 			rtps_participant_update (dp);
-			VALIDATE_CXS ();
+			VALIDATE_CXS (NULL);
 		}
 	}
-}
-
-static int is_dns_name (const char *s)
-{
-	unsigned	ndots, ncolons;
-
-	ndots = ncolons = 0;
-	while (*s) {
-		if (((*s < '0' || *s > '9') && 
-		     *s != '.' && *s != ':') ||
-		    (*s == '.' && ++ndots > 3) ||
-		    (*s == ':' && ++ncolons > 1))
-			return (1);
-
-		s++;
-	}
-	return (0);
 }
 
 static void tcp_server_change (Config_t c)
@@ -4230,7 +4638,7 @@ static void tcp_server_change (Config_t c)
 		     i < tcp_v4_pars.nrservers;
 		     i++, rp++)
 			if (rp->secure == secure)
-				rtps_tcp_client_stop (i);
+				rtps_tcp_client_stop (i, 0);
 	}
 
 	/* Remove all clients of the given type from the remote servers list. */
@@ -4244,6 +4652,7 @@ static void tcp_server_change (Config_t c)
 			i++;
 			rp++;
 		}
+
 #ifdef DDS_SECURITY
 	env_str = config_get_string ((secure) ? DC_TCP_SecServer : DC_TCP_Server, NULL);
 #else
@@ -4277,8 +4686,15 @@ static void tcp_server_change (Config_t c)
 					*cp = '\0';
 					rp->port = atoi (++cp);
 				}
-				else
-					rp->port = 7400;
+				else {
+					cp = strrchr (arg, '$');
+					if (cp) {
+						*cp = '\0';
+						rp->port = atoi (++cp);
+					}
+					else
+						rp->port = 7400;
+				}
 				log_printf (RTPS_ID, 0, "TCP: remote %sTCP server at %s:%u\r\n",
 						(secure) ? "secure " : "",
 						rp->addr.name, rp->port);
@@ -4297,7 +4713,7 @@ static void tcp_server_change (Config_t c)
 		}
 	}
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 	if (!tcp_v4_pars.enabled)
 		return;
@@ -4309,14 +4725,14 @@ static void tcp_server_change (Config_t c)
 		if (rp->secure == secure)
 			rtps_tcp_client_start (&tcp_v4_pars.rservers [i], i, 0);
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 	/* Propagate the change to all domains. */
 	if (domains_used ()) {
 		n = 0;
 		while ((dp = domain_next (&n, NULL)) != NULL) {
 			rtps_participant_update (dp);
-			VALIDATE_CXS ();
+			VALIDATE_CXS (NULL);
 		}
 	}
 }
@@ -4398,7 +4814,7 @@ static void tcp_public_change (Config_t c)
 		n = 0;
 		while ((dp = domain_next (&n, NULL)) != NULL) {
 			rtps_participant_update (dp);
-			VALIDATE_CXS ();
+			VALIDATE_CXS (NULL);
 		}
 	}
 }
@@ -4425,7 +4841,7 @@ static void tcp_private_change (Config_t c)
 		n = 0;
 		while ((dp = domain_next (&n, NULL)) != NULL) {
 			rtps_participant_update (dp);
-			VALIDATE_CXS ();
+			VALIDATE_CXS (NULL);
 		}
 	}
 }
@@ -4457,17 +4873,7 @@ static int rtps_tcpv4_init (RMRXF    rxf,
 	config_notify (DC_TCP_Public, tcp_public_change);
 	config_notify (DC_TCP_Private, tcp_private_change);
 
-# if 0
-	tcp_port_change (DC_TCP_Port);
-	tcp_server_change (DC_TCP_Server);
-#ifdef DDS_SECURITY
-	tcp_port_change (DC_TCP_SecPort);
-	tcp_server_change (DC_TCP_SecServer);
-#endif
-	tcp_public_change (DC_TCP_Public);
-	tcp_private_change (DC_TCP_Private);
-# endif
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 	return (DDS_RETCODE_OK);
 }
@@ -4755,6 +5161,11 @@ LocatorList_t rtps_tcp_secure_servers (LocatorList_t uclocs)
 	}
 	return (slist);
 }
+#define	LB_ADDR_V4	(127<<24 | 1)
+#ifdef DDS_IPV6
+static unsigned char lb_addr_v6 [16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
+#define	LB_ADDR_V6	lb_addr_v6
+#endif
 
 static int ip_socket_match (int fd, Locator_t *lp)
 {
@@ -4801,24 +5212,42 @@ static int ip_socket_match (int fd, Locator_t *lp)
 		inet_ntop (AF_INET, &sa_v4.sin_addr.s_addr, buf, 128);
 	else
 		inet_ntop (AF_INET6, sa_v6.sin6_addr.s6_addr, buf, 128);
-	log_printf (RTPS_ID, 0, "Check %s <=> real socket address: %s", locator_str (lp), buf);
+	log_printf (RTPS_ID, 0, "Check %s <=> real socket address: %s\r\n", locator_str (lp), buf);
 #endif
 #ifdef DDS_IPV6
-	if (family == AF_INET)
+	if (family == AF_INET) {
 #endif
 		eq = (sa_v4.sin_addr.s_addr == htonl ((lp->address [12] << 24) |
 						        (lp->address [13] << 16) |
 						        (lp->address [14] << 8) |
 						         lp->address [15]));
+		if (!eq && sa_v4.sin_addr.s_addr == htonl (LB_ADDR_V4))
+			eq = 1;
 #ifdef DDS_IPV6
-	else
+	}
+	else {
 		eq = !memcmp (sa_v6.sin6_addr.s6_addr, lp->address, 16);
+		if (!eq && !memcmp (sa_v6.sin6_addr.s6_addr, LB_ADDR_V6, 16))
+			eq = 1;
+	}
 #endif
 #ifdef LOG_GSOCKNAME
 	log_printf (RTPS_ID, 0, ": result = %d\r\n", eq);
 #endif
 	return (eq);
 }
+
+#ifdef TCP_TRC_REDUNDANT
+#define red_print1(s,a1)		log_printf (RTPS_ID, 0, s, a1)
+#define red_print2(s,a1,a2)		log_printf (RTPS_ID, 0, s, a1, a2)
+#define red_print3(s,a1,a2,a3)		log_printf (RTPS_ID, 0, s, a1, a2, a3)
+#define red_print4(s,a1,a2,a3,a4)	log_printf (RTPS_ID, 0, s, a1, a2, a3, a4)
+#else
+#define red_print1(s,a1)
+#define red_print2(s,a1,a2)
+#define red_print3(s,a1,a2,a3)
+#define red_print4(s,a1,a2,a3,a4)
+#endif
 
 static int rtps_tcpv4_add_locator (DomainId_t    domain_id,
 				   LocatorNode_t *lnp,
@@ -4847,21 +5276,21 @@ static int rtps_tcpv4_add_locator (DomainId_t    domain_id,
 	if (cxp) {
 		if (cxp->redundant) {
 			cxp->redundant = 0;
-			/*log_printf (RTPS_ID, 0, "Resetting redundant on %p (%d)\r\n", (void *) cxp, cxp->handle);*/
+			red_print2 ("Resetting redundant on %p (%d)\r\n", (void *) cxp, cxp->handle);
 			if (tcpv4_server)
 				for (scxp = tcpv4_server->clients; scxp; scxp = scxp->next) {/* Iterate over the TCP.H contexts */
 					for (ccxp = scxp->clients; ccxp; ccxp = ccxp->next) /* Iterate over the corresponding TCP.D contexts */
 						if (ccxp->fd_owner && ip_socket_match (ccxp->fd, lp)) {
 							ccxp->redundant = 0;
-							/*log_printf (RTPS_ID, 0, " Resetting redundant on server TCP data %p (%d)\r\n", (void *) ccxp, ccxp->handle);*/
+							red_print2 (" Resetting redundant on server TCP data %p (%d)\r\n", (void *) ccxp, ccxp->handle);
 							if (ccxp->paired) {
 								ccxp->paired->redundant = 0;
-								/*log_printf (RTPS_ID, 0, " Resetting redundant on paired server TCP data %p (%d)\r\n", (void *) ccxp->paired, ccxp->paired->handle);*/
+								red_print2 (" Resetting redundant on paired server TCP data %p (%d)\r\n", (void *) ccxp->paired, ccxp->paired->handle);
 							}
 						}
 					if (scxp->fd_owner && ip_socket_match (scxp->fd, lp)) {
 						scxp->redundant = 0;
-						/*log_printf (RTPS_ID, 0, " Resetting redundant on server TCP control %p (%d)\r\n", (void *) scxp, scxp->handle);*/
+						red_print2 (" Resetting redundant on server TCP control %p (%d)\r\n", (void *) scxp, scxp->handle);
 					}
 				}
 #ifdef DDS_IPV6
@@ -4870,38 +5299,38 @@ static int rtps_tcpv4_add_locator (DomainId_t    domain_id,
 					for (ccxp = scxp->clients; ccxp; ccxp = ccxp->next) /* Iterate over the corresponding TCP.D contexts */
 						if (ccxp->fd_owner && ip_socket_match (ccxp->fd, lp)) {
 							ccxp->redundant = 0;
-							/*log_printf (RTPS_ID, 0, " Resetting redundant on server TCPv6 data %p (%d)\r\n", (void *) ccxp, ccxp->handle);*/
+							red_print2 (" Resetting redundant on server TCPv6 data %p (%d)\r\n", (void *) ccxp, ccxp->handle);
 							if (ccxp->paired) {
 								ccxp->paired->redundant = 0;
-								/*log_printf (RTPS_ID, 0, " Resetting redundant on paired server TCPv6 data %p (%d)\r\n", (void *) ccxp->paired, ccxp->paired->handle);*/
+								red_print2 (" Resetting redundant on paired server TCPv6 data %p (%d)\r\n", (void *) ccxp->paired, ccxp->paired->handle);
 							}
 						}
 					if (scxp->fd_owner && ip_socket_match (scxp->fd, lp)) {
 						scxp->redundant = 0;
-						/*log_printf (RTPS_ID, 0, " Resetting redundant on server TCPv6 control %p (%d)\r\n", (void *) scxp, scxp->handle);*/
+						red_print2 (" Resetting redundant on server TCPv6 control %p (%d)\r\n", (void *) scxp, scxp->handle);
 					}
 			}
 #endif
 			for (i = 0; i < TCP_MAX_CLIENTS; i++) { /* Iterate over the TCP.C contexts */
 				scxp = tcp_client [i];
 				if (!scxp)
-					continue;
+					break;
 
 				for (ccxp = scxp->clients; ccxp; ccxp = ccxp->next) /* Iterate over the corresponding TCP.D contexts */
 					if (ccxp->fd_owner && ip_socket_match (ccxp->fd, lp)) {
 						ccxp->redundant = 0;
-						/*log_printf (RTPS_ID, 0, " Resetting redundant on client TCP data %p (%d)\r\n", (void *) ccxp, cxp->handle);*/
+						red_print2 (" Resetting redundant on client TCP data %p (%d)\r\n", (void *) ccxp, cxp->handle);
 						if (ccxp->paired) {
 							ccxp->paired->redundant = 0;
-							/*log_printf (RTPS_ID, 0, " Resetting redundant on paired client TCP data %p (%d)\r\n", (void *) ccxp->paired, ccxp->paired->handle);*/
+							red_print2 (" Resetting redundant on paired client TCP data %p (%d)\r\n", (void *) ccxp->paired, ccxp->paired->handle);
 						}
 					}
 				if (ip_socket_match (scxp->fd, lp)) {
 					scxp->redundant = 0;
-					/*log_printf (RTPS_ID, 0, " Resetting redundant on client TCP control %p (%d)\r\n", (void *) scxp, scxp->handle);*/
+					red_print2 (" Resetting redundant on client TCP control %p (%d)\r\n", (void *) scxp, scxp->handle);
 				}
 			}
-			VALIDATE_CXS ();
+			VALIDATE_CXS (NULL);
 			return (DDS_RETCODE_OK);
 		}
 		else {
@@ -4936,7 +5365,7 @@ static int rtps_tcpv4_add_locator (DomainId_t    domain_id,
 	rtps_ip_new_handle (cxp);
 	cxp->locator->locator.handle = cxp->handle;
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 	return (DDS_RETCODE_OK);
 }
@@ -4951,7 +5380,7 @@ void rtps_tcp_addr_update_start (unsigned family)
 	IP_CX		*cxp;
 	unsigned	i;
 
-	/*printf ("rtps_tcp_addr_update_start(%u);\r\n", family);*/
+	red_print1 ("rtps_tcp_addr_update_start (%u);\r\n", family);
 	if (family == AF_INET && tcpv4_server)
 		for (cxp = tcpv4_server->clients; cxp; cxp = cxp->next)
 			cxp->redundant = 1;
@@ -4965,7 +5394,7 @@ void rtps_tcp_addr_update_start (unsigned family)
 	for (i = 0; i < TCP_MAX_CLIENTS; i++) { /* Iterate over the TCP.C contexts */
 		cxp = tcp_client [i];
 		if (!cxp)
-			continue;
+			break;
 
 		if ((family == AF_INET && cxp->locator->locator.kind == LOCATOR_KIND_TCPv4) 
 #ifdef DDS_IPV6
@@ -4974,7 +5403,7 @@ void rtps_tcp_addr_update_start (unsigned family)
 		  									   )
 			cxp->redundant = 1;
 	}
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 }
 
 void rtps_tcp_addr_update_end (unsigned family)
@@ -4982,16 +5411,20 @@ void rtps_tcp_addr_update_end (unsigned family)
 	IP_CX		*cxp, *next_cxp;
 	unsigned	i;
 
-	/*printf ("rtps_tcp_addr_update_end(%u);\r\n", family);*/
+	red_print1 ("rtps_tcp_addr_update_end (%u);\r\n", family);
 	if (family == AF_INET && tcpv4_server)
 		for (cxp = tcpv4_server->clients; cxp; cxp = next_cxp) {
 			next_cxp = cxp->next;
 			if (cxp->redundant) {
+#ifdef TCP_SUSPEND
+				if (bgcp_server_fct)
+					(*bgcp_server_fct) (bgcp_server_user, SRN_CLOSED, cxp, NULL, 0);
+#endif
 				log_printf (RTPS_ID, 0, "TCP(SC): close control connection [%d]!\r\n", cxp->fd);
 				tcp_close_fd (cxp);
 			}
 		}
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 #ifdef DDS_IPV6
 	if (family == AF_INET6 && tcpv6_server)
@@ -5001,12 +5434,12 @@ void rtps_tcp_addr_update_end (unsigned family)
 				tcp_close_fd (cxp);
 		}
 #endif
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 
 	for (i = 0; i < TCP_MAX_CLIENTS; i++) { /* Iterate over the TCP.C contexts */
 		cxp = tcp_client [i];
 		if (!cxp)
-			continue;
+			break;
 
 		if (cxp->redundant &&
 		    ((family == AF_INET && cxp->locator->locator.kind == LOCATOR_KIND_TCPv4) 
@@ -5014,14 +5447,19 @@ void rtps_tcp_addr_update_end (unsigned family)
 		  || (family == AF_INET6 && cxp->locator->locator.kind == LOCATOR_KIND_TCPv6)
 #endif
 		  									   )) {
+#ifdef TCP_SUSPEND
+			if (bgcp_client_fct)
+				(*bgcp_client_fct) (bgcp_client_user, SRN_CLOSED, cxp, NULL, 0);
+#endif
 			log_printf (RTPS_ID, 0, "TCP(CC): close control connection [%d]!\r\n", cxp->fd);
 			tcp_cx_closed (cxp);
-			VALIDATE_CXS ();
+			VALIDATE_CXS (NULL);
 
 			while (cxp->clients)
 				tcp_close_data (cxp->clients);
-			cc_retry (cxp, 1);
-			VALIDATE_CXS ();
+			cxp->redundant = 0;
+			cc_retry (cxp, TCP_CC_RETRY_TO);
+			VALIDATE_CXS (NULL);
 		}
 	}
 }
@@ -5036,6 +5474,9 @@ static IP_CX *tcp_new_cx (unsigned     id,
 	unsigned	 share;
 	DDS_ReturnCode_t ret;
 
+	if (!lp->port)
+		return (NULL);
+
 	log_printf (RTPS_ID, 0, "TCP(%cDT): create new data context (%u)\r\n", 
 					(ccxp->cx_side == ICS_SERVER) ? 'S' : 'C', lp->port);
 	cxp = rtps_ip_alloc ();
@@ -5043,6 +5484,8 @@ static IP_CX *tcp_new_cx (unsigned     id,
 		log_printf (RTPS_ID, 0, "tcp_new_cx: out of contexts!\r\n");
 		return (NULL);
 	}
+	VALIDATE_NEW (cxp);
+
 	xlnp = xmalloc (sizeof (LocatorNode_t));
 	if (!xlnp) {
 		rtps_ip_free (cxp);
@@ -5056,12 +5499,10 @@ static IP_CX *tcp_new_cx (unsigned     id,
 	cxp->dst_port = lp->port;
 	if (dst_prefix) {
 		cxp->dst_prefix = *dst_prefix;
-		memcpy (cxp->dst_addr, lp->address, 16);
-		cxp->has_dst_addr = 1;
 		cxp->has_prefix = 1;
 	}
-	else
-		memset (cxp->dst_addr, 0, sizeof (cxp->dst_addr));
+	memcpy (cxp->dst_addr, ccxp->dst_addr, 16);
+	cxp->has_dst_addr = 1;
 	cxp->id = id;
 	cxp->users = 1;
 	cxp->cx_type = ccxp->cx_type;
@@ -5119,7 +5560,7 @@ static IP_CX *tcp_new_cx (unsigned     id,
 		TCP_NP_STATE ("xDT", cxp, TDS_WCONTROL);
 		tmr_start (cxp->timer, CCWAIT_TO, (uintptr_t) cxp, cdt_timeout);
 	}
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 	return (cxp);
 }
 
@@ -5164,6 +5605,7 @@ static void tcp_enqueue_msgs (IP_CX *cxp, RMBUF *msgs)
 		if (!rp)
 			break;
 
+		rp->ticks = sys_ticks_last;
 		if (cxp->head)
 			cxp->tail->next = rp;
 		else {
@@ -5171,7 +5613,8 @@ static void tcp_enqueue_msgs (IP_CX *cxp, RMBUF *msgs)
 			cxp->head = rp;
 		}
 		cxp->tail = rp;
-		cxp->stats.nqueued++;
+		if (!cxp->nqueued++)
+			cxp->qstart = rp->ticks;
 	}
 #ifdef TCP_TRC_CX
 	log_printf (RTPS_ID, 0, "*  Channel (%p) - messages queued!\r\n", (void *) cxp);
@@ -5392,58 +5835,57 @@ static void tcp_setup_data (unsigned id, Locator_t *lp, RMBUF *msgs)
 #ifdef TCP_TRC_CX
 	log_printf (RTPS_ID, 0, "*Data => %s (msgs=%p)!\r\n", locator_str (lp), (void *) msgs);
 #endif
+ 	/* Use prefix to send data to the correct control channel if there is
+	   one.  If the prefix doesn't belong to an existing control channel,
+	   but we have a connection to a forwarder, send it to that one.  In
+	   the other case, we simply drop the data until a proper control
+	   channel becomes available since we will retry on DDS level until
+	   connectivity is established. */
 	has_prefix = info_destination_prefix (msgs, &prefix);
 	if (has_prefix) {
+		if (tcp_setup_from_prefix (id, lp, msgs, &prefix))
+			return;
 
-		/* Use prefix to send data to the correct control channel.
-		   If the prefix doesn't belong to an existing control channel,
-		   but we have a connection to a forwarder, send it to that
-		   one.  In the other case, we simply drop the data until a
-		   proper control channel becomes available since we will retry
-		   on DDS level until connectivity is established. */
-		if (!tcp_setup_from_prefix (id, lp, msgs, &prefix))
-			goto no_prefix;
+#ifdef TCP_TRC_CX
+		log_printf (RTPS_ID, 0, "* no luck with prefix!\r\n");
+#endif
 	}
-	else {
 
-	    no_prefix:
+	/* We don't have a prefix, so send it on all control
+	   channels, mimicking multicast behaviour. This means also
+	   that data will potentially be queued on several control
+	   channels simultaneously. */
+	n = 0;
+	for (i = 0; i < TCP_MAX_CLIENTS; i++) {
+		ccxp = tcp_client [i];
+		if (!ccxp)
+			break;
 
-		/* Since we don't have a prefix, send it on all control
-		   channels, mimicking multicast behaviour. This means also
-		   that data will potentially be queued on several control
-		   channels simultaneously. */
-		n = 0;
-		for (i = 0; i < TCP_MAX_CLIENTS; i++) {
-			ccxp = tcp_client [i];
-			if (!ccxp)
-				break;
+		if (ccxp->locator->locator.kind != lp->kind)
+			continue;
 
-			if (ccxp->locator->locator.kind != lp->kind)
-				continue;
-
+		cxp = tcp_channel_create (id, lp, ccxp, NULL);
+		if (cxp)
+			n = tcp_channel_enqueue (cxp, msgs, table, n);
+	}
+	if (lp->kind == LOCATOR_KIND_TCPv4 && tcpv4_server)
+		for (ccxp = tcpv4_server->clients; ccxp; ccxp = ccxp->next) {
 			cxp = tcp_channel_create (id, lp, ccxp, NULL);
 			if (cxp)
 				n = tcp_channel_enqueue (cxp, msgs, table, n);
 		}
-		if (lp->kind == LOCATOR_KIND_TCPv4 && tcpv4_server)
-			for (ccxp = tcpv4_server->clients; ccxp; ccxp = ccxp->next) {
-				cxp = tcp_channel_create (id, lp, ccxp, NULL);
-				if (cxp)
-					n = tcp_channel_enqueue (cxp, msgs, table, n);
-			}
 #ifdef DDS_IPV6
-		else if (lp->kind == LOCATOR_KIND_TCPv6 && tcpv6_server) {
-			for (ccxp = tcpv6_server->clients; ccxp; ccxp = ccxp->next) {
-				cxp = tcp_channel_create (id, lp, ccxp, NULL);
-				if (cxp)
-					n = tcp_channel_enqueue (cxp, msgs, table, n);
-			}
+	else if (lp->kind == LOCATOR_KIND_TCPv6 && tcpv6_server) {
+		for (ccxp = tcpv6_server->clients; ccxp; ccxp = ccxp->next) {
+			cxp = tcp_channel_create (id, lp, ccxp, NULL);
+			if (cxp)
+				n = tcp_channel_enqueue (cxp, msgs, table, n);
 		}
-#endif
 	}
+#endif
 }
 
-/* tcp_send_spdp_forward -- Send an RTPS SPDP message via the specified
+/* tcp_send_meta_forward -- Send an RTPS SPDP message via the specified
 			    server->client control connection. */
 
 void tcp_send_meta_forward (unsigned id, Locator_t *lp, IP_CX *ccxp, RMBUF *msgs)
@@ -5466,6 +5908,7 @@ void tcp_send_meta_forward (unsigned id, Locator_t *lp, IP_CX *ccxp, RMBUF *msgs
 			return;
 
 		memcpy (cxp->dst_addr, lp->address, 16);
+		cxp->dst_port = lp->port;
 		cxp->has_dst_addr = 1;
 	}
 
@@ -5638,22 +6081,39 @@ void rtps_tcp_send (unsigned id, Locator_t *lp, LocatorList_t *next, RMBUF *msgs
 		if (lp->handle &&
 		    (cxp = rtps_ip_from_handle (lp->handle)) != NULL) {
 			ttx_print ("rtps_tcp_send: found from handle!\r\n");
-			tcp_enqueue_msgs (cxp, msgs);
-			return;
+			if (cxp->nqueued) {
+				if (sys_ticksdiff (cxp->qstart, sys_ticks_last) > TICKS_PER_SEC * 2)
+					sock_fd_event_socket (cxp->fd, POLLOUT, 1);
+				if (sys_ticksdiff (cxp->qstart, sys_ticks_last) > MAX_Q_TIME) {
+					log_printf (RTPS_ID, 0, "TCP(%u): Connection seems stuck, force close!\r\n", cxp->handle);
+					tcp_close_fd (cxp);
+				}
+			}
+			else {
+				tcp_enqueue_msgs (cxp, msgs);
+				return;
+			}
 		}
 		lp->handle = 0;
 
-# if 0
 		/* Shortcut to connection doesn't work, use locator data
-		   to find data context if it exists. */
-		if ((cxp = rtps_ip_lookup_peer (id, lp)) != NULL) {
+		   to find data context if it exists (only for MCast though,
+		   has strange side-effects otherwise over NAT). */
+		if ((lp->flags & LOCF_MCAST) != 0 &&
+		    (cxp = rtps_ip_lookup_peer (id, lp)) != NULL) {
 			ttx_print ("rtps_tcp_send: found by peer lookup!\r\n");
 			lp->handle = cxp->handle;
-			tcp_enqueue_msgs (cxp, msgs);
-			return;
+			if (cxp->nqueued &&
+			    sys_ticksdiff (cxp->qstart, sys_ticks_last) > MAX_Q_TIME) {
+				log_printf (RTPS_ID, 0, "TCP(%u): Connection seems stuck, force close!\r\n", cxp->handle);
+				tcp_close_fd (cxp);
+			}
+			else {
+				tcp_enqueue_msgs (cxp, msgs);
+				return;
+			}
 		}
 		ttx_print ("rtps_tcp_send: no such destination yet!\r\n");
-# endif
 
 		/* Data connection doesn't exist yet - create it and enqueue
 		   the messages. */
@@ -5730,7 +6190,7 @@ static unsigned rtps_tcp_update (LocatorKind_t kind, Domain_t *dp, int done)
 	else if (!cxp && n)
 		rtps_tcp_add_mcast_locator (dp);
 
-	VALIDATE_CXS ();
+	VALIDATE_CXS (NULL);
 	return (n);
 }
 
@@ -5751,6 +6211,162 @@ int rtps_tcp_peer (unsigned     handle,
 	}
 	return (DDS_RETCODE_ALREADY_DELETED);
 }
+
+#ifdef TCP_SUSPEND
+
+/* rtps_srn_server_mode -- After suspend/resume attach/detach, notify BGNS
+			   server of existing connections. */
+
+static void rtps_srn_server_mode (IP_CX *cxp, int enable)
+{
+	for (; cxp; cxp = cxp->next)
+		if (cxp->p_state == TCS_CONTROL)
+			(*bgcp_server_fct) (bgcp_server_user,
+					    (enable) ? SRN_OPEN : SRN_CLOSED,
+					    cxp,
+					    NULL,
+					    0);
+}
+
+/* rtps_srn_server_mode -- After suspend/resume attach/detach, notify BGNS
+			   client of existing connections. */
+
+static void rtps_srn_client_mode (int enable)
+{
+	IP_CX		*cxp;
+	unsigned	i;
+
+	for (i = 0; i < TCP_MAX_CLIENTS; i++) {
+		cxp = tcp_client [i];
+		if (!cxp)
+			break;
+
+		if (cxp->p_state == TCS_CONTROL)
+			(*bgcp_client_fct) (bgcp_client_user,
+					    (enable) ? SRN_OPEN : SRN_CLOSED,
+					    cxp,
+					    NULL,
+					    0);
+	}
+}
+
+/* rtps_tcp_srn_attach -- Attach to the existing TCP control channels for
+			  suspend/resume notifications. */
+
+int rtps_tcp_srn_attach (int server, TCP_SR_IND fct, uintptr_t user)
+{
+	if (server) {
+		if (bgcp_server_fct)
+			return (DDS_RETCODE_PRECONDITION_NOT_MET);
+
+		bgcp_server_fct = fct;
+		bgcp_server_user = user;
+		if (tcpv4_server && tcpv4_server->clients)
+			rtps_srn_server_mode (tcpv4_server->clients, 1);
+#ifdef DDS_IPV6
+		if (tcpv6_server && tcpv6_server->clients)
+			rtps_srn_server_mode (tcpv6_server->clients, 1);
+#endif
+	}
+	else {
+		if (bgcp_client_fct)
+			return (DDS_RETCODE_PRECONDITION_NOT_MET);
+
+		bgcp_client_fct = fct;
+		bgcp_client_user = user;
+		rtps_srn_client_mode (1);
+	}
+	return (DDS_RETCODE_OK);
+}
+
+/* rtps_tcp_srn_detach -- Detach from the existing TCP control channel. */
+
+void rtps_tcp_srn_detach (int server)
+{
+	if (server) {
+		if (tcpv4_server && tcpv4_server->clients)
+			rtps_srn_server_mode (tcpv4_server->clients, 0);
+#ifdef DDS_IPV6
+		if (tcpv6_server && tcpv6_server->clients)
+			rtps_srn_server_mode (tcpv6_server->clients, 0);
+#endif
+		bgcp_server_fct = NULL;
+		bgcp_server_user = 0;
+	}
+	else {
+		rtps_srn_client_mode (0);
+		bgcp_client_fct = NULL;
+		bgcp_client_user = 0;
+	}
+}
+
+#define	MAX_BGNS_SIZE	2048
+
+/* rtps_tcp_srn_send -- Send a suspend/resume notification message. */
+
+int rtps_tcp_srn_send (IP_CX *cxp, const unsigned char *msg, size_t n)
+{
+	WR_RC		rc;
+	unsigned char	*txp;
+
+	if (!cxp ||
+	    !cxp->fd ||
+	    cxp->cx_state != CXS_OPEN ||
+	    cxp->p_state != TCS_CONTROL ||
+	    !n ||
+	    n > MAX_BGNS_SIZE)
+		return (TCP_SEND_ERR);
+
+	if (cxp->cxbs_queued)
+		return (TCP_SEND_BUSY);
+
+	/* Set txp either to a newly allocated buffer (TLS expects to reuse the
+	   same buffer data in some situations) or to rtps_tx_buf (for UDP).
+	   If set to a new buffer, TLS is responsible to xfree() it when it
+	   doesn't need it anymore. */
+#ifdef DDS_SECURITY
+	if (cxp->stream_fcts == &tls_functions) {
+		txp = xmalloc (n);
+		if (!txp) {
+			warn_printf ("tcp_send_ctrl: out-of-memory for send buffer!");
+			cxp->stats.nomem++;
+			return (TCP_SEND_ERR);
+		}
+		memcpy (txp, msg, n);
+	}
+	else
+#endif
+		txp = (unsigned char *) msg;
+
+	trc_print1 ("C:T[%d:", cxp->fd);
+	rc = cxp->stream_fcts->write_msg (cxp, txp, n);
+	if (rc == WRITE_FATAL) {
+		log_printf (RTPS_ID, 0, "tcp_send_ctrl: fatal error sending control message [%d] {rc=%d} (%s).\r\n", cxp->fd, rc, strerror (ERRNO));
+		return (TCP_SEND_ERR);
+	}
+	else if (rc == WRITE_ERROR) {
+		log_printf (RTPS_ID, 0, "tcp_send_ctrl: error sending control message [%d] {rc=%d} (%s).\r\n", cxp->fd, rc, strerror (ERRNO));
+		cxp->stats.write_err++;
+		return (TCP_SEND_ERR);
+	}
+	else if (rc == WRITE_BUSY) {
+		log_printf (RTPS_ID, 0, "tcp_send_ctrl: Write still busy from previous control message [%d] {rc=%d} (%s).\r\n", cxp->fd, rc, strerror (ERRNO));
+		return (TCP_SEND_BUSY);
+	}
+	else if (rc == WRITE_PENDING)
+		log_printf (RTPS_ID, 0, "tcp_send_ctrl: Write pending of following control message [%d] {rc=%d} (%s).\r\n", cxp->fd, rc, strerror (ERRNO));
+
+	trc_print_region (rtps_tx_buf, n, 0, 0);
+	trc_print ("]\r\n");
+	return (TCP_SEND_OK);
+}
+
+void rtps_tcp_srn_suspend (IP_CX *cxp, int enabled)
+{
+	cxp->suspended = enabled;
+}
+
+#endif
 
 static RTPS_TRANSPORT rtps_tcpv4 = {
 	LOCATOR_KIND_TCPv4,
@@ -5800,9 +6416,38 @@ int rtps_tcpv4_attach (void)
 	return (DDS_RETCODE_OK);
 }
 
+/* rtps_tcp_closed -- TCP has finished. */
+
+static void rtps_tcp_closed (void)
+{
+	if (server_args && server_args != server_buf)
+		xfree (server_args);
+	server_args = NULL;
+	if (public_args && public_args != public_buf)
+		xfree (public_args);
+	public_args = NULL;
+#ifdef DDS_SECURITY
+	rtps_tls_finish ();
+#endif
+}
+
+#ifdef TCP_SUSPEND
+
+static int bgcp_active (int suspend)
+{
+	if (!suspend)
+		return (0);
+
+	return (bgcp_client_fct || bgcp_server_fct);
+}
+
+#else
+#define	bgcp_active(s)	0
+#endif
+
 /* rtps_tcpv4_detach -- Detach the previously attached TCPv4 protocol. */
 
-void rtps_tcpv4_detach (void)
+void rtps_tcpv4_detach (int suspend)
 {
 	act_printf ("rtps_tcpv4_detach()\r\n");
 
@@ -5810,35 +6455,621 @@ void rtps_tcpv4_detach (void)
 		return;
 
 	if (tcp_v4_pars.enabled)
-		rtps_tcpv4_disable ();
+		rtps_tcpv4_disable_x (suspend);
 
 	ipv4_proto.control [IPK_TCP] = NULL;
 	ipv4_proto.nprotos--;
 	ip_attached &= ~LOCATOR_KIND_TCPv4;
-	if (server_args && server_args != server_buf)
-		xfree (server_args);
-	server_args = NULL;
-	if (public_args && public_args != public_buf)
-		xfree (public_args);
-	public_args = NULL;
-
-#ifdef DDS_SECURITY
-	if ((ip_attached & LOCATOR_KINDS_TCP) == 0)
-		rtps_tls_finish ();
-#endif
 	rtps_transport_remove (&rtps_tcpv4);
+
+	if (!bgcp_active (suspend) &&
+	    (ip_attached & LOCATOR_KINDS_TCP) == 0)
+		rtps_tcp_closed ();
 }
 
-#ifdef DDS_IP
-	if (tcp_v6_pars.sport) {
+#ifdef DDS_IPV6
 
-		/* Start server. */
-		ret = rtps_tcp_server_start (AF_INET6);
-		if (ret)
-			return (ret);
+static void tcpv6_port_change (Config_t c)
+{
+	Domain_t	*dp;
+	unsigned	i, n, oport;
+	int		secure, osecure;
+
+#ifdef DDS_SECURITY
+	secure = (c == DC_TCP_SecPort6);
+#else
+	secure = 0;
+#endif
+	if (tcp_v6_pars.sport_s) {
+		osecure = 1;
+		oport = tcp_v6_pars.sport_s;
 	}
-	if (tcp_v6_pars.sport)
-		rtps_tcp_server_stop (AF_INET6);
+	else if (tcp_v6_pars.sport_ns) {
+		osecure = 0;
+		oport = tcp_v6_pars.sport_ns;
+	}
+	else {
+		osecure = 0;
+		oport = 0;
+	}
+	if (config_defined (c)) {
+		if ((i = config_get_number (c, 0)) >= 1024 && i <= 65530) {
+			if (tcp_v6_pars.enabled && oport && (secure || !osecure))
+				rtps_tcp_server_stop (AF_INET6, 0);
+
+			if (secure)
+				tcp_v6_pars.sport_s = i;
+			else
+				tcp_v6_pars.sport_ns = i;
+			log_printf (RTPS_ID, 0, "TCP: local %sTCPv6 server port = %u\r\n", (secure) ? "secure " : "", i);
+		}
+		else
+			log_printf (RTPS_ID, 0, "TCP: invalid local %sTCPv6 server port!\r\n", (secure) ? "secure " : "");
+	}
+	else {
+		if (tcp_v6_pars.enabled && oport && secure == osecure)
+			rtps_tcp_server_stop (AF_INET6, 0);
+
+		if (secure)
+			tcp_v6_pars.sport_s = 0;
+		else
+			tcp_v6_pars.sport_ns = 0;
+		log_printf (RTPS_ID, 0, "TCP: local %sTCPv6 server disabled\r\n", (secure) ? "secure " : "");
+	}
+	if (!tcp_v6_pars.enabled || (!secure && osecure))
+		return;
+
+	if (tcp_v6_pars.sport_s || tcp_v6_pars.sport_ns)
+		rtps_tcp_server_start (AF_INET6);
+
+	/* Propagate the change to all domains. */
+	if (domains_used ()) {
+		n = 0;
+		while ((dp = domain_next (&n, NULL)) != NULL) {
+			rtps_participant_update (dp);
+			VALIDATE_CXS (NULL);
+		}
+	}
+}
+
+static void tcpv6_server_change (Config_t c)
+{
+	const char	*env_str;
+	char		*save_ptr = NULL, *s, *arg, *cp;
+	Domain_t	*dp;
+	RTPS_TCP_RSERV	*rp;
+	unsigned	n, i, j;
+	int		secure;
+
+#ifdef DDS_SECURITY
+	secure = (c == DC_TCP_SecServer6);
+#else
+	ARG_NOT_USED (c)
+
+	secure = 0;
+#endif
+	if (tcp_v6_pars.enabled) {
+
+		/* First stop all running clients of the given type. */
+		for (i = 0, rp = tcp_v6_pars.rservers;
+		     i < tcp_v6_pars.nrservers;
+		     i++, rp++)
+			if (rp->secure == secure)
+				rtps_tcp_client_stop (i + RTPS_MAX_TCP_SERVERS, 0);
+	}
+
+	/* Remove all clients of the given type from the remote servers list. */
+	for (i = 0, rp = tcp_v6_pars.rservers; i < tcp_v6_pars.nrservers; )
+		if (rp->secure == secure) {
+			tcp_v6_pars.nrservers--;
+			for (j = i; j < tcp_v6_pars.nrservers; j++)
+				tcp_v6_pars.rservers [j] = tcp_v6_pars.rservers [j + 1];
+		}
+		else {
+			i++;
+			rp++;
+		}
+
+#ifdef DDS_SECURITY
+	env_str = config_get_string ((secure) ? DC_TCP_SecServer6 : DC_TCP_Server6, NULL);
+#else
+	env_str = config_get_string (DC_TCP_Server6, NULL);
+#endif
+	if (env_str) {
+		n = strlen (env_str) + 1;
+		if (n > sizeof (server_buf)) {
+			server_args = xmalloc (n);
+			if (!server_args) {
+				warn_printf ("No room to store TCP server parameters!");
+				return;
+			}
+		}
+		else
+			server_args = server_buf;
+		memcpy (server_args, env_str, n);
+		s = server_args;
+		for (; tcp_v6_pars.nrservers < RTPS_MAX_TCP_SERVERS; ) {
+			arg = strtok_r (s, ";", &save_ptr);
+			if (!arg)
+				break;
+
+			s = NULL;
+			rp = &tcp_v6_pars.rservers [tcp_v6_pars.nrservers++];
+			rp->secure = secure;
+			if ((rp->name = is_dns_name (arg)) != 0) {
+				rp->addr.name = arg;
+				cp = strrchr (arg, '$');
+				if (cp) {
+					*cp = '\0';
+					rp->port = atoi (++cp);
+				}
+				else
+					rp->port = 7400;
+				log_printf (RTPS_ID, 0, "TCP: remote %sTCPv6 server at %s:%u\r\n",
+						(secure) ? "secure " : "",
+						rp->addr.name, rp->port);
+			}
+			else {
+				cp = strrchr (arg, '$');
+				if (cp) {
+					*cp = '\0';
+					rp->port = atoi (++cp);
+				}
+				else
+					rp->port = 7400;
+				if (!inet_pton (AF_INET6, arg, rp->addr.ipa_v6)) {
+					tcp_v6_pars.nrservers--;
+					break;
+				}
+				log_printf (RTPS_ID, 0, "TCP: remote %sTCPv6 server at %s:%u\r\n",
+						(secure) ? "secure " : "",
+						arg, rp->port);
+			}
+			/* else - just ignore it ... */
+		}
+	}
+
+	VALIDATE_CXS (NULL);
+
+	if (!tcp_v6_pars.enabled)
+		return;
+
+	/* Start all clients of the given type. */
+	for (i = 0, rp = tcp_v6_pars.rservers;
+	     i < tcp_v6_pars.nrservers;
+	     i++, rp++)
+		if (rp->secure == secure)
+			rtps_tcp_client_start (&tcp_v6_pars.rservers [i], 
+					       i + RTPS_MAX_TCP_SERVERS, 0);
+
+	VALIDATE_CXS (NULL);
+
+	/* Propagate the change to all domains. */
+	if (domains_used ()) {
+		n = 0;
+		while ((dp = domain_next (&n, NULL)) != NULL) {
+			rtps_participant_update (dp);
+			VALIDATE_CXS (NULL);
+		}
+	}
+}
+
+/* rtps_tcpv6_init -- Initialize the TCP/IPv6 RTPS transport. */
+
+static int rtps_tcpv6_init (RMRXF    rxf,
+			    MEM_DESC msg_hdr,
+			    MEM_DESC msg_elem)
+{
+	int		error;
+
+	act_printf ("rtps_tcpv6_init()\r\n");
+	tcp_cookie = random ();
+	if ((ip_attached & LOCATOR_KINDS_IPv6) == 0) {
+		error = rtps_ipv6_init (rxf, msg_hdr, msg_elem);
+		if (error)
+			return (error);
+	}
+	memset (&tcp_v6_pars, 0, sizeof (tcp_v6_pars));
+	tcp_v6_pars.port_pars = rtps_udp_def_pars;
+#ifdef DDS_SECURITY
+	config_notify (DC_TCP_SecPort6, tcpv6_port_change);
+	config_notify (DC_TCP_SecServer6, tcpv6_server_change);
+#endif
+	config_notify (DC_TCP_Port6, tcpv6_port_change);
+	config_notify (DC_TCP_Server6, tcpv6_server_change);
+	return (DDS_RETCODE_OK);
+}
+
+/* rtps_tcpv6_final -- Finalize the TCP/IPv6 RTPS transport. */
+
+static void rtps_tcpv6_final (void)
+{
+	act_printf ("rtps_tcpv6_final()\r\n");
+
+	if ((ip_attached & LOCATOR_KINDS_IPv6) == 0)
+		rtps_ipv6_final ();
+}
+
+static int rtps_tcpv6_enable (void)
+{
+	RTPS_TCP_RSERV	*rp;
+	unsigned	i;
+
+	act_printf ("rtps_tcpv6_enable()\r\n");
+	tcp_v6_pars.enabled = 1;
+	for (i = 0, rp = tcp_v6_pars.rservers;
+	     i < tcp_v6_pars.nrservers && i < RTPS_MAX_TCP_SERVERS;
+	     i++, rp++) {
+
+		/* Connect to remote server. */
+		rtps_tcp_client_start (rp, i + RTPS_MAX_TCP_SERVERS, 0);
+		VALIDATE_CXS (NULL);
+	}
+	if (tcp_v6_pars.sport_s || tcp_v6_pars.sport_ns)
+		rtps_tcp_server_start (AF_INET6);
+
+	return (DDS_RETCODE_OK);
+}
+
+static void rtps_tcpv6_disable_x (int suspend)
+{
+	unsigned	i;
+
+	act_printf ("rtps_tcpv6_disable()\r\n");
+	if (tcp_v6_pars.sport_s || tcp_v6_pars.sport_ns)
+		rtps_tcp_server_stop (AF_INET6, suspend);
+
+	for (i = 0; i < tcp_v6_pars.nrservers && i < RTPS_MAX_TCP_SERVERS; i++) {
+
+		/* Disconnect from remote server. */
+		rtps_tcp_client_stop (i + RTPS_MAX_TCP_SERVERS, suspend);
+		VALIDATE_CXS (NULL);
+	}
+	tcp_v6_pars.enabled = 0;
+}
+
+static void rtps_tcpv6_disable (void)
+{
+	rtps_tcpv6_disable_x (0);
+}
+
+/* tcpv6_add_port -- Add a locator based on the IP address and port number. */
+
+static void tcpv6_add_port (LocatorList_t       *llp,
+			    const unsigned char *addr,
+			    unsigned            port,
+			    uint32_t            scope_id,
+			    Scope_t             scope,
+			    unsigned            flags,
+			    unsigned            sproto)
+{
+	LocatorKind_t	kind;
+
+	if (port >= 0xffffU)
+		warn_printf ("TCPv6: can't create locator due to selected DomainId and ParticipantId parameters!");
+
+	if (llp && port < 0xffff) {
+		kind = LOCATOR_KIND_TCPv6;
+		locator_list_add (llp, kind, addr, port, scope_id, scope, flags, sproto);
+	}
+}
+
+static unsigned char *tcpv6_resolve_public (unsigned char *abuf, int log)
+{
+	struct hostent	*he;
+	struct in6_addr	*addr;
+	char		buf [100];
+
+	if (tcp_v6_pars.oname) {
+		he = gethostbyname (tcp_v6_pars.oaddr.name);
+		if (!he) {
+			warn_printf ("TCP: public server name could not be resolved!");
+			return (NULL);
+		}
+		addr = (struct in6_addr *) he->h_addr_list [0];
+		if (log)
+			log_printf (RTPS_ID, 0, "TCP: public server name resolved to %s\r\n", 
+					          inet_ntop (AF_INET6, addr->s6_addr, buf, sizeof (buf)));
+	}
+	else
+		addr = (struct in6_addr *) tcp_v6_pars.oaddr.ipa_v6;
+	memcpy (abuf, addr->s6_addr, 16);
+	return (abuf);
+}
+
+static void rtps_tcpv6_locators_get (DomainId_t    domain_id,
+				     unsigned      participant_id,
+				     RTPS_LOC_TYPE type,
+				     LocatorList_t *uc,
+				     LocatorList_t *mc,
+				     LocatorList_t *dst)
+{
+	unsigned	i;
+	unsigned char	*cp;
+	uint32_t	scope_id;
+	Scope_t		scope;
+	int		mcast;
+	const char	*env_str;
+	unsigned char	addr_buf [16];
+	unsigned char	mc_addr [16];
+
+	ARG_NOT_USED (mc)
+	ARG_NOT_USED (dst)
+
+	if (config_defined (DC_IPv6_MCastAddr)) {
+		env_str = config_get_string (DC_IPv6_MCastAddr, NULL);
+		if (!env_str || *env_str == '\0')
+			mcast = 0;
+		else if (inet_pton (AF_INET6, env_str, mc_addr) == 1)
+			mcast = 1;
+		else {
+			log_printf (RTPS_ID, 0, "IPv6: Invalid TDDS_IPV6_GROUP syntax: IPv6 address expected.\r\n");
+			mcast = 0;
+		}
+	}
+	else {
+		inet_pton (AF_INET6, "FF03::80", mc_addr);
+		mcast = 1;
+	}
+	if (tcp_v6_pars.sport_s || tcp_v6_pars.sport_ns || tcp_v6_pars.nrservers)
+		switch (type) {
+			case RTLT_USER:
+				for (i = 0, cp = ipv6_proto.own;
+				     i < ipv6_proto.num_own;
+				     i++, cp += OWN_IPV6_SIZE) {
+					memcpy (&scope_id, cp + OWN_IPV6_SCOPE_ID_OFS, 4);
+					memcpy (&scope, cp + OWN_IPV6_SCOPE_OFS, 4);
+					if (scope <= SITE_LOCAL &&
+					    !tcp_v6_pars.private_ok)
+						continue;
+
+					tcpv6_add_port (uc,
+						        cp,
+						        tcp_v6_pars.port_pars.pb +
+						        tcp_v6_pars.port_pars.dg * domain_id + 
+						        tcp_v6_pars.port_pars.pg * participant_id +
+						        tcp_v6_pars.port_pars.d3,
+							scope_id,
+							scope,
+							LOCF_DATA | LOCF_UCAST,
+							0);
+				}
+				if (tcp_v6_pars.oport && tcpv6_resolve_public (addr_buf, 1))
+					tcpv6_add_port (uc,
+						        addr_buf,
+						        tcp_v6_pars.oport +
+						        tcp_v6_pars.port_pars.dg * domain_id + 
+						        tcp_v6_pars.port_pars.pg * participant_id +
+						        tcp_v6_pars.port_pars.d3,
+							0,
+							GLOBAL_SCOPE,
+							LOCF_DATA | LOCF_UCAST,
+							0);
+				break;
+			case RTLT_SPDP_SEDP:
+				for (i = 0, cp = ipv6_proto.own;
+				     i < ipv6_proto.num_own;
+				     i++, cp += OWN_IPV6_SIZE) {
+					memcpy (&scope_id, cp + OWN_IPV6_SCOPE_ID_OFS, 4);
+					memcpy (&scope, cp + OWN_IPV6_SCOPE_OFS, 4);
+					tcpv6_add_port (uc,
+						        cp,
+						        tcp_v6_pars.port_pars.pb +
+						        tcp_v6_pars.port_pars.dg * domain_id +
+						        tcp_v6_pars.port_pars.pg * participant_id +
+						        tcp_v6_pars.port_pars.d1,
+							scope_id,
+							scope,
+							LOCF_META | LOCF_UCAST,
+							0);
+				}
+				if (tcp_v6_pars.oport && tcpv6_resolve_public (addr_buf, 0)) {
+					tcpv6_add_port (uc,
+						        addr_buf,
+						        tcp_v6_pars.oport +
+						        tcp_v6_pars.port_pars.dg * domain_id + 
+						        tcp_v6_pars.port_pars.pg * participant_id +
+						        tcp_v6_pars.port_pars.d1,
+							0,
+							GLOBAL_SCOPE,
+							LOCF_META | LOCF_UCAST,
+							0);
+				}
+				break;
+			default:
+				break;
+		}
+
+	/* Unconditionally add the TCP destination locator, just in case TCP
+	   might be enabled later on. */
+	if (type == RTLT_SPDP_SEDP && mcast)
+		tcpv6_add_port (dst,
+			        mc_addr,
+			        tcp_v6_pars.port_pars.pb +
+			        tcp_v6_pars.port_pars.dg * domain_id +
+			        tcp_v6_pars.port_pars.d0,
+				0,
+				sys_ipv6_scope (mc_addr),
+				LOCF_META | LOCF_MCAST,
+				0);
+}
+
+static int rtps_tcpv6_add_locator (DomainId_t    domain_id,
+				   LocatorNode_t *lnp,
+				   unsigned      id,
+				   int           serve)
+{
+	Locator_t	 *lp = &lnp->locator;
+	IP_CX		 *cxp, *scxp, *ccxp;
+	unsigned	 i;
+#ifdef DDS_NATIVE_SECURITY
+	Domain_t	 *dp;
+	DDS_ReturnCode_t ret;
+#endif
+	char		 buf [100];
+
+	ARG_NOT_USED (domain_id)
+	ARG_NOT_USED (serve)
+
+	snprintf (buf, sizeof (buf), "%s:%u",
+				inet_ntop (AF_INET6, lnp->locator.address, buf, sizeof (buf)),
+				lp->port);
+	log_printf (RTPS_ID, 0, "TCPv6: adding %s\r\n", buf);
+
+	cxp = rtps_ip_lookup (id, lp);
+	if (cxp) {
+		if (cxp->redundant) {
+			cxp->redundant = 0;
+			/*log_printf (RTPS_ID, 0, "Resetting redundant on %p (%d)\r\n", (void *) cxp, cxp->handle);*/
+			if (tcpv6_server)
+				for (scxp = tcpv6_server->clients; scxp; scxp = scxp->next) {/* Iterate over the TCP.H contexts */
+					for (ccxp = scxp->clients; ccxp; ccxp = ccxp->next) /* Iterate over the corresponding TCP.D contexts */
+						if (ccxp->fd_owner && ip_socket_match (ccxp->fd, lp)) {
+							ccxp->redundant = 0;
+							/*log_printf (RTPS_ID, 0, " Resetting redundant on server TCP data %p (%d)\r\n", (void *) ccxp, ccxp->handle);*/
+							if (ccxp->paired) {
+								ccxp->paired->redundant = 0;
+								/*log_printf (RTPS_ID, 0, " Resetting redundant on paired server TCP data %p (%d)\r\n", (void *) ccxp->paired, ccxp->paired->handle);*/
+							}
+						}
+					if (scxp->fd_owner && ip_socket_match (scxp->fd, lp)) {
+						scxp->redundant = 0;
+						/*log_printf (RTPS_ID, 0, " Resetting redundant on server TCP control %p (%d)\r\n", (void *) scxp, scxp->handle);*/
+					}
+				}
+			for (i = 0; i < TCP_MAX_CLIENTS; i++) { /* Iterate over the TCP.C contexts */
+				scxp = tcp_client [i];
+				if (!scxp)
+					break;
+
+				for (ccxp = scxp->clients; ccxp; ccxp = ccxp->next) /* Iterate over the corresponding TCP.D contexts */
+					if (ccxp->fd_owner && ip_socket_match (ccxp->fd, lp)) {
+						ccxp->redundant = 0;
+						/*log_printf (RTPS_ID, 0, " Resetting redundant on client TCP data %p (%d)\r\n", (void *) ccxp, cxp->handle);*/
+						if (ccxp->paired) {
+							ccxp->paired->redundant = 0;
+							/*log_printf (RTPS_ID, 0, " Resetting redundant on paired client TCP data %p (%d)\r\n", (void *) ccxp->paired, ccxp->paired->handle);*/
+						}
+					}
+				if (ip_socket_match (scxp->fd, lp)) {
+					scxp->redundant = 0;
+					/*log_printf (RTPS_ID, 0, " Resetting redundant on client TCP control %p (%d)\r\n", (void *) scxp, scxp->handle);*/
+				}
+			}
+			VALIDATE_CXS (NULL);
+			return (DDS_RETCODE_OK);
+		}
+		else {
+			log_printf (RTPS_ID, 0, "rtps_tcpv6_add_locator (%s): already exists!\r\n", buf);
+			return (DDS_RETCODE_PRECONDITION_NOT_MET);
+		}
+	}
+	cxp = rtps_ip_alloc ();
+	if (!cxp) {
+		log_printf (RTPS_ID, 0, "tcpv6_add_locator: out of contexts!\r\n");
+		return (DDS_RETCODE_OUT_OF_RESOURCES);
+	}
+	locator_lock (lp);
+	cxp->locator = lnp;
+	lnp->users++;
+	locator_release (lp);
+	cxp->id = id;
+	cxp->cx_type = CXT_TCP;
+	cxp->cx_mode = ICM_DATA;
+	cxp->cx_state = CXS_CLOSED;
+	cxp->associated = 0;
+	cxp->rx_data = 1;
+	cxp->tx_data = 0;
+#ifdef DDS_NATIVE_SECURITY
+	dp = domain_get (id, 0, &ret);
+	if (dp && dp->security) {
+		cxp->dst_prefix = dp->participant.p_guid_prefix;
+		cxp->has_prefix = 1;
+	}
+#endif
+	/* Complete the locator context. */
+	rtps_ip_new_handle (cxp);
+	cxp->locator->locator.handle = cxp->handle;
+
+	VALIDATE_CXS (NULL);
+
+	return (DDS_RETCODE_OK);
+}
+
+void rtps_tcpv6_rem_locator (unsigned id, LocatorNode_t *lnp)
+{
+	rtps_ip_rem_locator (id, lnp);
+}
+
+static RTPS_TRANSPORT rtps_tcpv6 = {
+	LOCATOR_KIND_TCPv6,
+	rtps_tcpv6_init,
+	rtps_tcpv6_final,
+	rtps_tcp_pars_set,
+	rtps_tcp_pars_get,
+	rtps_tcpv6_locators_get,
+	rtps_tcpv6_add_locator,
+	rtps_tcpv6_rem_locator,
+	rtps_tcp_update,
+	rtps_ip_send
+};
+
+static IP_CTRL	rtps_tcpv6_control = {
+	&rtps_tcpv6,
+	rtps_tcpv6_enable,
+	rtps_tcpv6_disable
+};
+
+/* rtps_tcpv6_attach -- Attach the TCPv6 protocol in order to send RTPS over
+			TCPv6 messages. */
+
+int rtps_tcpv6_attach (void)
+{
+	int	error;
+
+	act_printf ("rtps_tcpv6_attach()\r\n");
+	
+	error = rtps_transport_add (&rtps_tcpv6);
+	if (error)
+		return (error);
+
+	if (!tcp_v6_pars.port_pars.pb ||
+	    !tcp_v6_pars.port_pars.dg ||
+	    !tcp_v6_pars.port_pars.pg)
+		rtps_parameters_set (LOCATOR_KIND_TCPv6, NULL);
+
+	ipv6_proto.control [IPK_TCP] = &rtps_tcpv6_control;
+	ipv6_proto.nprotos++;
+
+	ip_attached |= LOCATOR_KIND_TCPv6;
+
+	if (ipv6_proto.enabled)
+		rtps_tcpv6_enable ();
+
+	return (DDS_RETCODE_OK);
+}
+
+/* rtps_tcpv6_detach -- Detach the previously attached TCPv6 protocol. */
+
+void rtps_tcpv6_detach (int suspend)
+{
+	act_printf ("rtps_tcpv6_detach()\r\n");
+
+	if (!ipv6_proto.control [IPK_TCP])
+		return;
+
+	if (tcp_v6_pars.enabled)
+		rtps_tcpv6_disable_x (suspend);
+
+	ipv6_proto.control [IPK_TCP] = NULL;
+	ipv6_proto.nprotos--;
+	ip_attached &= ~LOCATOR_KIND_TCPv6;
+	rtps_transport_remove (&rtps_tcpv6);
+
+	if (!bgcp_active (suspend) &&
+	    (ip_attached & LOCATOR_KINDS_TCP) == 0)
+		rtps_tcp_closed ();
+}
 
 #endif
 #else

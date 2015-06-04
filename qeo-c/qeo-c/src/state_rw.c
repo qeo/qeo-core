@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -132,6 +132,17 @@ qeo_retcode_t qeo_state_reader_policy_update(const qeo_state_reader_t *reader)
     return rc;
 }
 
+qeo_retcode_t qeo_state_reader_bgns_notify(qeo_state_reader_t *reader,
+                                           bool on)
+{
+    qeo_retcode_t rc = QEO_EINVAL;
+
+    if (NULL != reader) {
+        rc = qeocore_reader_bgns_notify((qeocore_reader_t *)reader, on);
+    }
+    return rc;
+}
+
 /* ===[ State change reader ]================================================ */
 
 qeo_state_change_reader_t *qeo_factory_create_state_change_reader(const qeo_factory_t *factory,
@@ -192,6 +203,16 @@ qeo_retcode_t qeo_state_change_reader_policy_update(const qeo_state_change_reade
     return rc;
 }
 
+qeo_retcode_t qeo_state_change_reader_bgns_notify(qeo_state_change_reader_t *reader,
+                                                  bool on)
+{
+    qeo_retcode_t rc = QEO_EINVAL;
+
+    if (NULL != reader) {
+        rc = qeocore_reader_bgns_notify((qeocore_reader_t *)reader, on);
+    }
+    return rc;
+}
 
 /* ===[ State writer ]======================================================= */
 

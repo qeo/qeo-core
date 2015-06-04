@@ -1,0 +1,17 @@
+
+<FindBugsFilter>
+
+	<!-- Catch runtimeexception too. This is desired in this case as we want to pass all exceptions to js -->
+	<Match>
+        <Class name="~org.qeo.android.webview.internal.QeoWebviewImpl.*"/>
+		<Bug pattern="REC_CATCH_EXCEPTION"/>
+	</Match>
+	
+    <!-- onCreate android casts -->
+    <Match>
+        <Class name="org.qeo.android.webview.testactivity.WebviewActivity"/>
+		<Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE"/>
+	</Match>
+
+</FindBugsFilter>
+

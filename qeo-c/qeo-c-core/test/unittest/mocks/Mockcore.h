@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -122,5 +122,11 @@ void core_factory_set_tcp_server_no_lock_CMockIgnoreAndReturn(UNITY_LINE_TYPE cm
 void core_factory_set_tcp_server_no_lock_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeo_factory_t* factory, const char* tcp_server, qeo_retcode_t cmock_to_return);
 typedef qeo_retcode_t (* CMOCK_core_factory_set_tcp_server_no_lock_CALLBACK)(qeo_factory_t* factory, const char* tcp_server, int cmock_num_calls);
 void core_factory_set_tcp_server_no_lock_StubWithCallback(CMOCK_core_factory_set_tcp_server_no_lock_CALLBACK Callback);
+#define core_get_domain_id_open_IgnoreAndReturn(cmock_retval) core_get_domain_id_open_CMockIgnoreAndReturn(__LINE__, cmock_retval)
+void core_get_domain_id_open_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_domain_id_t cmock_to_return);
+#define core_get_domain_id_open_ExpectAndReturn(cmock_retval) core_get_domain_id_open_CMockExpectAndReturn(__LINE__, cmock_retval)
+void core_get_domain_id_open_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_domain_id_t cmock_to_return);
+typedef qeocore_domain_id_t (* CMOCK_core_get_domain_id_open_CALLBACK)(int cmock_num_calls);
+void core_get_domain_id_open_StubWithCallback(CMOCK_core_get_domain_id_open_CALLBACK Callback);
 
 #endif

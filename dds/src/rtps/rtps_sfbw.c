@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -107,7 +107,7 @@ static int sfw_be_send_data (RemReader_t *rrp)
 	if (rrp->rr_writer->endpoint.mark_send)
 		rtps_marker_notify (rrp->rr_writer->endpoint.endpoint, EM_SEND, "sfw_be_send_data");
 #endif
-	error = be_send_data (rrp, (DiscoveredReader_t *) &rrp->rr_endpoint);
+	error = be_send_data (rrp, (DiscoveredReader_t *) &rrp->rr_endpoint, 0);
 	prof_stop (rtps_bw_send, 1);
 	return (error);
 }

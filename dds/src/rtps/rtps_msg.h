@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -22,15 +22,16 @@
 #include "rtps_data.h"
 #include "rtps_priv.h"
 
-int rtps_msg_add_data (RemReader_t        *rrp,
-		       const GuidPrefix_t *prefix,
-		       const EntityId_t   *eid,
-		       Change_t           *cp,
-		       const HCI          hci,
-		       int                push
+int rtps_msg_add_data (RemReader_t         *rrp,
+		       const Participant_t *pp,
+		       const EntityId_t    *eid,
+		       unsigned            mcflag,
+		       Change_t            *cp,
+		       const HCI           hci,
+		       int                 push
 #ifdef RTPS_FRAGMENTS
-		     , unsigned           first,
-		       unsigned           *nfrags
+		     , unsigned            first,
+		       unsigned            *nfrags
 #endif
 			                         );
 
@@ -39,6 +40,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 
 int rtps_msg_add_gap (RemReader_t              *rrp,
 		      const DiscoveredReader_t *reader,
+		      unsigned                 mcflag,
 		      const SequenceNumber_t   *start,
 		      const SequenceNumber_t   *base,
 		      unsigned                 n_bits,
@@ -49,6 +51,7 @@ int rtps_msg_add_gap (RemReader_t              *rrp,
 
 int rtps_msg_add_heartbeat (RemReader_t              *rrp,
 			    const DiscoveredReader_t *reader,
+			    unsigned                 mcflag,
 			    unsigned                 flags,
 			    const SequenceNumber_t   *min_seqnr,
 			    const SequenceNumber_t   *max_seqnr);
@@ -66,6 +69,7 @@ int rtps_msg_add_acknack (RemWriter_t              *rwp,
 
 int rtps_msg_add_heartbeat_frag (RemReader_t              *rrp,
 				 const DiscoveredReader_t *reader,
+				 unsigned                 mcflag,
 				 const SequenceNumber_t   *seqnr,
 				 unsigned                 last_frag);
 

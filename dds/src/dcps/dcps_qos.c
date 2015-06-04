@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -43,7 +43,7 @@ DDS_UserDataQosPolicy *DDS_UserDataQosPolicy__alloc (void)
 {
 	DDS_UserDataQosPolicy	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_UserDataQosPolicy));
+	p = Alloc (sizeof (DDS_UserDataQosPolicy));
 	if (!p)
 		return (NULL);
 
@@ -57,7 +57,7 @@ void DDS_UserDataQosPolicy__free (DDS_UserDataQosPolicy *data)
 		return;
 
 	DDS_UserDataQosPolicy__clear (data);
-	mm_fcts.free_ (data);
+	Free (data);
 }
 
 
@@ -75,7 +75,7 @@ DDS_GroupDataQosPolicy *DDS_GroupDataQosPolicy__alloc (void)
 {
 	DDS_GroupDataQosPolicy	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_GroupDataQosPolicy));
+	p = Alloc (sizeof (DDS_GroupDataQosPolicy));
 	if (!p)
 		return (NULL);
 
@@ -89,7 +89,7 @@ void DDS_GroupDataQosPolicy__free (DDS_GroupDataQosPolicy *data)
 		return;
 
 	DDS_GroupDataQosPolicy__clear (data);
-	mm_fcts.free_ (data);
+	Free (data);
 }
 
 
@@ -107,7 +107,7 @@ DDS_TopicDataQosPolicy *DDS_TopicDataQosPolicy__alloc (void)
 {
 	DDS_TopicDataQosPolicy	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_TopicDataQosPolicy));
+	p = Alloc (sizeof (DDS_TopicDataQosPolicy));
 	if (!p)
 		return (NULL);
 
@@ -121,7 +121,7 @@ void DDS_TopicDataQosPolicy__free (DDS_TopicDataQosPolicy *data)
 		return;
 
 	DDS_TopicDataQosPolicy__clear (data);
-	mm_fcts.free_ (data);
+	Free (data);
 }
 
 
@@ -139,7 +139,7 @@ DDS_PartitionQosPolicy *DDS_PartitionQosPolicy__alloc (void)
 {
 	DDS_PartitionQosPolicy	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_PartitionQosPolicy));
+	p = Alloc (sizeof (DDS_PartitionQosPolicy));
 	if (!p)
 		return (NULL);
 
@@ -153,7 +153,7 @@ void DDS_PartitionQosPolicy__free (DDS_PartitionQosPolicy *part)
 		return;
 
 	DDS_PartitionQosPolicy__clear (part);
-	mm_fcts.free_ (part);
+	Free (part);
 }
 
 
@@ -171,7 +171,7 @@ DDS_DomainParticipantQos *DDS_DomainParticipantQos__alloc (void)
 {
 	DDS_DomainParticipantQos	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_DomainParticipantQos));
+	p = Alloc (sizeof (DDS_DomainParticipantQos));
 	if (!p)
 		return (NULL);
 
@@ -185,7 +185,7 @@ void DDS_DomainParticipantQos__free (DDS_DomainParticipantQos *qos)
 		return;
 
 	DDS_DomainParticipantQos__clear (qos);
-	mm_fcts.free_ (qos);
+	Free (qos);
 }
 
 
@@ -203,7 +203,7 @@ DDS_TopicQos *DDS_TopicQos__alloc (void)
 {
 	DDS_TopicQos	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_TopicQos));
+	p = Alloc (sizeof (DDS_TopicQos));
 	if (!p)
 		return (NULL);
 
@@ -217,7 +217,7 @@ void DDS_TopicQos__free (DDS_TopicQos *qos)
 		return;
 
 	DDS_TopicQos__clear (qos);
-	mm_fcts.free_ (qos);
+	Free (qos);
 }
 
 
@@ -236,7 +236,7 @@ DDS_SubscriberQos *DDS_SubscriberQos__alloc (void)
 {
 	DDS_SubscriberQos	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_SubscriberQos));
+	p = Alloc (sizeof (DDS_SubscriberQos));
 	if (!p)
 		return (NULL);
 
@@ -250,7 +250,7 @@ void DDS_SubscriberQos__free (DDS_SubscriberQos *qos)
 		return;
 
 	DDS_SubscriberQos__clear (qos);
-	mm_fcts.free_ (qos);
+	Free (qos);
 }
 
 
@@ -269,7 +269,7 @@ DDS_PublisherQos *DDS_PublisherQos__alloc (void)
 {
 	DDS_PublisherQos	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_PublisherQos));
+	p = Alloc (sizeof (DDS_PublisherQos));
 	if (!p)
 		return (NULL);
 
@@ -283,7 +283,7 @@ void DDS_PublisherQos__free (DDS_PublisherQos *qos)
 		return;
 
 	DDS_PublisherQos__clear (qos);
-	mm_fcts.free_ (qos);
+	Free (qos);
 }
 
 
@@ -301,7 +301,7 @@ DDS_DataReaderQos *DDS_DataReaderQos__alloc (void)
 {
 	DDS_DataReaderQos	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_DataReaderQos));
+	p = Alloc (sizeof (DDS_DataReaderQos));
 	if (!p)
 		return (NULL);
 
@@ -315,7 +315,7 @@ void DDS_DataReaderQos__free (DDS_DataReaderQos *qos)
 		return;
 
 	DDS_DataReaderQos__clear (qos);
-	mm_fcts.free_ (qos);
+	Free (qos);
 }
 
 
@@ -333,7 +333,7 @@ DDS_DataWriterQos *DDS_DataWriterQos__alloc (void)
 {
 	DDS_DataWriterQos	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_DataWriterQos));
+	p = Alloc (sizeof (DDS_DataWriterQos));
 	if (!p)
 		return (NULL);
 
@@ -347,7 +347,7 @@ void DDS_DataWriterQos__free (DDS_DataWriterQos *qos)
 		return;
 
 	DDS_DataWriterQos__clear (qos);
-	mm_fcts.free_ (qos);
+	Free (qos);
 }
 
 

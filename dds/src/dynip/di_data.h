@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -99,6 +99,10 @@ int di_sys_attach (unsigned      family,
 int di_sys_detach (unsigned family);
 
 /* Stop propagating events for the protocol family. */
+
+void di_sys_check (void);
+
+/* Force a check on the state of the interfaces/addresses. */
 
 void di_sys_final (void);
 

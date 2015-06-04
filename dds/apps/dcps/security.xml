@@ -8,9 +8,7 @@
    <encryption>none</encryption>
    <!--method>HMAC_SHA1</method-->
    <transport protocol="UDP">
-    <local>DTLS</local>
     <local>DDSSEC</local>
-    <remote>DTLS</remote>
     <remote>DDSSEC</remote>
    </transport>
    <transport protocol="TCP">
@@ -37,9 +35,7 @@
    <encryption>message</encryption>
    <method>AES256_HMAC_SHA256</method>
    <transport protocol="UDP">
-    <local>DTLS</local>
     <local>DDSSEC</local>
-    <remote>DTLS</remote>
     <remote>DDSSEC</remote>
    </transport>
    <transport protocol="TCP">

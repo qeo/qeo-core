@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE concept PUBLIC "-//OASIS//DTD DITA Concept//EN" "concept.dtd">
+<concept id="concept_kkm_3mn_fq">
+ <title>The Background Notification Service</title>
+ <shortdesc></shortdesc>
+ <conbody>
+  <p>Sometimes it is important to be awoken automatically when there is urgent data available that
+   the application <i>must</i> respond to.</p>
+  <p>This can be done by connecting to a remote Background Notification Server, which then takes
+   over the reading of important notifyable topics (by creating its own DataReaders), and
+   signalling, i.e. waking up the sleeping application.</p>
+  <p>In practice, the application needs to connect to this Background Notification Server and
+   communicate to this server with a proprietary suspend/resume protocol, which can be configured in
+   2 ways:</p>
+  <p>
+   <ul id="ul_f55_zmn_fq">
+    <li>Either by using a dedicated TCP connection to this server, or</li>
+    <li>Piggy-backing the suspend/resume protocol on the existing TCP control channel which is used
+     for controlling DDS/TCP/IP data connections.</li>
+   </ul>
+  </p>
+  <p>Which domain is used and whether it is a separate or in-band TCP connection,  is configured via
+   DDS parameters, as will be explained later.</p>
+  <section>
+   <title>Client side API functions</title>
+   <p>A number of functions are available on the client side to control the wakeup procedure.</p>
+   <p>In order to let the server know which topics are important to be notified, following functions
+    are available:</p>
+   <codeblock>DDS_Activities_notify (DomainId id, const char *topic, const char *type);
+
+DDS_Activities_unnotify (DomainId id, const char *topic, const char *type);</codeblock><p>The first function registers a Reader Topic at the remote notification server, and the second
+    function reverses this (for cleanup purposes, for example).</p>
+   <p>Note that these functions optionally take wildcards in their topic name and type
+    specification, making it much simpler for the app developers to specify which topics/types are
+    important. Simple Unix wildcards are permitted, so '*' and '?' characters can be used in name
+    specifications.</p>
+   <p>The normal behaviour when a client is awoken is to do an automatic, i.e. implicit
+     <parmname>DDS_Activities_resume()</parmname>.</p>
+   <p>If this is not useful, i.e. sometimes the client application wants to be notified but is not
+    really waking up yet, i.e. it just wants to send a message to the user, who will then decide
+    whether to wake up or to continue sleeping.</p>
+   <p>For this reason, the following function is defined:</p>
+   <codeblock>typedef void (*DDS_Activities_on_wakeup) (
+	const char *topic_name,
+	const char *type_name,
+	unsigned char id [12]
+);
+
+typedef void (*DDS_Activities_on_connected) (
+	int fd,
+	int connected
+);
+
+DDS_EXPORT void DDS_Activities_register (
+	DDS_Activities_on_wakeup wakeup_fct,
+	DDS_Activities_on_connected connect_fct
+);</codeblock>
+   <p>If the function is installed properly, i.e. with valid callback functions, then the
+     <parmname>wakeup_fct</parmname> will be called when the Notification Service has received data
+    on one of the proxy readers, and the topic_name/type_name and id will be filled with the Topic
+    Name, Type Name and Participant identity of the writer.</p>
+   <p>Note that this id is sufficient to identify the peer participant, since it is actually the
+     <parmname>GUIDPrefix</parmname>, which is known as the
+     <parmname>DDS_BuiltinTopicKey_t</parmname> key in the
+     <parmname>DDS_ParticipantBuiltinTopicData</parmname> data structure.</p>
+   <p>It becomes the responsibility of the application developer to unfreeze the DDS component when
+    this wakeup_fct is called. If not called eventually, the DDS software will no longer function
+    properly.</p>
+   <p>The <parmname>connect_fct</parmname> will be called whenever the TCP connection to the
+    Background Notification Service is established, or when it is closed.  The idea is to tell the
+    Operating System in the callback that this TCP connection is allowed to stay up when sleeping.
+    Some Operating Systems (like iOS) require this, or the connection will be broken by the OS
+    itself when it forces the application in a deep sleep.</p>
+  </section>
+  <section>
+   <title>Server side API functions</title>
+   <p>It is possible to be notified on the Background Notification Server itself that a client is
+    connected or disconnected and it's state changes can be observed.</p>
+   <p>The following function allows this:</p>
+   <codeblock>typedef enum {
+	DDS_ACTIVITIES_CLIENT_ACTIVE,
+	DDS_ACTIVITIES_CLIENT_SLEEPING,
+	DDS_ACTIVITIES_CLIENT_DIED
+} DDS_ActivitiesClientState;
+
+typedef void (*DDS_Activities_on_client_change) (
+	DDS_DomainId_t domain_id,
+	DDS_BuiltinTopicKey_t *client_key,
+	DDS_ActivitiesClientState state
+);
+
+DDS_EXPORT void DDS_Activities_client_info (
+	DDS_Activities_on_client_change client_fct
+);</codeblock>
+   <p>The client_fct function, when installed is able to signal the following client states:</p>
+   <p>
+    <table frame="all" id="table_gbb_1wn_fq">
+     <title>Notification client states</title>
+     <tgroup cols="2">
+      <colspec colname="c1" colnum="1" colwidth="1*"/>
+      <colspec colname="c2" colnum="2" colwidth="1.9*"/>
+      <thead>
+       <row>
+        <entry>State</entry>
+        <entry>Description</entry>
+       </row>
+      </thead>
+      <tbody>
+       <row>
+        <entry><parmname>DDS_ACTIVITIES_CLIENT_ACTIVE</parmname></entry>
+        <entry>Either a new client is detected, or a transition from suspended to active
+         occurred.</entry>
+       </row>
+       <row>
+        <entry><parmname>DDS_ACTIVITIES_CLIENT_SLEEPING</parmname></entry>
+        <entry>A connected client started sleeping, i.e. is in suspended state.</entry>
+       </row>
+       <row>
+        <entry><parmname>DDS_ACTIVITIES_CLIENT_DIED</parmname></entry>
+        <entry>A connected client became disconnected from the server.  Either its battery is dead,
+         or it is associated to a completely different network.</entry>
+       </row>
+      </tbody>
+     </tgroup>
+    </table>
+   </p>
+  </section>
+ </conbody>
+</concept>

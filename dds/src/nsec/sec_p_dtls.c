@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -54,7 +54,7 @@ static Token_t *sd_get_perm_token (const SEC_PERM *pp, Permissions_t perm)
 		goto no_perm;
 
 	if (data.rlength >= sizeof (buf)) {
-		bp = malloc (data.rlength);
+		bp = Alloc (data.rlength);
 		if (!bp)
 			goto no_perm;
 	}
@@ -85,7 +85,7 @@ static Token_t *sd_get_perm_token (const SEC_PERM *pp, Permissions_t perm)
 	md5_update (&md5, (unsigned char *) bp, strlen (bp));
 	md5_final (DDS_SEQ_DATA (*p), &md5);
 	if (bp != buf)
-		free (bp);
+		Free (bp);
 
 	token->data = tp;
 	token->encoding = PID_V_PERMS;
@@ -99,7 +99,7 @@ static Token_t *sd_get_perm_token (const SEC_PERM *pp, Permissions_t perm)
 
     done:
 	if (bp != buf)
-		free (bp);
+		Free (bp);
 
     no_perm:
 	xfree (token);

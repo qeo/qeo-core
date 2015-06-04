@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -217,20 +217,27 @@ String_t *qos_octets2str (const DDS_OctetSeq *sp)
 	return (str_new ((const char *) sp->_buffer, sp->_length, sp->_length, 0));
 }
 
-void qos_str2octets (const String_t *s, DDS_OctetSeq *sp)
+int qos_str2octets (const String_t *s, DDS_OctetSeq *sp)
 {
+	unsigned char	*bp;
+
 	DDS_SEQ_INIT (*sp);
 	if (s) {
 		if (!sp->_buffer || sp->_maximum < str_len (s)) {
 			if (!sp->_buffer)
-				sp->_buffer = xmalloc (str_len (s));
+				bp = xmalloc (str_len (s));
 			else
-				sp->_buffer = xrealloc (sp->_buffer, str_len (s));
+				bp = xrealloc (sp->_buffer, str_len (s));
+			if (!sp->_buffer)
+				return (DDS_RETCODE_OUT_OF_RESOURCES);
+
+			sp->_buffer = bp;
 			sp->_maximum = str_len (s);
 		}
 		memcpy (sp->_buffer, str_ptr (s), str_len (s));
 		sp->_length = str_len (s);
 	}
+	return (DDS_RETCODE_OK);
 }
 
 static int qt_os_valid (const void *src, int disc)

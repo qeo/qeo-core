@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -609,6 +609,11 @@ Domain_t *domain_next (unsigned *index, DDS_ReturnCode_t *error)
 {
 	Domain_t	*dp = NULL;
 
+	if (!ndomains) {
+		if (error)
+			*error = DDS_RETCODE_ALREADY_DELETED;
+		return (NULL);
+	}
 	dds_lock_domains ();
 	for (;;) {
 		if (++(*index) > MAX_DOMAINS) {
@@ -630,6 +635,9 @@ unsigned domain_count (void)
 {
 	unsigned	i, n;
 
+	if (!ndomains)
+		return (0);
+
 	dds_lock_domains ();
 	for (i = 1, n = 0; i <= MAX_DOMAINS; i++)
 		if (domains [i])
@@ -640,7 +648,7 @@ unsigned domain_count (void)
 
 int domains_used (void)
 {
-    return (ndomains != 0);
+	return (ndomains != 0);
 }
 
 /* prefix_compare -- Comparison function for prefixes in peer participants. */
@@ -969,7 +977,7 @@ Topic_t *topic_create (Participant_t *pp,
 	tp->readers = NULL;
 	tp->writers = NULL;
 #ifdef LOCK_TRACE
-	lock_str = malloc (strlen (topic_name) + 16);
+	lock_str = Alloc (strlen (topic_name) + 16);
 	sprintf (lock_str, "#%u:T:%s", entity_handle (&tp->entity), topic_name);
 #endif
 	lock_init_nr (tp->lock, lock_str);
@@ -1154,7 +1162,7 @@ FilteredTopic_t *filtered_topic_create (Domain_t   *dp,
 	ftp->topic.readers = NULL;
 	ftp->topic.writers = NULL;
 #ifdef LOCK_TRACE
-	lock_str = malloc (strlen (name) + 16);
+	lock_str = Alloc (strlen (name) + 16);
 	sprintf (lock_str, "#%u:FT:%s", entity_handle (&ftp->topic.entity), name);
 #endif
 	lock_init_nr (ftp->topic.lock, lock_str);
@@ -1514,6 +1522,28 @@ Endpoint_t *endpoint_lookup (const Participant_t *pp, const EntityId_t *id)
 	return (epp ? *epp : NULL);
 }
 
+/* endpoint_first -- Lookup the first endpoint of a participant. */
+
+Endpoint_t *endpoint_first (const Participant_t *pp)
+{
+	Endpoint_t	**epp;
+
+	epp = sl_head (&pp->p_endpoints);
+	return (epp ? *epp : NULL);
+}
+
+/* endpoint_next -- Lookup the successor endpoint of an endpoint of a
+		    participant. */
+
+Endpoint_t *endpoint_next (const Participant_t *pp, const EntityId_t *ep)
+{
+	Endpoint_t	**epp;
+
+	epp = sl_next (&pp->p_endpoints, ep->id, endpoint_id_cmp);
+	return (epp ? *epp : NULL);
+}
+
+
 enum mem_block_en endpoint_pool_type (const EntityId_t *id, int discovered)
 {
 	unsigned	kind;
@@ -1692,6 +1722,53 @@ Endpoint_t *endpoint_from_guid (const Domain_t *dp, GUID_t *guid)
 	}
 	ep = endpoint_lookup (pp, &guid->entity_id);
 	return (ep);
+}
+
+typedef struct endp_search_st {
+	const char	*topic;
+	const char	*type;
+	int		reader;
+	Endpoint_t	*result;
+} EndpSearch_t;
+
+static int endpoint_search_fct (Skiplist_t *list, void *node, void *arg)
+{
+	Endpoint_t	*ep, **epp = (Endpoint_t **) node;
+	EndpSearch_t	*search = (EndpSearch_t *) arg;
+	const char	*topic_name, *type_name;
+
+	ARG_NOT_USED (list)
+
+	ep = *epp;
+	topic_name = str_ptr (ep->topic->name);
+	type_name = str_ptr (ep->topic->type->type_name);
+	if (entity_reader (ep->entity.type) == search->reader &&
+	    (search->topic == topic_name || !strcmp (search->topic, topic_name)) &&
+	    (search->type == type_name || !strcmp (search->type, type_name))) {
+		search->result = ep;
+		return (0);
+	}
+	return (1);
+}
+
+Endpoint_t *endpoint_from_name (const Participant_t *p,
+				const char *topic,
+				const char *type,
+				int reader)
+{
+	EndpSearch_t	args;
+
+	if (!p || !p->p_domain)
+		return (NULL);
+
+	lock_take (p->p_domain->lock);
+	args.topic = topic;
+	args.type = type;
+	args.reader = reader;
+	args.result = NULL;
+	sl_walk ((Skiplist_t *) &p->p_endpoints, endpoint_search_fct, &args);
+	lock_release (p->p_domain->lock);
+	return (args.result);
 }
 
 /* reader_ptr -- Return a valid reader pointer (result != NULL) or returns NULL
@@ -2485,6 +2562,15 @@ static void dump_participant_info (int                 peer,
 		print_tokens (indent, "Identity", pp->p_id_tokens);
 	if (pp->p_p_tokens)
 		print_tokens (indent, "Permission", pp->p_p_tokens);
+	if (pp->p_uc_locs)
+		dump_locators (indent, "Handshake", pp->p_uc_locs);
+	if (pp->p_uc_dreply) {
+		dbg_print_indent (indent, "Direct handshake reply: ");
+		dbg_printf ("%s", locator_str (&pp->p_uc_dreply->locator));
+		if (pp->p_ir_locs)
+			dbg_printf (" [InfoReply]");
+		dbg_printf ("\r\n");
+	}
 #endif
 	if (pp->p_entity_name) {
 		dbg_print_indent (indent, "Entity name");
@@ -2639,6 +2725,7 @@ static int dump_peer (Skiplist_t *list, void *p, void *arg)
 		dbg_printf (" - Local activity: %lu.%02lus", left / TICKS_PER_SEC, 
 						(left % TICKS_PER_SEC) / 10);
 	}
+	dbg_printf (" - DT: %ld", (long) pp->p_dt);
 	dbg_printf ("\r\n");
 	dump_participant_info (1, pp, dump_flags);
 	if (tmr_active (&pp->p_timer)) {
@@ -2738,6 +2825,9 @@ void dump_domains (unsigned flags)
 	Domain_t	*dp;
 	unsigned	i;
 
+	if (!ndomains)
+		return;
+
 	dds_lock_domains ();
 	for (i = 1; i <= MAX_DOMAINS; i++)
 		if ((dp = domains [i]) != NULL)
@@ -2783,10 +2873,11 @@ static void filter_info_dump (unsigned indent, FilterData_t *fdp, int dump_all)
 
 /* topic_endpoint_dump -- Dump an endpoint referred to by a topic. */
 
-static void topic_endpoint_dump (Domain_t   *dp,
-				 Endpoint_t *ep,
-				 const char type,
-				 int        dump_all)
+static void topic_endpoint_dump (Domain_t      *dp,
+				 Endpoint_t    *ep,
+				 const char    type,
+				 int           dump_all,
+				 unsigned char *tc)
 {
 	DiscoveredReader_t	*drp;
 
@@ -2805,6 +2896,12 @@ static void topic_endpoint_dump (Domain_t   *dp,
 	if (ep->qos)
 		dbg_printf ("  Qos: %p", (void *) ep->qos);
 #endif
+	if (dump_all && tc) {
+		if (tc == TC_IS_TS)
+			dbg_printf (" [TS]");
+		else if (dump_all)
+			dbg_printf (" [%p]", tc);
+	}
 	if (entity_reader (entity_type (&ep->entity)) &&
 	    (ep->entity.flags & (EF_LOCAL | EF_FILTERED)) == EF_FILTERED) {
 		dbg_printf ("\r\n");
@@ -2886,11 +2983,15 @@ static void topic_info_dump (unsigned indent,
 {
 	Endpoint_t	*ep;
 	FilteredTopic_t	*ftp;
+	unsigned char	*tc;
 #ifdef DDS_TYPECODE
 	TypeLib		*lp;
 	TypeSupport_t	*nts;
 	unsigned char	*vtc, *dtc [MAX_DTC];
 	unsigned	i, n, ndtc;
+	VTC_Header_t	*xtc;
+	DiscoveredReader_t *drp;
+	DiscoveredWriter_t *dwp;
 #endif
 	if ((tp->entity.flags & EF_FILTERED) != 0) {
 		ftp = (FilteredTopic_t *) tp;
@@ -2904,6 +3005,9 @@ static void topic_info_dump (unsigned indent,
 	dbg_print_indent (indent, NULL);
 	dbg_printf ("# of local create/find_topic() calls = %u, # of discoveries = %u\r\n",
 					tp->nlrefs, tp->nrrefs);
+	dbg_print_indent (indent, NULL);
+	dbg_printf ("Total # of type references = %u, # of local references = %u\r\n",
+					tp->type->nrefs, tp->type->nlrefs);
 #ifdef DDS_SHOW_QOS
 	if (tp->qos) {
 		dbg_print_indent (indent, NULL);
@@ -2915,8 +3019,17 @@ static void topic_info_dump (unsigned indent,
 	if (!tp->writers)
 		dbg_printf (" <none>\r\n");
 	else {
-		for (ep = tp->writers; ep; ep = ep->next)
-			topic_endpoint_dump (dp, ep, 'W', typecode);
+		for (ep = tp->writers; ep; ep = ep->next) {
+#ifdef DDS_TYPECODE
+			if (entity_discovered (ep->entity.flags)) {
+				dwp = (DiscoveredWriter_t *) ep;
+				tc = dwp->dw_tc;
+			}
+			else
+#endif
+				tc = NULL;
+			topic_endpoint_dump (dp, ep, 'W', typecode, tc);
+		}
 		dbg_printf ("\r\n");
 	}
 	dbg_print_indent (indent, NULL);
@@ -2924,8 +3037,17 @@ static void topic_info_dump (unsigned indent,
 	if (!tp->readers)
 		dbg_printf (" <none>\r\n");
 	else {
-		for (ep = tp->readers; ep; ep = ep->next)
-			topic_endpoint_dump (dp, ep, 'R', typecode);
+		for (ep = tp->readers; ep; ep = ep->next) {
+#ifdef DDS_TYPECODE
+			if (entity_discovered (ep->entity.flags)) {
+				drp = (DiscoveredReader_t *) ep;
+				tc = drp->dr_tc;
+			}
+			else
+#endif
+				tc = NULL;
+			topic_endpoint_dump (dp, ep, 'R', typecode, tc);
+		}
 		dbg_printf ("\r\n");
 	}
 #ifdef DDS_TYPECODE
@@ -2940,6 +3062,11 @@ static void topic_info_dump (unsigned indent,
 		ndtc = tc_list_add (dtc, ndtc, tp->readers, vtc);
 		for (i = 0; i < ndtc; i++) {
 
+			dbg_printf ("\tAlternative type: ");
+			xtc = (VTC_Header_t *) dtc [i];
+			dbg_printf (" [%p]*%u", (void *) xtc, xtc->nrefs_ext & NRE_NREFS);
+			dbg_printf (" (used by ");
+
 			/* Create a new type library to prevent clashes. */
 			lp = xt_lib_create (NULL);
 			if (!lp) {
@@ -2952,7 +3079,6 @@ static void topic_info_dump (unsigned indent,
 				xt_lib_delete (lp);
 				continue;
 			}
-			dbg_printf ("\tAlternative type: (used by ");
 			n = tc_handles (dtc [i], 0, tp->writers);
 			tc_handles (dtc [i], n, tp->readers);
 			dbg_printf (")\r\n");

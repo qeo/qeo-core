@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -97,7 +97,11 @@ START_TEST(test_qr_api_inargs)
     qeocore_type_t t = {0};
     qeocore_data_t d = { { 0 } };
     qeocore_reader_t r = { { 0 } };
+    qeo_factory_t open_f = { };
+    qeocore_reader_t open_r = { { &open_f } };
     qeo_retcode_t rc;
+
+    open_f.domain_id = core_get_domain_id_open();
 
     /* do not crash when no rc pointer provided */
     fail_unless(NULL == qeocore_reader_open(NULL, &t, NULL, QEOCORE_EFLAG_EVENT_DATA, NULL, NULL));
@@ -139,6 +143,9 @@ START_TEST(test_qr_api_inargs)
     d.rw.reader = &r - 1;
     fail_unless(QEO_EINVAL == qeocore_reader_read(&r, NULL, &d));
     fail_unless(QEO_EINVAL == qeocore_reader_take(&r, NULL, &d));
+    /* background notifications service */
+    fail_unless(QEO_EINVAL == qeocore_reader_bgns_notify(NULL, true));
+    fail_unless(QEO_EINVAL == qeocore_reader_bgns_notify(&open_r, true));
 }
 END_TEST
 
@@ -213,6 +220,8 @@ START_TEST(test_factory_api_inargs)
     fail_unless(QEO_EINVAL == qeocore_factory_set_intf(&f_u, NULL));
     fail_unless(QEO_EINVAL == qeocore_factory_refresh_policy(NULL));
     fail_unless(QEO_EBADSTATE == qeocore_factory_refresh_policy(&f_u));
+    /* background notifications service */
+    qeo_bgns_register(NULL, 0);
 }
 END_TEST
 

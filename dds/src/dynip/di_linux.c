@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -46,18 +46,30 @@ struct nl_request_st {
 	NL_Request		*next;
 };
 
+typedef struct if_data_st {
+	uint16_t	index;
+	int16_t		up;
+} IfData_t;
+
 static int		netlink_fd = -1;
 static NL_Request	*n_pending;
 static unsigned		n_proto;
+static size_t		ifstate_nintfs;
+static int		ifstate_valid;
+static unsigned		ifstate_max_idx;
+static unsigned		ifstate_size;
+static uint32_t		*ifstate_set;
 
 int di_sys_init (void)
 {
+	unsigned	i;
 	struct sockaddr_nl addr;
 
 	if ((netlink_fd = socket (PF_NETLINK, SOCK_RAW, NETLINK_ROUTE)) == -1) {
 		warn_printf ("di_sys_init: couldn't open NETLINK_ROUTE socket");
 		return (DDS_RETCODE_UNSUPPORTED);
 	}
+
 	memset (&addr, 0, sizeof (addr));
 	addr.nl_family = AF_NETLINK;
 	addr.nl_pid = sys_pid ();
@@ -70,44 +82,42 @@ int di_sys_init (void)
 		       | RTMGRP_IPV6_IFADDR | RTMGRP_IPV6_ROUTE
 #endif
 							       ;
-	if (bind (netlink_fd, (struct sockaddr *) &addr, sizeof (addr)) == -1) {
-		perror ("di_sys_init:bind()");
-		warn_printf ("di_sys_init: couldn't bind NETLINK_ROUTE socket");
-		close (netlink_fd);
-		netlink_fd = -1;
-		return (DDS_RETCODE_UNSUPPORTED);
-	}
+	for (i = 0; bind (netlink_fd, (struct sockaddr *) &addr, sizeof (addr)) == -1; i++)
+		if (i >= 5) {
+			perror ("di_sys_init:bind()");
+			warn_printf ("di_sys_init: couldn't bind NETLINK_ROUTE socket");
+			close (netlink_fd);
+			netlink_fd = -1;
+			return (DDS_RETCODE_UNSUPPORTED);
+		}
+		else {
+			warn_printf ("di_sys_init: NETLINK_ROUTE socket in use - retrying ...");
+			usleep (500000);
+		}
+
 	n_proto = 0;
 	return (DDS_RETCODE_OK);
 }
-
-void di_sys_final (void)
-{
-	if (netlink_fd != -1) {
-		close (netlink_fd);
-		netlink_fd = -1;
-	}
-}
-
-static uint32_t	*ifstate_set;
-static size_t	ifstate_nintfs;
-static int	ifstate_valid;
 
 static void di_ifstate_init (void)
 {
 	ifstate_valid = 0;
 }
 
+#define	MAX_IF_STATIC	16
+
 static void di_ifstate_get (void)
 {
 	int			s, i;
-	unsigned		index;
+	unsigned		max_index;
 	struct ifconf		ifc;
 	struct ifreq		*ifr, *r;
 	int			numif;
 	short			flags;
 	size_t			size;
 	uint32_t		*p;
+	IfData_t		*ifs;
+	IfData_t		if_data [MAX_IF_STATIC];
 
 	/*log_printf (IP_ID, 0, "DynIP: querying interfaces.\r\n");*/
 	if ((s = socket (AF_INET, SOCK_DGRAM, 0)) < 0) {
@@ -126,14 +136,19 @@ static void di_ifstate_get (void)
 
 	/* Actual required buffer size in ifc.ifc_len now. */
 	size = ifc.ifc_len;
+	ifr = NULL;
 	do {
 		size += sizeof (struct ifreq) * 2;	/* Ask some more. */
-		if ((ifr = xmalloc (size)) == NULL) {
-			perror ("malloc");
+		if (!ifr)
+			r = xmalloc (size);
+		else
+			r = xrealloc (ifr, size);
+		if (!r) {
+			perror ("xmalloc");
 			exit (3);
 		}
 		ifc.ifc_len = size;
-		ifc.ifc_ifcu.ifcu_req = ifr;
+		ifc.ifc_ifcu.ifcu_req = ifr = r;
 
 		if (ioctl (s, SIOCGIFCONF, &ifc) < 0) {
 			perror ("ioctl2");
@@ -143,22 +158,18 @@ static void di_ifstate_get (void)
 	while (ifc.ifc_len == (int) size);
 
 	/* Buffer size is large enough to get all interfaces. */
-	numif = ifc.ifc_len / sizeof (struct ifreq);
+	ifstate_nintfs = numif = ifc.ifc_len / sizeof (struct ifreq);
 	/*log_printf (IP_ID, 0, "%u interfaces (%d bytes total, %lu bytes each)!\r\n",
 			numif, ifc.ifc_len, (unsigned long) sizeof (struct ifreq));*/
-	size = ((numif + 31) >> 5) << 2;
-	if (size > ((ifstate_nintfs + 31) >> 5) << 2) {
-		if (ifstate_set)
-			p = xrealloc (ifstate_set, size);
-		else
-			p = xmalloc (size);
-		if (!p)
-			exit (5);
 
-		ifstate_set = p;
+	if (numif > MAX_IF_STATIC) {
+		ifs = xmalloc (sizeof (IfData_t) * numif);
+		if (!ifs)
+			fatal_printf ("di_ifstate_get: out of memory for interfaces data array!");
 	}
-	memset (ifstate_set, 0, size);
-	ifstate_nintfs = numif;
+	else
+		ifs = if_data;
+	max_index = 0;
 	for (i = 0, r = ifr; i < numif; i++, r++) {
 		if (ioctl (s, SIOCGIFFLAGS, r) < 0) {
 			perror ("ioctl3");
@@ -169,17 +180,44 @@ static void di_ifstate_get (void)
 			perror ("ioctl4");
 			exit (6);
 		}
-		index = r->ifr_ifindex;
-		log_printf (IP_ID, 0, "DynIP: %s state = 0x%04x, index = %u", r->ifr_name, flags, index);
-		if ((flags & IFF_UP) != 0 &&
-		    (flags & IFF_LOOPBACK) == 0 &&
-		    (flags & (IFF_BROADCAST | IFF_POINTOPOINT)) != 0) {
-			SET_ADD (ifstate_set, index);
-			log_printf (IP_ID, 0, " :: up!");
+		ifs [i].index = r->ifr_ifindex;
+		if (r->ifr_ifindex > (int) max_index)
+			max_index = r->ifr_ifindex;
+			if (max_index > 512)
+				fatal_printf ("di_ifstate_get: invalid interface index (%s: %u)!",
+								r->ifr_name, max_index);
+
+		/*log_printf (IP_ID, 0, "DynIP: %s state = 0x%04x, index = %u", r->ifr_name, flags, i);*/
+		if ((flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING) &&
+			(flags & IFF_LOOPBACK) == 0) {
+			/*log_printf (IP_ID, 0, " :: up!");*/
+			ifs [i].up = 1;
 		}
-		log_printf (IP_ID, 0, "\r\n");
+		else
+			ifs [i].up = 0;
+		/*log_printf (IP_ID, 0, "\r\n");*/
 	}
+	size = ((max_index + 32) >> 5) << 2;
+	if (size > ifstate_size) {
+		if (ifstate_set)
+			p = xrealloc (ifstate_set, size);
+		else
+			p = xmalloc (size);
+		if (!p)
+			fatal_printf ("di_ifstate_get: out of memory for ifstate_set");
+
+		ifstate_set = p;
+		ifstate_size = size;
+	}
+	memset (ifstate_set, 0, ifstate_size);
+	for (i = 0; i < numif; i++)
+		if (ifs [i].up)
+			SET_ADD (ifstate_set, ifs [i].index);
+	if (numif > MAX_IF_STATIC)
+		xfree (ifs);
 	xfree (ifr);
+
+	ifstate_max_idx = max_index;
 	close (s);
 }
 
@@ -187,6 +225,9 @@ static int di_intf_active (unsigned intf)
 {
 	if (!ifstate_valid)
 		di_ifstate_get ();
+
+	if (intf > ifstate_max_idx)
+		return (0);
 
 	return (SET_CONTAINS (ifstate_set, intf));
 }
@@ -345,6 +386,22 @@ static void di_request (NL_Request *rp)
 	}
 }
 
+void di_sys_final (void)
+{
+	if (netlink_fd != -1) {
+		close (netlink_fd);
+		netlink_fd = -1;
+	}
+	ifstate_nintfs = 0;
+	ifstate_valid = 0;
+	ifstate_max_idx = 0;
+	if (ifstate_set) {
+		ifstate_size = 0;
+		xfree (ifstate_set);
+		ifstate_set = NULL;
+	}
+}
+
 int di_sys_attach (unsigned      family,
 		   unsigned char *ipa,
 		   unsigned      *n,
@@ -420,3 +477,9 @@ int di_sys_detach (unsigned family)
 
 	return (DDS_RETCODE_OK);
 }
+
+void di_sys_check (void)
+{
+	/* Nada -- Netlink is supposed to tell us what we need to know! */
+}
+

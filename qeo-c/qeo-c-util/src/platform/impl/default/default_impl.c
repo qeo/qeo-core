@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -31,6 +31,18 @@
 #include <qeo/util_error.h>
 
 #include "linux_default_device_p.h"
+
+#ifdef __APPLE__
+#if !(TARGET_OS_IPHONE)
+// Mac OSX only
+#include <qeo/platform.h>
+#include <qeo/platform_security.h>
+#include <CoreFoundation/CFArray.h>
+#include <Security/SecTrust.h>
+#include <Security/SecCertificate.h>
+#include <Security/SecPolicy.h>
+#endif
+#endif
 /*#######################################################################
  # STATIC FUNCTION PROTOTYPE
  ########################################################################*/
@@ -139,6 +151,7 @@ static qeo_util_retcode_t default_registration_params_needed(uintptr_t app_conte
     char *rrf = NULL;
 
     if ((rrf = getenv("REMOTE_REGISTRATION_FILE")) != NULL){
+        fprintf(stdout, "Starting remote registration. Please register this device from a Qeo enabled management app.\n");
         if (remote_registration(context, rrf) != QEO_UTIL_OK){
             qeo_log_w("Fallback to prompt");
             return cli_otc_url(context);
@@ -174,16 +187,117 @@ static qeo_util_retcode_t default_remote_registration_confirmation_needed(uintpt
 
     fprintf(stdout, "Management app wants to register us in realm %s, URL: %s. [Y/n]\r\n", rrcred->realm_name, rrcred->url);
 
-    if (scanf("%3s", reply) == 1){
-        if (reply[0] == 'n'){
-            return qeo_platform_confirm_remote_registration_credentials(context, false);
-        } else {
-            return qeo_platform_confirm_remote_registration_credentials(context, true);
+    while (true) {
+        int items = scanf("%3s", reply);
+        if (items == 1) {
+            if (reply[0] == 'n') {
+                fprintf(stdout, "Ignoring request.\n");
+                return qeo_platform_confirm_remote_registration_credentials(context, false);
+            } else {
+                fprintf(stdout, "Registering device...\n");
+                return qeo_platform_confirm_remote_registration_credentials(context, true);
+            }
+            break;
         }
-    }
+        else if (errno != 0) {
+            perror("scanf");
+            return QEO_UTIL_EFAIL;
+        }
+        else {
+            qeo_log_d("scanf failed: %d", items);
+        }
+    } while (true);
+
 
     return QEO_UTIL_OK;
 }
+
+#ifdef __APPLE__
+#if !(TARGET_OS_IPHONE)
+static qeo_util_retcode_t on_platform_custom_certificate_validator_cb(qeo_der_certificate* certf, int size){
+
+    qeo_util_retcode_t returnValue = QEO_UTIL_EFAIL;
+    CFMutableArrayRef certificateChain = CFArrayCreateMutable(NULL,size,NULL);
+    SecPolicyRef policyForSSLCertificateChains = NULL;
+    SecTrustRef  trustManagementRef = NULL;
+
+    do {
+
+        // Step 1:
+        // Convert array of raw "der"-certificate data into an array of iOS "SecCertificateRef" format
+        for (int idx=0; idx<size; ++idx){
+            CFDataRef rawDerCertificate = CFDataCreate(NULL,(const UInt8*)certf[idx].cert_data,certf[idx].size);
+
+            if(0 < CFDataGetLength(rawDerCertificate)) {
+                SecCertificateRef derCertificate = SecCertificateCreateWithData(NULL, rawDerCertificate);
+
+                if(NULL != derCertificate) {
+                    CFArrayAppendValue(certificateChain, derCertificate);
+                } else {
+                    qeo_log_e("CERTIFICATE Conversion to Mac OSX format FAILED");
+                    break;
+                }
+            } else {
+                qeo_log_e("Provided der-CERTIFICATE EMPTY");
+                break;
+            }
+
+            // cleanup resource
+            if (NULL != rawDerCertificate){
+                CFRelease(rawDerCertificate);
+            }
+        }
+
+        // Step 2:
+        // Create policy object for evaluating SSL certificate chains
+        policyForSSLCertificateChains = SecPolicyCreateSSL(true, NULL);
+        if (NULL == policyForSSLCertificateChains){
+            qeo_log_e("SSL POLICY CREATION FAILED");
+            break;
+        }
+
+        // Step 3:
+        // Create a trust management object based on certificates and policies
+        OSStatus result = SecTrustCreateWithCertificates(certificateChain,
+                                                         policyForSSLCertificateChains,
+                                                         &trustManagementRef);
+
+        if (errSecSuccess != result || NULL == trustManagementRef) {
+            qeo_log_e("Mac OSX TRUST MANAGEMENT creation FAILED");
+            break;
+        }
+
+        // Step 4:
+        // Evaluate the certificate chain for the SSL policy
+        SecTrustResultType resultType = 0;
+        result = SecTrustEvaluate (trustManagementRef, &resultType);
+        if (errSecSuccess != result || ((kSecTrustResultProceed != resultType) && (kSecTrustResultUnspecified != resultType))) {
+            qeo_log_e("Certificate chain validation FAILED");
+            break;
+        }
+
+        returnValue = QEO_UTIL_OK;
+
+    } while (0);
+
+    // Step 5
+    // Cleanup of allocated resources
+    if (NULL != trustManagementRef){
+        CFRelease(trustManagementRef);
+    }
+    if (NULL != policyForSSLCertificateChains){
+        CFRelease(policyForSSLCertificateChains);
+    }
+    for (int idx=0; idx<CFArrayGetCount(certificateChain); ++idx){
+        CFRelease((SecCertificateRef)CFArrayGetValueAtIndex(certificateChain,idx));
+    }
+    if (NULL != certificateChain){
+        CFRelease(certificateChain);
+    }
+    return returnValue;
+}
+#endif
+#endif
 
 /*#######################################################################
  # PUBLIC FUNCTION IMPLEMENTATION                                        #
@@ -220,6 +334,16 @@ void __attribute__ ((constructor(1000))) default_impl_init(void){
         qeo_log_e("Could not set CA certificates path");
         return;
     }
+
+#ifdef __APPLE__
+#if !(TARGET_OS_IPHONE)
+    // Mac OSX only
+    if (QEO_UTIL_OK != qeo_platform_set_custom_certificate_validator(on_platform_custom_certificate_validator_cb)){
+        qeo_log_e("Could not set certificate validator in the platform layer");
+        return;
+    }
+#endif
+#endif
 }
 
 

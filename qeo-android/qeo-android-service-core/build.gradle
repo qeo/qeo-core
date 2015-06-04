@@ -1,0 +1,128 @@
+
+//For generating findbugs HTML report execute with "gradle -PfindbugsHtml=true"
+ext.androidLibrary = true
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidInstallerTools.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/findbugs.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactDownloader.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryVersion.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/dependencyWriter.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidApklib.gradle'
+
+
+artifactDownloadUnzip {
+    appendName = true
+    appendClassifier = true
+}
+
+android {
+    publishNonDefault true //publish both release and debug aar
+    defaultConfig {
+        versionName project.displayVersion
+        consumerProguardFiles "proguard-project.txt"
+    }
+    sourceSets {
+        debug {
+            manifest {
+                //Define extra manifest file for debug variant. This will be merged with the main manifest.
+                srcFile "AndroidManifestDebug.xml"
+            }
+            jniLibs {
+                srcDirs = ["${artifactDownloadUnzip.outputDir}/qeo-java/native-android-debug/lib"]
+            }
+        }
+        release {
+            jniLibs {
+                srcDirs = ["${artifactDownloadUnzip.outputDir}/qeo-java/native-android/lib"]
+            }
+        }
+    }
+}
+
+//afterEvaluate {
+//    packageDebugJniLibs {
+//        from("${artifactDownloadUnzip.outputDir}/qeo-java/native-android-debug/lib").include("**/*")
+//    }
+//}
+
+android.noDeviceTests = true //no device tests for this project
+
+generateTypes {
+    ext.qdms = ["catalog/qeo_RegistrationCredentials.xml", "catalog/qeo_RegistrationRequest.xml"]
+    ext.language = "java"
+}
+
+
+afterEvaluate {
+    tasks.preBuild.dependsOn(artifactDownloadUnzip)
+}
+
+apklibCopyEclipseLibs {
+    dependsOn(artifactDownloadUnzip)
+    from "${artifactDownloadUnzip.outputDir}/qeo-java/native-android/lib"
+}
+
+android {
+    lintOptions {
+        ignoreWarnings false
+        disable "RtlHardcoded" //we don't support any other languages anyway
+        disable "GradleOverrides" //warnings about overridden fields in manifest. Eclipse needs them.
+        disable "UnusedIds" //unused id's are really not a big deal and are required for relativelayouts
+        disable "UnusedAttribute" //Attributes not supported on newer apis are normal
+    }
+}
+
+task zipDependencyList(type: Zip) {
+    dependsOn(dependencyList)
+    from dependencyList.out
+    classifier "metadata"
+}
+
+dependencies {
+
+    compile project(":qeo-android-core")
+    compile     group: project.javaGroup, name: 'qeo-java',         version: project.javaVersion
+
+    //qdms for codegen
+    generated "${project.qeoGroup}:qeo-qdm:${project.qeoVersion}@zip"
+
+    //oauth and rest
+    def googleHttpLibsVersion = "1.19.0"
+    compile ("com.google.oauth-client:google-oauth-client:${googleHttpLibsVersion}") {
+        exclude (group: "com.google.http-client") //included in android by default
+    }
+    compile ("com.google.http-client:google-http-client-jackson:${googleHttpLibsVersion}") {
+        exclude (group: "org.apache.httpcomponents") //included in android by default
+    }
+
+    //android support V4 library
+    compile project.latestSupportV4
+
+    downloadUnzip group: project.javaGroup, name: 'qeo-java',         version: project.javaVersion, classifier: 'native-android', ext: "jar"
+    downloadUnzip group: project.javaGroup, name: 'qeo-java',         version: project.javaVersion, classifier: 'native-android-debug', ext: "jar"
+    downloadUnzip group: project.javaGroup, name: 'qeo-java',         version: project.javaVersion, classifier: 'native-android-symbols', ext: "jar"
+    androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'testlib', ext: "jar"
+}
+
+ext.defaultExtension = "aar"
+
+task jarAndroidSources(type: Jar) {
+    classifier = 'sources'
+    from "src"
+}
+    
+artifacts {
+    archives zipDependencyList
+    archives jarAndroidSources //publish sources
+
+    if (!System.env.JENKINS_URL) {
+        //if not on jenkins, also publish a dummy file as the default archive.
+        //this is needed as a maven repo requires the default archive to be set.
+        //this is not required on artifactory, hence this is not needed when building on jenkins
+        archives file: file("build.gradle")
+    }
+}
+

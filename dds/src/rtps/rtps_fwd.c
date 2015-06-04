@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -50,7 +50,7 @@
 
 #ifdef DDS_DEBUG
 /*#define FORWARD_TRC*/
-/*#define FORWARD_TRC_FWD*/
+#define FORWARD_TRC_FWD
 #endif
 #ifdef FORWARD_TRC
 #define	LOG_MESSAGES
@@ -88,6 +88,9 @@ static void fwd_print_locator_list (LocatorList_t list)
 #define	fwd_print2(s,a1,a2)
 #define	fwd_print_locator_list(list)
 #endif
+
+PROF_PID (fwd_p_parse)
+PROF_PID (fwd_p_fwd)
 
 typedef struct fwd_stats_st {
 	unsigned long	msgs_rxed;
@@ -232,18 +235,13 @@ static void fwd_populate_locators (FTEntry_t *p, Participant_t *pp, int update)
 	char		buffer [40];
 #endif
 	LocatorKind_t	kinds, ekinds;
+	LocatorList_t	new_lists [MODE_MAX + 1];
+	unsigned	old_local;
 
 	fwd_print1 (".FWD-PopulateLocators (%s).\r\n", guid_prefix_str (&p->guid_prefix, buffer));
-	if (update)
-		for (m = MODE_MIN; m <= MODE_MAX; m++) {
-			if (p->locs [m][0])
-				locator_list_delete_list (&p->locs [m][0]);
-			if (p->locs [m][1])
-				locator_list_delete_list (&p->locs [m][1]);
-		}
-
-	kinds = pp->p_domain->kinds;
+	kinds = pp->p_domain->participant.p_kinds;
 	ekinds = 0;
+	memset (new_lists, 0, sizeof (new_lists));
 #ifdef DDS_SECURITY
 	if (pp->p_domain->security 
 	    /* If native security, allow UDP locators */
@@ -251,20 +249,45 @@ static void fwd_populate_locators (FTEntry_t *p, Participant_t *pp, int update)
 	    && (pp->p_sec_caps & (SECC_DDS_SEC | (SECC_DDS_SEC << SECC_LOCAL))) == 0
 #endif
 	    && (kinds & LOCATOR_KINDS_UDP) != 0) {
-		loc_list_set (&p->locs [META_UCAST][0], pp->p_sec_locs, LOCATOR_KINDS_UDP, 0, &ekinds);
-		loc_list_set (&p->locs [USER_UCAST][0], pp->p_sec_locs, LOCATOR_KINDS_UDP, 0, &ekinds);
+		loc_list_set (&new_lists [META_UCAST], pp->p_sec_locs, LOCATOR_KINDS_UDP, 0, &ekinds);
+		loc_list_set (&new_lists [USER_UCAST], pp->p_sec_locs, LOCATOR_KINDS_UDP, 0, &ekinds);
 		kinds &= ~LOCATOR_KINDS_UDP;
 	}
 #endif
-	loc_list_set (&p->locs [META_MCAST][0], pp->p_meta_mcast, kinds, 1, &ekinds);
-	loc_list_set (&p->locs [META_UCAST][0], pp->p_meta_ucast, kinds, 0, &ekinds);
-	loc_list_set (&p->locs [USER_MCAST][0], pp->p_def_mcast, kinds, 1, &ekinds);
-	loc_list_set (&p->locs [USER_UCAST][0], pp->p_def_ucast, kinds, 0, &ekinds);
+	loc_list_set (&new_lists [META_UCAST], pp->p_meta_ucast, kinds, 0, &ekinds);
+	loc_list_set (&new_lists [USER_UCAST], pp->p_def_ucast, kinds, 0, &ekinds);
+	loc_list_set (&new_lists [META_MCAST], pp->p_meta_mcast, kinds, 1, &ekinds);
+	loc_list_set (&new_lists [USER_MCAST], pp->p_def_mcast, kinds, 1, &ekinds);
+
+	if (update) {
+		for (m = MODE_MIN; m <= MODE_MAX; m++) {
+			if (locator_list_equal (p->locs [m][0], new_lists [m]))
+				locator_list_delete_list (&new_lists [m]);
+			else {
+				locator_list_delete_list (&p->locs [m][0]);
+				locator_list_delete_list (&p->locs [m][1]);
+				p->locs [m][0] = new_lists [m];
+			}
+		}
+	}
+	else
+		for (m = MODE_MIN; m <= MODE_MAX; m++)
+			p->locs [m][0] = new_lists [m];
+
 	p->kinds = ekinds;
 
 	/* If there aren't any UDP locators, entry may not be local. */
+	old_local = p->local;
 	if ((p->kinds & LOCATOR_KINDS_UDP) == 0)
 		p->local = 0;
+	else
+		p->local = (pp->p_local != 0) ? LT_LOCAL_TO : 0;
+	if (update && old_local != p->local) {
+		fwd_print2 (".FWD-PopulateLocators - %s locality changed to %u\r\n", 
+				guid_prefix_str (&p->guid_prefix, buffer), p->local);
+		locator_list_delete_list (&p->locs [META_UCAST][1]);
+		locator_list_delete_list (&p->locs [USER_UCAST][1]);
+	}
 }
 
 /* list_add_locator -- Add a new locator to a list from RME message data. */
@@ -490,7 +513,6 @@ static void fwd_learn_source (FwdData_t       *fp,
 {
 	FTEntry_t	*p;
 	LocatorNode_t	*np;
-	LocatorRef_t	*rp;
 	unsigned	h;
 	int		new_prefix = 0;
 #ifdef FORWARD_TRC
@@ -528,21 +550,27 @@ static void fwd_learn_source (FwdData_t       *fp,
 		/* Remember the reply locator for this mode. */
 		p->ttl = MAX_FWD_TTL;
 		if (pp) {
-			foreach_locator (p->locs [mode][0], rp, np)
-				if (locator_addr_equal (&np->locator, src)) {
-					locator_list_copy_node (&p->locs [mode][1], np);
-					fwd_print2 ("..FWD-LearnSrc: found locator (%s) for prefix (%s).\r\n",
-							locator_str (&np->locator),
-							guid_prefix_str (prefix, buffer));
-					return;
-				}
-        }
-		else {
+			np = (p->locs [mode][1]) ? p->locs [mode][1]->data : NULL;
+			rtps_direct_reply_set (&np, p->locs [mode][0], src);
+			if (np) {
+				locator_list_delete_list (&p->locs [mode][1]);
+				locator_list_copy_node (&p->locs [mode][1], np);
+				/*fwd_print2 (*/
+				/*log_printf (RTPS_ID, 0, "..FWD-LearnSrc: found locator (%s) for prefix (%s).\r\n",
+						locator_str (&np->locator),
+						guid_prefix_str (prefix, buffer));*/
+				return;
+			}
+		}
+		/*else {	==> can't add: would cause a persisted incorrect locator
+				    to be set when the source locator is a NAT-ed UDP and
+				    the destination is only reachable over TCP!
+
 			fwd_print2 ("..FWD-LearnSrc: add locator (%s) for prefix (%s)!\r\n",
 							locator_str (src),
 							guid_prefix_str (prefix, buffer));
 			ft_add_locator (p, src, mode, 1);
-		}
+		}*/
 		if (mode == META_MCAST && new_prefix)
 
 			/* New SPDP participant!  Set locators, either from the
@@ -577,6 +605,8 @@ static void fwd_parse (FwdData_t       *fp,
 	int		got_dest = 0, learned = 0, udp_src, as_local;
 	LocatorKind_t	suppress_kind;
 
+	prof_start (fwd_p_parse);
+
 	ft_entry (fp->table);
 	if (local_dsts)
 		*local_dsts = 0;
@@ -609,7 +639,7 @@ static void fwd_parse (FwdData_t       *fp,
 	}
 
 	/* Parse message, checking each submessage in turn.  Collecting
-	   destinations as we process them ad= */
+	   destinations as we process them. */
 	for (mep = msg->first; mep; mep = mep->next) {
 		if ((mep->flags & RME_HEADER) == 0)
 			continue;
@@ -846,6 +876,8 @@ static void fwd_parse (FwdData_t       *fp,
 
 	ft_exit (fp->table);
 	fwd_print (".FWD-Parse: done.\r\n");
+
+	prof_stop (fwd_p_parse, 1);
 }
 
 /* rfwd_add_info_reply_locators -- Add a locator list to a InfoReply data. */
@@ -916,6 +948,8 @@ static void rfwd_forward (FwdData_t *fp, LocatorList_t dests, RMBUF *msg, Mode_t
 	size_t		xlen;
 	int		add_info_reply = 0;
 
+	prof_start (fwd_p_fwd);
+
 	/* Create a new message header with our own data. */
 	new_mp = mds_pool_alloc (fwd_msg_md);
 	if (!new_mp) {
@@ -945,6 +979,7 @@ static void rfwd_forward (FwdData_t *fp, LocatorList_t dests, RMBUF *msg, Mode_t
 			}
 			else if (mep->header.id == ST_INFO_REPLY)
 				continue;
+
 			else if	(mep->header.id == ST_HEARTBEAT ||
 			         mep->header.id == ST_HEARTBEAT_FRAG ||
 				 mep->header.id == ST_ACKNACK ||
@@ -1120,7 +1155,7 @@ static void rfwd_forward (FwdData_t *fp, LocatorList_t dests, RMBUF *msg, Mode_t
 		log_printf (RTPS_ID, 0, "==> ");
 		locator_list_log (RTPS_ID, 0, dests);
 		log_printf (RTPS_ID, 0, "\r\n");
-		rtps_log_message (RTPS_ID, 0, new_mp, 'F', LOG_MSG_DATA);
+		rtps_log_message (RTPS_ID, 0, new_mp, 'F', LOG_MSG_DATA, NULL);
 	}
 #endif
 #endif
@@ -1129,6 +1164,8 @@ static void rfwd_forward (FwdData_t *fp, LocatorList_t dests, RMBUF *msg, Mode_t
 	else
 		rtps_locator_send_ll (fp->dindex, &dests->data->locator, 0, new_mp);
 	rtps_free_messages (new_mp);
+
+	prof_stop (fwd_p_fwd, 1);
 }
 
 /* fmode -- Convert locator flags to a valid mode index. */
@@ -1177,7 +1214,7 @@ static void rfwd_receive (unsigned id, RMBUF *msg, const Locator_t *src)
 #ifdef LOG_MESSAGES
 #ifdef FORWARD_TRC_FWD
 	if (fwd_trace)
-       		rtps_log_message (RTPS_ID, 0, msg, 'R', LOG_MSG_DATA);
+       		rtps_log_message (RTPS_ID, 0, msg, 'R', LOG_MSG_DATA, NULL);
 #endif
 #endif
 
@@ -1267,7 +1304,7 @@ void rfwd_send (unsigned id, void *dest, int dlist, RMBUF *msgs)
 #ifdef LOG_MESSAGES
 #ifdef FORWARD_TRC_FWD
 		if (fwd_trace)
-			rtps_log_message (RTPS_ID, 0, msg, 'T', LOG_MSG_DATA);
+			rtps_log_message (RTPS_ID, 0, msg, 'T', LOG_MSG_DATA, NULL);
 #endif
 #endif
 
@@ -1311,6 +1348,9 @@ void rfwd_send (unsigned id, void *dest, int dlist, RMBUF *msgs)
 
 RMRXF rfwd_init (RMRXF rxfct, MEM_DESC msg_md, MEM_DESC el_md)
 {
+	PROF_INIT ("F:Parse", fwd_p_parse);
+	PROF_INIT ("F:Fwd", fwd_p_fwd);
+
 	fwd_rtps_rxfct = rxfct;
 	fwd_msg_md = msg_md;
 	fwd_el_md = el_md;
@@ -1319,7 +1359,7 @@ RMRXF rfwd_init (RMRXF rxfct, MEM_DESC msg_md, MEM_DESC el_md)
 
 /* rfwd_domain_init -- Initialize forwarder data for a new domain. */
 
-static int rfwd_domain_init (unsigned index)
+int rfwd_domain_init (unsigned index)
 {
 	FwdData_t		*fp;
 	DDS_ReturnCode_t	err;
@@ -1355,7 +1395,7 @@ static int rfwd_domain_init (unsigned index)
 
 /* rfwd_domain_final -- Free forwarder data for a domain. */
 
-static void rfwd_domain_final (unsigned index)
+void rfwd_domain_final (unsigned index)
 {
 	FwdData_t	*fp;
 
@@ -1458,14 +1498,9 @@ int rfwd_locator_add (unsigned      domain_id,
 	fwd_print2 ("FWD(%u): flags = 0x%x!\r\n", id, locator->locator.flags);
 #endif
 	fp = fwd [id];
+	if (!fp)
+		return (DDS_RETCODE_BAD_PARAMETER);
 
-	if (!fp) {
-		ret = rfwd_domain_init (id);
-		if (ret)
-			return (ret);
-
-		fp = fwd [id];
-	}
 	if (fp) {
 		ft_entry (fp->table);
 		p = ft_lookup (fp->table, &fp->domain->participant.p_guid_prefix, &h);
@@ -1544,6 +1579,7 @@ void rfwd_participant_new (Participant_t *pp, int update)
 #ifdef FORWARD_TRC
 	char		buf [40];
 #endif
+
 	fwd_print2 ("FWD-ParticipantNew: Prefix: %s, update=%d\r\n",
 			guid_prefix_str (&pp->p_guid_prefix, buf), update);
 	for (id = 1; id <= MAX_DOMAINS; id++)
@@ -1555,10 +1591,9 @@ void rfwd_participant_new (Participant_t *pp, int update)
 
 	ft_entry (fp->table);
 	p = ft_lookup (fp->table, &pp->p_guid_prefix, &h);
-	if (!p) {
-		fwd_print ("FWD-ParticipantNew: add new entry\r\n");
+	if (!p)
 		p = ft_add (fp->table, h, &pp->p_guid_prefix, 0, LTF_AGE);
-	}
+
 	if (p)
 		fwd_populate_locators (p, pp, update);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -70,10 +70,34 @@ void qeo_deviceinfo_publish(qeo_factory_t *factory)
         }
 
         //get device info
-        const qeo_platform_device_info* qeo_dev_info = qeo_platform_get_device_info();
-        if (qeo_dev_info == NULL) {
+        const qeo_platform_device_info* qeo_plat_dev_info = qeo_platform_get_device_info();
+        if (qeo_plat_dev_info == NULL) {
             qeo_log_d("qeo_platform_get_device_info failed");
             break;
+        }
+        org_qeo_system_DeviceInfo_t qeo_dev_info;
+        qeo_dev_info.deviceId.lower = qeo_plat_dev_info->qeoDeviceId.lowerId;
+        qeo_dev_info.deviceId.upper = qeo_plat_dev_info->qeoDeviceId.upperId;
+        qeo_dev_info.manufacturer = qeo_plat_dev_info->manufacturer;
+        qeo_dev_info.modelName = qeo_plat_dev_info->modelName;
+        qeo_dev_info.productClass = qeo_plat_dev_info->productClass;
+        qeo_dev_info.serialNumber = qeo_plat_dev_info->serialNumber;
+        qeo_dev_info.hardwareVersion = qeo_plat_dev_info->hardwareVersion;
+        qeo_dev_info.softwareVersion = qeo_plat_dev_info->softwareVersion;
+        qeo_dev_info.userFriendlyName = qeo_plat_dev_info->userFriendlyName;
+        qeo_dev_info.configURL = qeo_plat_dev_info->configURL;
+        if (core_get_domain_id_open() == domainId) {
+            //no realm for open domain
+            qeo_dev_info.realmInfo.realmId = 0;
+            qeo_dev_info.realmInfo.userId = 0;
+            qeo_dev_info.realmInfo.deviceId = 0;
+            qeo_dev_info.realmInfo.url = NULL;
+        }
+        else {
+            qeo_dev_info.realmInfo.realmId = factory->qeo_id.realm_id;
+            qeo_dev_info.realmInfo.userId = factory->qeo_id.user_id;
+            qeo_dev_info.realmInfo.deviceId = factory->qeo_id.device_id;
+            qeo_dev_info.realmInfo.url = factory->qeo_id.url;
         }
 
         // create writer
@@ -85,7 +109,7 @@ void qeo_deviceinfo_publish(qeo_factory_t *factory)
         }
 
         // write DeviceInfo
-        ret = qeocore_writer_write(devinfo_writer, qeo_dev_info);
+        ret = qeocore_writer_write(devinfo_writer, &qeo_dev_info);
         if (QEO_OK != ret) {
             qeo_log_d("qeocore_writer_write failed");
             break;

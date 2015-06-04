@@ -1,0 +1,39 @@
+// Enable upload to artifactory
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+
+// Set group and version 
+group = project.qeoGroup
+version = project.qeoVersion
+ 
+ 
+//=============================================
+//  Clean project
+//============================================= 
+
+task cleanall(type: Exec) {
+	description "Clean $project.name"
+	commandLine = ["xcodebuild", "-project", "qsimplechat.xcodeproj", "-alltargets", "clean"]
+}
+
+tasks.clean.dependsOn(cleanall)
+
+
+//=============================================
+//  Build project
+//============================================= 
+ 
+task buildRelease(type:Exec) {
+	description "Build $project.name in release mode"
+	workingDir projectDir
+	commandLine = ["xcodebuild", "-project", "qsimplechat.xcodeproj", "-configuration", "Release", "-target", "qsimplechat", "-arch", "i386", "-sdk", "iphonesimulator" ]
+}
+ 
+ 
+task buildDebug(type:Exec) {
+	description "Build $project.name in Debug mode"
+	workingDir projectDir
+	commandLine = ["xcodebuild", "-project", "qsimplechat.xcodeproj", "-configuration", "Debug", "-target", "qsimplechat", "-arch", "i386", "-sdk", "iphonesimulator" ]
+}
+ 
+ 

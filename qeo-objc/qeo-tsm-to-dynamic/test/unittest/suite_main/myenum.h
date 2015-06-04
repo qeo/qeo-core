@@ -1,0 +1,36 @@
+/*
+ * Copyright (c) 2015 - Qeo LLC
+ *
+ * The source code form of this Qeo Open Source Project component is subject
+ * to the terms of the Clear BSD license.
+ *
+ * You can redistribute it and/or modify it under the terms of the Clear BSD
+ * License (http://directory.fsf.org/wiki/License:ClearBSD). See LICENSE file
+ * for more details.
+ *
+ * The Qeo Open Source Project also includes third party Open Source Software.
+ * See LICENSE file for more details.
+ */
+
+/**************************************************************
+ ********          THIS IS A GENERATED FILE         ***********
+ **************************************************************/
+
+#ifndef QDM_MY_ENUM_H_
+#define QDM_MY_ENUM_H_
+
+#include <qeo/types.h>
+#include "qeo_types.h"
+
+typedef enum {
+    RED,
+    GREEN,
+    BLUE,
+
+} my_enum_t;
+
+extern const DDS_TypeSupport_meta my_enum_type[];
+
+
+#endif
+

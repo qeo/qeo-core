@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -42,6 +42,20 @@ static unsigned	tmr_nbusy;		/* # of time-outs with busy lock. */
 static unsigned	tmr_nstarts;		/* # of timer starts. */
 static unsigned	tmr_nstops;		/* # of timer stops. */
 
+#ifdef CTRACE_USED
+
+enum {
+	TI_START, TI_STOP,
+	TI_MANAGE, TI_TO, TI_PEND
+};
+
+static const char *tmr_fct_str [] = {
+	"Start", "Stop",
+	"Manage", "TO", "PendMS"
+};
+
+#endif
+
 /* tmr_pool_init -- Initialize a timer pool. */
 
 int tmr_pool_init (const POOL_LIMITS *timers)
@@ -54,6 +68,9 @@ int tmr_pool_init (const POOL_LIMITS *timers)
 		tmr_list = NULL;
 		return (TMR_OK);
 	}
+#ifdef CTRACE_USED
+	log_fct_str [TMR_ID] = tmr_fct_str;
+#endif
 	if (!lock_ready) {
 		lock_init_nr (tmr_lock, "tmr_lock");
 		lock_ready = 1;
@@ -99,6 +116,15 @@ void tmr_start_lock (Timer_t   *t,
 	if (t->tcbf)
 		tmr_stop (t);
 
+	ctrc_begind (TMR_ID, TI_START, &ticks, sizeof (ticks));
+	ctrc_contd (&t, sizeof (t));
+	ctrc_contd (&user, sizeof (user));
+#ifdef CTRACE_USED
+	if (t->name)
+		ctrc_contd (t->name, strlen (t->name));
+#endif
+	ctrc_endd ();
+
 	lock_take (tmr_lock);
 	tmr_nstarts++;
 	tmr_nactive++;
@@ -125,6 +151,13 @@ void tmr_stop (Timer_t *t)
 
 	if (!t)
 		return;
+
+	ctrc_begind (TMR_ID, TI_STOP, &t, sizeof (t));
+#ifdef CTRACE_USED
+	if (t->name)
+		ctrc_contd (t->name, strlen (t->name));
+#endif
+	ctrc_endd ();
 
 	lock_take (tmr_lock);
 	if (!t->tcbf)
@@ -218,6 +251,8 @@ void tmr_manage (void)
 	Timer_t	*t;
 	TMR_FCT	fct;
 
+	ctrc_printd (TMR_ID, TI_MANAGE, NULL, 0);
+
 	lock_take (tmr_lock);
 	if (tmr_callback_active) {
                 lock_release (tmr_lock);
@@ -225,7 +260,6 @@ void tmr_manage (void)
         }
 	while (tmr_list) {
 		now = sys_getticks ();
-		/*ctrc_printf (TMR_ID, 0, "Now:%lu, tmr_list->time:%lu\r\n", now, tmr_list->time);*/
 		d = sys_ticksdiff (now, tmr_list->time);
 		if (d && d < MAX_TIME_DIFF)
 			break;
@@ -267,7 +301,10 @@ void tmr_manage (void)
 		}
 		tmr_callback_active++;
 #ifdef CTRACE_USED
-		ctrc_printf (TMR_ID, 0, "%s", t->name);
+		ctrc_begind (TMR_ID, TI_TO, &t, sizeof (t));
+		if (t->name)
+			ctrc_contd (t->name, strlen (t->name));
+		ctrc_endd ();
 #endif
 		(*fct) (user);
 		lock_take (tmr_lock);
@@ -375,8 +412,8 @@ unsigned tmr_pending_ms (void)
 	Ticks_t		now, d;
 
 	lock_take (tmr_lock);
+	now = sys_getticks ();
 	if (tmr_list) {
-		now = sys_getticks ();
 		d = sys_ticksdiff (now, tmr_list->time);
 		if (d > MAX_TIME_DIFF) /* Already past time-out! */
 			d = 0;
@@ -386,6 +423,7 @@ unsigned tmr_pending_ms (void)
 	else
 		d = MAX_TIME_DIFF;
 	lock_release (tmr_lock);
+	ctrc_printd (TMR_ID, TI_PEND, &d, sizeof (d));
 	return (d);
 }
 

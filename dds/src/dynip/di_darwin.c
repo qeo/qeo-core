@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -16,9 +16,15 @@
 
 #include <stdio.h>
 #include "dds/dds_error.h"
+#include "log.h"
 #include "error.h"
+#include "timer.h"
 #include "di_data.h"
 #include <netinet/in.h>
+
+#ifndef DI_POLL_DELTA
+#define	DI_POLL_DELTA	(10 * TICKS_PER_SEC)	/* IP address change polls. */
+#endif
 
 typedef struct ip_ctrl_st {
 	unsigned char	*ipa;
@@ -27,12 +33,15 @@ typedef struct ip_ctrl_st {
 	Scope_t		min_scope;
 	Scope_t		max_scope;
 	DI_NOTIFY	fct;
+	unsigned char	*prev_ipa;
+	unsigned	prev_n;
 } IP_CTRL;
 
 static IP_CTRL	ipv4;
 #ifdef DDS_IPV6
 static IP_CTRL	ipv6;
 #endif
+static Timer_t	poll_timer;
 
 /* di_sys_init -- Initialize dynamic IP handling. */
 
@@ -42,25 +51,47 @@ int di_sys_init (void)
 #ifdef DDS_IPV6
 	ipv6.fct = NULL;
 #endif
+	tmr_init (&poll_timer, "DynIP.poll");
+
 	return (DDS_RETCODE_OK);
 }
 
 /* di_event -- Event handler for changes. */
 
-void di_event (void)
+static void di_event (uintptr_t user)
 {
+	ARG_NOT_USED (user)
+
+	/*log_printf (RTPS_ID, 0, "DynIP: Event.\r\n");*/
 	if (ipv4.fct) {
-		*ipv4.n = sys_own_ipv4_addr (ipv4.ipa, ipv4.max,
-					     ipv4.min_scope, ipv4.max_scope);
-		(*ipv4.fct)();
+		/*log_printf (RTPS_ID, 0, "DynIP: Check IPv4 addresses (save %u bytes).\r\n", 
+						*ipv4.n * OWN_IPV4_SIZE);*/
+		memcpy (ipv4.prev_ipa, ipv4.ipa, *ipv4.n * OWN_IPV4_SIZE);
+		ipv4.prev_n = *ipv4.n;
+		*ipv4.n = sys_own_ipv4_addr (ipv4.ipa, ipv4.max * OWN_IPV4_SIZE,
+					     ipv4.min_scope, ipv4.max_scope, 0);
+		if (*ipv4.n != ipv4.prev_n ||
+		    memcmp (ipv4.ipa, ipv4.prev_ipa, ipv4.prev_n * OWN_IPV4_SIZE)) {
+			/*log_printf (RTPS_ID, 0, "DynIP: IPv4 address changes!\r\n");*/
+			(*ipv4.fct) ();
+		}
 	}
 #ifdef DDS_IPV6
 	if (ipv6.fct) {
-		*ipv6.n = sys_own_ipv6_addr (ipv6.ipa, ipv6.max,
-					     ipv6.min_scope, ipv6.max_scope);
-		(*ipv6.fct)();
+		/*log_printf (RTPS_ID, 0, "DynIP: Check IPv6 addresses (save %u bytes).\r\n",
+						*ipv6.n * OWN_IPV6_SIZE);*/
+		memcpy (ipv6.prev_ipa, ipv6.ipa, *ipv6.n * OWN_IPV6_SIZE);
+		ipv6.prev_n = *ipv6.n;
+		*ipv6.n = sys_own_ipv6_addr (ipv6.ipa, ipv6.max * OWN_IPV6_SIZE,
+					     ipv6.min_scope, ipv6.max_scope, 0);
+		if (*ipv6.n != ipv6.prev_n ||
+		    memcmp (ipv6.ipa, ipv6.prev_ipa, ipv6.prev_n * OWN_IPV6_SIZE)) {
+			/*log_printf (RTPS_ID, 0, "DynIP: IPv6 address changes!\r\n");*/
+			(*ipv6.fct) ();
+		}
 	}
 #endif
+	tmr_start (&poll_timer, DI_POLL_DELTA, 0, di_event);
 }
 
 /* di_sys_attach -- Attach the event handler for the given family. */
@@ -80,6 +111,7 @@ int di_sys_attach (unsigned      family,
 		ipv4.min_scope = min_scope;
 		ipv4.max_scope = max_scope;
 		ipv4.fct = fct;
+		ipv4.prev_ipa = xmalloc (max * OWN_IPV4_SIZE);
 	}
 #ifdef DDS_IPV6
 	else if (family == AF_INET6) {
@@ -89,10 +121,13 @@ int di_sys_attach (unsigned      family,
 		ipv6.min_scope = min_scope;
 		ipv6.max_scope = max_scope;
 		ipv6.fct = fct;
+		ipv6.prev_ipa = xmalloc (max * OWN_IPV6_SIZE);
 	}
 #endif
 	else
 		return (DDS_RETCODE_BAD_PARAMETER);
+
+	di_event (0);
 
 	return (DDS_RETCODE_OK);
 }
@@ -101,14 +136,27 @@ int di_sys_attach (unsigned      family,
 
 int di_sys_detach (unsigned family)
 {
-	if (family == AF_INET)
+	if (family == AF_INET) {
 		ipv4.fct = NULL;
+		xfree (ipv4.prev_ipa);
+	}
 #ifdef DDS_IPV6
-	else if (family == AF_INET6)
+	else if (family == AF_INET6) {
 		ipv6.fct = NULL;
+		xfree (ipv6.prev_ipa);
+	}
 #endif
 	else
 		return (DDS_RETCODE_BAD_PARAMETER);
+
+	if (!ipv4.fct
+#ifdef DDS_IPV6
+	              && !ipv6.fct
+#endif
+	                          ) {
+		log_printf (RTPS_ID, 0, "di_sys_detach: timer stopped!\r\n");
+		tmr_stop (&poll_timer);
+	}
 
 	return (DDS_RETCODE_OK);
 }
@@ -122,3 +170,9 @@ void di_sys_final (void)
 	ipv6.fct = NULL;
 #endif
 }
+
+void di_sys_check (void)
+{
+	di_event (0);
+}
+

@@ -1,0 +1,65 @@
+
+//set this if you want to build and publish from a different branch
+//don't specifity the variable to use master
+//ext.BRANCH = ""
+
+ext.artifactoryDeferLoading = true
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+
+String getQeoGroup(String param, boolean override) {
+    String branch = "master"
+    if (project.hasProperty("BRANCH") && project.getProperty("BRANCH") != "") {
+        branch = project.getProperty("BRANCH")
+    }
+    if (project.hasProperty(param)) {
+        branch = project.getProperty(param)
+    }
+    if (branch != "master" && override) {
+        return rootProject.qeoGroupDefault + ".branch.${branch}"
+    }
+    else {
+        return rootProject.qeoGroupDefault
+    }
+}
+
+subprojects {
+    //set publish group and version
+    group = rootProject.qeoGroup
+    version = rootProject.qeoVersion
+
+    //set java version
+    ext.javaGroup = getQeoGroup("branchJava", false)
+    ext.javaVersion = rootProject.qeoVersion
+
+    //set js version
+    ext.jsGroup = getQeoGroup("branchJS", false)
+    ext.jsVersion = rootProject.qeoVersion
+
+    afterEvaluate {
+        if (tasks.findByPath("connectedUITest") != null) {
+            //if a project has a task connectedUITest, make sure to run stopuivm after it
+            tasks.connectedUITest.finalizedBy stopuivm
+        }
+        if (tasks.findByPath("getConnectedDevices") != null) {
+            //do startvm before getConnectedDevices, but don't make it a dependecy!
+            tasks.getConnectedDevices.mustRunAfter startuivm
+        }
+    }
+}
+
+task startuivm(type: Exec) {
+    if (!System.env.JENKINS_URL) {
+        //only eneable this task on jenkins
+        enabled = false
+    }
+    commandLine "./androvm-uitest.sh", "start"
+}
+
+task stopuivm(type: Exec) {
+    if (!System.env.JENKINS_URL) {
+        //only enable this task on jenkins
+        enabled = false
+    }
+    commandLine "./androvm-uitest.sh", "stop"
+}
+

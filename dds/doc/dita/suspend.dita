@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE concept PUBLIC "-//OASIS//DTD DITA Concept//EN" "concept.dtd">
+<concept id="concept_hzg_mgm_fq">
+ <title>Suspend/Resume support</title>
+ <shortdesc></shortdesc>
+ <conbody>
+  <p>In order to save on battery consumption, Technicolor DDS supports a suspend/resume mechanism to
+   allow devices to go into a deep sleep and wake up afterwards with all DDS topics, i.e.
+   DataWriters and DataReaders fully restored.</p>
+  <p>In addition to this useful feature, it is possible to use a Background Notification Service
+   that can automatically wake up sleeping devices whenever data arrives on topics in which the
+   sleeping devices are interested.  To allow this feature, it is necessary to deploy a Background
+   Notification Server somewhere in the same domain, which could be colocated with the DDS
+   Forwarder.</p>
+ </conbody>
+</concept>

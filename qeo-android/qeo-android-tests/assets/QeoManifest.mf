@@ -1,0 +1,43 @@
+
+[meta]
+appname = "qeo-android-tests"
+#version code currently not used
+version = 1
+
+[application]
+org::qeo::system::DeviceInfo = r #readonly topic
+org::qeo::unittesttypes::TestArrayTypes = rw
+org::qeo::unittesttypes::TestTypes = rw
+org::qeo::unittesttypes::StaticFields = rw
+org::qeo::unittesttypes::TestState = rw
+org::qeo::unittesttypes::NestedTypes = rw
+org::qeo::android::test::CallbackAfterCloseTest_MyType = rw
+org::qeo::android::test::SimpleType = rw
+org::qeo::StateTest_TestType = rw
+org::qeo::ProcessService_FeedBack = rw
+org::qeo::MultipleFactoryTest_Class1 = rw
+org::qeo::MultipleFactoryTest_Class2 = rw
+org::qeo::system::RegistrationCredentials = rw
+org::qeo::system::RegistrationRequest = rw
+org::qeo::LimitOpenFactoryTest_State1 = rw
+org::qeo::LimitOpenFactoryTest_Event1 = rw
+org::qeo::wifi::Interface = rw
+org::qeo::wifi::Radio = rw
+org::qeo::wifi::ScanList = rw
+org::qeo::wifi::ScanListEntry = rw
+org::qeo::wifi::ScanRequest = rw
+com::technicolor::wifidoctor::APStats = rw
+com::technicolor::wifidoctor::AssociatedStationStats = rw
+com::technicolor::wifidoctor::RadioStats = rw
+com::technicolor::wifidoctor::STAStats = rw
+com::technicolor::wifidoctor::TestRequest = rw
+org::qeo::unittesttypes::DE2602Data = rw
+org::qeo::BigDataTest_BigDataState = rw
+org::qeo::BigDataTest_BigDataEvent = rw
+org::qeo::DE2538WriteNullTest_Outer = rw
+org::qeo::TypeTest_NoPublicFields = rw
+org::qeo::android::test::CloseStressTest_Type1 = rw
+org::qeo::android::test::CloseStressTest_Type2 = rw
+
+	# just a comment line to check the parser... #
+

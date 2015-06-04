@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -1831,6 +1831,8 @@ int main (int argc, const char *argv [])
 
 	if (verbose)
 		printf ("DDS Participant deleted\r\n");
+
+	DDS_Handle_detach (tty_stdin);
 
 #ifdef DDS_SECURITY
 	if (cert_path || key_path || engine_id)

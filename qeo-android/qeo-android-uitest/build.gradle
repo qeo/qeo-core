@@ -1,0 +1,71 @@
+
+// ext.serviceClassifier = "debug" //uncomment this if you want to run unit tests with debug service for better debugging. Don't check this in.
+ext.enableUITests = true
+ext.artifactoryNoArchives = true //this tasks has not archives
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: project(":qeo-android-tests").file("serviceInstaller.gradle")
+
+
+android {
+    productFlavors {
+        normal {
+            applicationId "org.qeo.uitest.normal"
+        }
+        embedded {
+            applicationId "org.qeo.uitest.embedded"
+        }
+    }
+    sourceSets.normal.res.srcDir "res-normal"
+    sourceSets.embedded.res.srcDir "res-embedded"
+}
+
+task compileDebugJava() {
+    description "Dummy task to make productFlavors work"
+    dependsOn "compileNormalDebugJava"
+}
+task installDebugTest() {
+    description "Dummy task to make productFlavors work"
+    dependsOn "installNormalDebugTest"
+}
+task installDebug() {
+    description "Dummy task to make productFlavors work"
+    dependsOn "installNormalDebug"
+}
+
+connectedUITest {
+    description += " (-PnoOpenId=true to skip openId login)"
+    dependsOnFlavor = "NormalDebug"
+    dependsOn installExtraApk
+    tests = ["org.qeo.uitest.test.IntegratedScenario1"]
+    afterEvaluate {
+        //also install embedded version
+        dependsOn installEmbeddedDebug
+        if (!(project.hasProperty("noWipe") && project.noWipe)) {
+            installEmbeddedDebug.dependsOn(uninstallEmbeddedDebug)
+        }
+    }
+    if (project.hasProperty("noOpenId") && project.noOpenId) {
+        params["noOpenId"] = project.noOpenId
+        tasks.uninstallApk.enabled = false //don't reinstall service
+    }
+
+}
+
+afterEvaluate {
+    tasks.installCertFile.enabled = false
+    tasks.connectedAndroidTest.enabled = false
+    tasks.connectedCheck.enabled = false
+    tasks.singleTest.enabled = false
+    tasks.connectedAndroidTestEmbeddedDebug.enabled = false
+    tasks.connectedAndroidTestNormalDebug.enabled = false
+    takeBugReportOnFailure.enabled = false
+}
+
+dependencies {
+	compile project(':qeo-android')
+    embeddedCompile project(':qeo-android-service-embedded')
+}
+
+

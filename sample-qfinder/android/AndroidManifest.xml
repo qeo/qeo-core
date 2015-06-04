@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.qeo.sample.finder.android"
+    android:versionCode="1"
+    android:versionName="0.14.0" >
+
+    <uses-sdk
+        android:minSdkVersion="9"
+        android:targetSdkVersion="19" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/qfinder_icon"
+        android:label="@string/app_name" >
+        <activity
+            android:name="org.qeo.sample.finder.android.QFinderActivity"
+            android:label="@string/app_name" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name="org.qeo.android.activity.ServiceInstallActivity" />
+    </application>
+
+</manifest>

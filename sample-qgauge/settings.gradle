@@ -1,0 +1,6 @@
+
+rootProject.name = "sample-qgauge"
+
+include 'java-lib', 'java-app-host', 'android-reader', 'android-writer', 'osgi', 'c-writer', 'html'
+// prepend root project name to all child project names..
+rootProject.children.each { it.name = rootProject.name + '-' + it.name }

@@ -1,0 +1,65 @@
+ext.isSDKSample = true
+//The emma.gradle file is needed to be able to check for code coverage.
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/emma.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/qeoTools.gradle'
+//Needed for installation of certificates
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/hostInstallerTools.gradle'
+//Apply plugins.
+apply plugin: 'java'
+apply plugin: 'findbugs'
+apply plugin: 'eclipse'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+//The checkstyle.gradle file is needed to configure checkstyle with the correct configuration file.
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactDownloader.gradle'
+
+group = "org.qeo"
+
+//Set JDK source/target to version 6
+sourceCompatibility=1.6
+targetCompatibility=1.6
+
+findbugsTest {
+  ignoreFailures = true
+}
+
+generateTypes {
+    ext.qdms = ["samples/QGauge_NetStatMessage.xml"]
+    ext.language = "java"
+}
+
+artifactDownload {
+    unzip = true
+}
+tasks.test.dependsOn(artifactDownload)
+
+/**
+ * Make sure we limit Qeo to this device only for testing purposes.
+ */
+afterEvaluate {
+    test {
+                environment['TDDS_IP_ADDRESS'] = '127.0.0.1'
+                environment['TDDS_IP_MCAST_DEST'] = '127.0.0.1'
+        }
+}
+
+
+/*
+Compile and runtime dependencies have to be declared here.
+*/
+dependencies {
+  compile     group: 'org.qeo', name: 'qeo-java-core', version: version 
+  testCompile group: 'org.qeo', name: 'qeo-java', version: version
+  testCompile group: 'org.qeo', name: 'qeo-java', version: version, classifier: 'testlib'
+  testCompile group: 'org.qeo', name: 'qeo-java', version: version, classifier: 'testlib-host'
+  download group: 'org.qeo', name: 'qeo-java', version: version, classifier: 'testlib'
+  testRuntime group: 'org.qeo', name: 'qeo-java', version: version, classifier: 'native-host'
+  testCompile group: 'junit', name: 'junit', version: '3.8.2+'
+    //for codegen
+    generated "org.qeo:qeo-qdm:${project.qeoVersion}:samples@zip"
+}
+
+task sampleSDKCopySources(type:Copy){
+    from 'src/main/java'
+    into "${project.buildDir}/sample"
+}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -37,6 +37,22 @@
 
 #ifdef RTPS_USED
 
+/*#define LOG_EVENTS	** Define this for event logging! */
+
+#ifdef LOG_EVENTS
+#define	evl_print(s)			log_printf (DCPS_ID, 0, s)
+#define	evl_print1(s,a1)		log_printf (DCPS_ID, 0, s, a1)
+#define	evl_print2(s,a1,a2)		log_printf (DCPS_ID, 0, s, a1, a2)
+#define	evl_print3(s,a1,a2,a3)		log_printf (DCPS_ID, 0, s, a1, a2, a3)
+#define	evl_print4(s,a1,a2,a3,a4)	log_printf (DCPS_ID, 0, s, a1, a2, a3, a4)
+#else
+#define	evl_print(s)
+#define	evl_print1(s,a1)
+#define	evl_print2(s,a1,a2)
+#define	evl_print3(s,a1,a2,a3)
+#define	evl_print4(s,a1,a2,a3,a4)
+#endif
+
 /* dcps_notify_match -- Used by Discovery to inform DCPS on the status of
 			matched endpoints. */
 
@@ -62,7 +78,6 @@ int dcps_notify_match (LocalEndpoint_t *lep, const Endpoint_t *ep)
 			}
 			/*rtps_endpoint_markers_set (&wp->w_lep, 1 << EM_SEND);*/
 		}
-		return (1);
 	}
 	else {
 		rp = (Reader_t *) lep;
@@ -77,8 +92,9 @@ int dcps_notify_match (LocalEndpoint_t *lep, const Endpoint_t *ep)
 				return (0);
 			}
 		}
-		return (1);
 	}
+	evl_print2 ("DCPS{%u}->{%u}: Match: create RTPS proxy!\r\n", lep->ep.entity.handle, ep->entity.handle);
+	return (1);
 }
 
 /* dcps_notify_unmatch -- Used by Discovery to inform DCPS on the status of
@@ -88,21 +104,24 @@ int dcps_notify_unmatch (LocalEndpoint_t *lep, const Endpoint_t *ep)
 {
 	Writer_t	*wp;
 	Reader_t	*rp;
+	int		r;
 
 	ARG_NOT_USED (ep)
 
+	evl_print2 ("DCPS{%u}->{%u}: Unmatch: RTPS proxy removed!\r\n", lep->ep.entity.handle, ep->entity.handle);
 	if (lep->ep.entity.type == ET_WRITER) {
 		wp = (Writer_t *) lep;
-		return (wp->w_rtps &&
-		        (ep->entity.flags & EF_REMOTE) != 0 &&
-			rtps_matched_reader_count (wp) == 1);
+		r = (wp->w_rtps &&
+		     (ep->entity.flags & EF_REMOTE) != 0 &&
+		     rtps_matched_reader_count (wp) == 1);
 	}
 	else {
 		rp = (Reader_t *) lep;
-		return (rp->r_rtps &&
-			(ep->entity.flags & EF_REMOTE) != 0 &&
-			rtps_matched_writer_count (rp) == 1);
+		r = (rp->r_rtps &&
+		     (ep->entity.flags & EF_REMOTE) != 0 &&
+		     rtps_matched_writer_count (rp) == 1);
 	}
+	return (r);
 }
 
 /* dcps_notify_done -- Used by Discovery to inform DCPS that the last proxy of
@@ -113,6 +132,7 @@ int dcps_notify_unmatch (LocalEndpoint_t *lep, const Endpoint_t *ep)
 
 void dcps_notify_done (LocalEndpoint_t *lep)
 {
+	evl_print1 ("DCPS{%u}: no more RTPS proxies needed!\r\n", lep->ep.entity.handle);
 	if (lep->ep.entity.type == ET_WRITER)
 		rtps_writer_delete ((Writer_t *) lep);
 	else
@@ -125,7 +145,7 @@ void dcps_notify_done (LocalEndpoint_t *lep)
 
 void dcps_inconsistent_topic (Topic_t *tp)
 {
-	/*dbg_printf ("DCPS: Inconsistent topic (%s)!\r\n", str_ptr (tp->name));*/
+	evl_print1 ("DCPS: Inconsistent topic (%s)\r\n", str_ptr (tp->name));
 	if ((tp->entity.flags & EF_ENABLED) == 0)
 		return;
 
@@ -205,6 +225,7 @@ DDS_ReturnCode_t DDS_Topic_get_inconsistent_topic_status (DDS_Topic tp,
 
 void dcps_offered_deadline_missed (Writer_t *wp, DDS_InstanceHandle_t handle)
 {
+	evl_print2 ("DCPS{%u}: Offered Deadline missed (h=%u)!\r\n", wp->w_handle, handle);
 	if ((wp->w_flags & EF_ENABLED) == 0)
 		return;
 
@@ -295,6 +316,7 @@ DDS_ReturnCode_t DDS_DataWriter_get_offered_deadline_missed_status (DDS_DataWrit
 
 void dcps_requested_deadline_missed (Reader_t *rp, DDS_InstanceHandle_t handle)
 {
+	evl_print2 ("DCPS{%u}: Requested Deadline missed (h=%u)!\r\n", rp->r_handle, handle);
 	if ((rp->r_flags & EF_ENABLED) == 0)
 		return;
 
@@ -404,6 +426,7 @@ static void policy_id_add (IncompatibleQosStatus *sp, DDS_QosPolicyId_t id)
 
 void dcps_offered_incompatible_qos (Writer_t *wp, DDS_QosPolicyId_t policy_id)
 {
+	evl_print2 ("DCPS{%u}: Offered Incompatible QoS (%s)!\r\n", wp->w_handle, DDS_qos_policy (policy_id));
 	if ((wp->w_flags & EF_ENABLED) == 0)
 		return;
 
@@ -505,6 +528,7 @@ DDS_ReturnCode_t DDS_DataWriter_get_offered_incompatible_qos_status (DDS_DataWri
 
 void dcps_requested_incompatible_qos (Reader_t *rp, DDS_QosPolicyId_t policy_id)
 {
+	evl_print2 ("DCPS{%u}: Requested Incompatible QoS (%s)!\r\n", rp->r_handle, DDS_qos_policy (policy_id));
 	if ((rp->r_flags & EF_ENABLED) == 0)
 		return;
 
@@ -596,6 +620,7 @@ void dcps_samples_lost (Reader_t *rp, unsigned nsamples)
 {
 	unsigned	prev_nsamples;
 
+	evl_print2 ("DCPS{%u}: %u samples lost!\r\n", rp->r_handle, nsamples);
 	if ((rp->r_flags & EF_ENABLED) == 0)
 		return;
 
@@ -687,6 +712,11 @@ void dcps_sample_rejected (Reader_t                     *rp,
 			   DDS_SampleRejectedStatusKind kind,
 			   DDS_InstanceHandle_t         handle)
 {
+#ifdef EVENT_LOG
+	static const char *kind_s [] = {"ok", "Instance", "Samples", "Samples/Instance" };
+
+	evl_print3 ("DCPS{%u}: sample rejected (%s - h:%u)!\r\n", rp->r_handle, kind_s [kind], handle);
+#endif
 	if ((rp->r_flags & EF_ENABLED) == 0)
 		return;
 
@@ -868,6 +898,7 @@ static void dcps_notify_data_available (Reader_t *rp)
 
 void dcps_liveliness_lost (Writer_t *wp)
 {
+	evl_print1 ("DCPS{%u}: Liveliness lost!\r\n", wp->w_handle);
 	if ((wp->w_flags & EF_ENABLED) == 0)
 		return;
 
@@ -958,6 +989,8 @@ void dcps_liveliness_change (Reader_t             *rp,
 			     int                  alive,
 			     DDS_InstanceHandle_t handle)
 {
+	evl_print4 ("DCPS{%u}: Liveliness change (mode=%u, alive=%d, h=%u)!\r\n",
+					    rp->r_handle, mode, alive, handle);
 	if ((rp->r_flags & EF_ENABLED) == 0)
 		return;
 
@@ -1081,6 +1114,7 @@ void dcps_publication_match (Writer_t         *wp,
 			     int              add, 
 			     const Endpoint_t *ep)
 {
+	evl_print3 ("DCPS{%u}->{%u}: Publication match (add=%u)!\r\n", wp->w_handle, ep->entity.handle, add);
 	if ((wp->w_flags & EF_ENABLED) == 0)
 		return;
 
@@ -1182,6 +1216,7 @@ void dcps_subscription_match (Reader_t         *rp,
 			      int              add, 
 			      const Endpoint_t *ep)
 {
+	evl_print3 ("DCPS{%u}->{%u}: Subscription match (add=%u)!\r\n", rp->r_handle, ep->entity.handle, add);
 	if ((rp->r_flags & EF_ENABLED) == 0)
 		return;
 

@@ -1,0 +1,17 @@
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+
+subprojects {
+    group = project.qeoGroup
+    version = project.qeoVersion
+    if (!project.hasProperty("BRANCH")) {
+        //default behavior
+        ext.BRANCH = ""
+
+        //set this if you want to build and publish from a different branch
+        //ext.BRANCH = "easy-install-merge"
+    }
+    if (BRANCH != "" && BRANCH != "master") {
+        group += ".branch.${BRANCH}"
+    }
+}
+

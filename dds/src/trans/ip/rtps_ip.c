@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -66,6 +66,9 @@
 #include "ri_tcp.h"
 #ifdef DDS_SECURITY
 #include "ri_tls.h"
+#endif
+#ifdef TCP_SUSPEND
+#include "ri_bgcp.h"
 #endif
 #endif
 #include "rtps_ip.h"
@@ -153,9 +156,11 @@ LPFN_WSASENDMSG		WSASendMsg;
 #else /* !USE_SENDMSG */
 #ifdef RX_TX_BUF_ALLOC
 unsigned char		*rtps_tx_buf;
+size_t			rtps_max_tx_size;
 #else
 static unsigned char	tx_buf_data [MAX_TX_SIZE];
 unsigned char		*rtps_tx_buf = tx_buf_data;
+size_t			rtps_max_tx_size = MAX_TX_SIZE;
 #endif
 #endif /* !USE_SENDMSG */
 #ifdef USE_RECVMSG
@@ -168,9 +173,11 @@ LPFN_WSARECVMSG		WSARecvMsg;
 #else /* !USE_RECVMSG */
 #ifdef RX_TX_BUF_ALLOC
 unsigned char		*rtps_rx_buf;
+size_t			rtps_max_rx_size;
 #else
 static unsigned char	rx_buf_data [MAX_RX_SIZE];
 unsigned char		*rtps_rx_buf = rx_buf_data;
+size_t			rtps_max_rx_size = MAX_RX_SIZE;
 #endif
 #endif /* !USE_RECVMSG */
 #ifdef SIMULATION
@@ -334,6 +341,11 @@ static int rtps_udp_suspended;
 static int rtps_tcp_suspended;
 #endif
 
+void rtps_ip_reset (void)
+{
+	rtps_udp_suspended = rtps_tcp_suspended = 0;
+}
+
 static void rtps_udp_mode_change (Config_t c)
 {
 	IP_MODE	old_v4_mode;
@@ -465,10 +477,10 @@ static void rtps_tcp_mode_change (Config_t c)
 		}
 		else if (old_v4_mode != MODE_DISABLED && ipv4_proto.tcp_mode == MODE_DISABLED) {
 			act_printf ("TCP detach\r\n");
-			rtps_tcpv4_detach ();
+			rtps_tcpv4_detach (rtps_tcp_suspended);
 		}
 	}
-#if 0	/* Not used for now ... */
+#ifdef DDS_IPV6
 	if (ipv6_proto.mode != MODE_DISABLED) {
 		if (old_v6_mode == MODE_DISABLED && ipv6_proto.tcp_mode != MODE_DISABLED) {
 			act_printf ("TCPv6 attach\r\n");
@@ -476,7 +488,7 @@ static void rtps_tcp_mode_change (Config_t c)
 		}
 		else if (old_v6_mode != MODE_DISABLED && ipv6_proto.tcp_mode == MODE_DISABLED) {
 			act_printf ("TCPv6 detach\r\n");
-			rtps_tcpv6_detach ();
+			rtps_tcpv6_detach (rtps_tcp_suspended);
 		}
 	}
 #endif
@@ -520,6 +532,9 @@ static int rtps_ip_init (RMRXF    rxf,
 			 MEM_DESC msg_elem)
 {
 	POOL_LIMITS	limits;
+#ifdef RX_TX_BUF_ALLOC
+	char		*sp;
+#endif
 
 	act_printf ("rtps_ip_init()\r\n");
 	if (mem_blocks [0].md_addr)	/* Was already initialized -- reset. */
@@ -548,16 +563,29 @@ static int rtps_ip_init (RMRXF    rxf,
 	ip = (IP_CX **) mds_block (&mem_blocks [MB_CXT]);
 
 #ifdef RX_TX_BUF_ALLOC
-	rtps_tx_buf = xmalloc (MAX_TX_SIZE);
+	sp = getenv ("TDDS_TX_BUFFER");
+	if (!sp || (rtps_max_tx_size = atoi (sp)) < MIN_TX_SIZE || rtps_max_tx_size > MAX_TX_SIZE)
+		rtps_max_tx_size = MAX_TX_SIZE;
+
+	rtps_tx_buf = xmalloc (rtps_max_tx_size);
 	if (!rtps_tx_buf) {
-		warn_printf ("rtps_ip_init: not enough memory for IP transmit buffer!");
+		warn_printf ("rtps_ip_init: not enough memory for IP transmit buffer (%lu bytes needed)!", (unsigned long) rtps_max_tx_size);
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
-	rtps_rx_buf = xmalloc (MAX_RX_SIZE);
+	if (rtps_max_tx_size != MAX_TX_SIZE)
+		log_printf (RTPS_ID, 0, "IP: Transmit packet buffer size = %lu bytes.\r\n", (unsigned long) rtps_max_tx_size);
+
+	sp = getenv ("TDDS_RX_BUFFER");
+	if (!sp || (rtps_max_rx_size = atoi (sp)) < MIN_RX_SIZE || rtps_max_rx_size > MAX_RX_SIZE)
+		rtps_max_rx_size = MAX_RX_SIZE;
+
+	rtps_rx_buf = xmalloc (rtps_max_rx_size);
 	if (!rtps_rx_buf) {
-		warn_printf ("rtps_ip_init: not enough memory for IP receive buffer!");
+		warn_printf ("rtps_ip_init: not enough memory for IP receive buffer (%lu bytes needed)!", (unsigned long) rtps_max_rx_size);
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
+	if (rtps_max_rx_size != MAX_RX_SIZE)
+		log_printf (RTPS_ID, 0, "IP: Receive packet buffer size = %lu bytes.\r\n", (unsigned long) rtps_max_rx_size);
 #endif
 
 #ifdef DDS_DYN_IP
@@ -640,10 +668,16 @@ static void rtps_ip_final (void)
 			}
 		}
 	mds_free (mem_blocks, MB_END);
+
 #ifdef RX_TX_BUF_ALLOC
-	xfree (rtps_rx_buf);
-	xfree (rtps_tx_buf);
-	rtps_rx_buf = rtps_tx_buf = NULL;
+	if (rtps_rx_buf) {
+		xfree (rtps_rx_buf);
+		rtps_rx_buf = NULL;
+	}
+	if (rtps_tx_buf) {
+		xfree (rtps_tx_buf);
+		rtps_tx_buf = NULL;
+	}
 #endif
 #ifdef DDS_DYN_IP
 	di_final ();
@@ -704,7 +738,7 @@ int rtps_ipv4_init (RMRXF    rxf,
 	env_str = config_get_string (DC_IP_Address, NULL);
 	if (!env_str || strcmp ("127.0.0.1", env_str) != 0) {
 		ipv4_proto.num_own = sys_own_ipv4_addr (ipv4_proto.own, OWN_IPV4_SIZE * ipv4_proto.max_own,
-						        ipv4_proto.min_scope, ipv4_proto.max_scope);
+						        ipv4_proto.min_scope, ipv4_proto.max_scope, 1);
 		/*dbg_printf ("IPv4 addresses from sys:\r\n");
 		dbg_print_region (ipv4_proto.own, ipv4_proto.num_own * OWN_IPV4_SIZE,
 				  0, 0);*/
@@ -798,7 +832,7 @@ int rtps_ipv6_init (RMRXF    rxf,
 
 #ifndef SIMULATION
 	ipv6_proto.num_own = sys_own_ipv6_addr (ipv6_proto.own, OWN_IPV6_SIZE * ipv6_proto.max_own,
-					        ipv6_proto.min_scope, ipv6_proto.max_scope);
+					        ipv6_proto.min_scope, ipv6_proto.max_scope, 1);
 	/*dbg_printf ("IPv6 addresses from sys\r\n:");
 	dbg_print_region (ipv6_proto.own, ipv6_proto.num_own * OWN_IPV6_SIZE, 0, 0);*/
 	ipv6_proto.enabled = (ipv6_proto.num_own != 0);
@@ -1014,17 +1048,11 @@ void rtps_ip_foreach (IP_VISITF fct, void *data)
 
 void rtps_ip_trace (unsigned            handle,
 		    char                dir,
-		    Locator_t           *lp,
-		    const unsigned char *addr,
-		    unsigned            port,
-		    unsigned            length)
+		    const Locator_t     *lp,
+		    const unsigned char *saddr,
+		    unsigned            sport,
+		    const RMBUF         *msg)
 {
-#if defined (USE_TX_IOS) || defined (USE_RECVMSG)
-	int		vec;
-#endif
-	unsigned	i, left;
-	unsigned char	*cp, c;
-	char		ascii [17];
 	char		buf [128];
 
 #ifdef DDS_IPV6
@@ -1034,10 +1062,10 @@ void rtps_ip_trace (unsigned            handle,
 				lp->address [12], lp->address [13],
 				lp->address [14], lp->address [15], lp->port,
 				(dir == 'R') ? "<-" : "->",
-				(addr) ? addr [0] : 0,
-				(addr) ? addr [1] : 0,
-				(addr) ? addr [2] : 0,
-				(addr) ? addr [3] : 0, port);
+				(saddr) ? saddr [0] : 0,
+				(saddr) ? saddr [1] : 0,
+				(saddr) ? saddr [2] : 0,
+				(saddr) ? saddr [3] : 0, sport);
 #ifdef DDS_IPV6
 	}
 	else /*if ((kind & LOCATOR_KINDS_IPv6) != 0)*/ {
@@ -1045,13 +1073,16 @@ void rtps_ip_trace (unsigned            handle,
 		char ipv6_r [INET6_ADDRSTRLEN + 1];
 
 		inet_ntop (AF_INET6, lp->address, ipv6_l, sizeof (ipv6_l));
-		inet_ntop (AF_INET6, addr, ipv6_r, sizeof (ipv6_r));
+		inet_ntop (AF_INET6, saddr, ipv6_r, sizeof (ipv6_r));
 		snprintf (buf, sizeof (buf), "%s:%u %s %s:%u",
 				ipv6_l, lp->port,
 				(dir == 'R') ? "<-" : "->",
-				ipv6_r, port);
+				ipv6_r, sport);
 	}
 #endif
+	log_printf (RTPS_ID, 0, "(%u) ", handle);
+	rtps_log_message (RTPS_ID, 0, msg, dir, 0, buf);
+#if 0
 	log_printf (RTPS_ID, 0, "(%u) %c -%5u: %s\r\n          ", handle, dir, length, buf);
 	ascii [16] = '\0';
 	cp = NULL;	/* Some compilers warn - cp used before init! */
@@ -1109,6 +1140,7 @@ void rtps_ip_trace (unsigned            handle,
 	if (i >= MAX_TRC_LEN)
 		log_printf (RTPS_ID, 0, " ..");
 	log_printf (RTPS_ID, 0, "\r\n");
+#endif
 }
 #endif
 
@@ -1141,7 +1173,7 @@ static void rtps_ip_cleanup_cx (IP_CX *cxp)
 
 /* rtps_parse_buffer -- Parse a (received) packet in a buffer. */
 
-RMBUF *rtps_parse_buffer (IP_CX *cxp, unsigned char *buf, unsigned len)
+RMBUF *rtps_parse_buffer (IP_CX *cxp, const unsigned char *buf, unsigned len)
 {
 	RMBUF		*mp;
 	RME		*dst_smbp;
@@ -1161,8 +1193,8 @@ RMBUF *rtps_parse_buffer (IP_CX *cxp, unsigned char *buf, unsigned len)
 	mp->next = NULL;
 	mp->prio = 0;
 	mp->users = 1;
-	ADD_ULLONG (cxp->stats.octets_rcvd, (unsigned) len);
-	cxp->stats.packets_rcvd++;
+	/*ADD_ULLONG (cxp->stats.octets_rcvd, (unsigned) len);
+	cxp->stats.packets_rcvd++;*/
 	if (len < (ssize_t) (sizeof (MsgHeader) + sizeof (SubmsgHeader))) {
 		cxp->stats.too_short++;
 		mds_pool_free (mhdr_pool, mp);
@@ -1291,16 +1323,16 @@ RMBUF *rtps_parse_buffer (IP_CX *cxp, unsigned char *buf, unsigned len)
 
 /* rtps_rx_buffer -- Process a received packet in a buffer. */
 
-void rtps_rx_buffer (IP_CX         *cxp,
-		     unsigned char *buf,
-		     size_t        len,
-		     unsigned char *saddr,
-		     uint32_t      sport/*,
-		     unsigned      sintf*/)
+void rtps_rx_buffer (IP_CX               *cxp,
+		     const unsigned char *buf,
+		     size_t              len,
+		     const unsigned char *saddr,
+		     uint32_t            sport/*,
+		     unsigned            sintf*/)
 {
-	RMBUF		*mp;
+	RMBUF			*mp;
 #ifdef MSG_TRACE
-	unsigned char	*ap;
+	const unsigned char	*ap;
 #endif
 	static Locator_t raddr = {
 		LOCATOR_KIND_INVALID,
@@ -1315,6 +1347,10 @@ void rtps_rx_buffer (IP_CX         *cxp,
 		0
 	};
 
+	mp = rtps_parse_buffer (cxp, buf, len);
+	if (!mp)
+		return;
+
 #ifdef MSG_TRACE
 	if (cxp->trace) {
 		if (saddr)
@@ -1322,14 +1358,9 @@ void rtps_rx_buffer (IP_CX         *cxp,
 		else
 			ap = NULL;
 		rtps_ip_trace (cxp->handle, 'R',
-			       &cxp->locator->locator,
-			       ap, sport, len);
+			       &cxp->locator->locator, ap, sport, mp);
 	}
 #endif
-	mp = rtps_parse_buffer (cxp, buf, len);
-	if (!mp)
-		return;
-
 	raddr.kind = cxp->locator->locator.kind;
 	raddr.flags = cxp->locator->locator.flags;
 	if (saddr) {
@@ -1350,10 +1381,10 @@ void rtps_rx_buffer (IP_CX         *cxp,
 /* rtps_rx_msg -- Process a received message that is already converted to the
 		  RMBUF format. */
 
-void rtps_rx_msg (IP_CX         *cxp,
-		  RMBUF         *msg,
-		  unsigned char *saddr,
-		  uint32_t      sport)
+void rtps_rx_msg (IP_CX               *cxp,
+		  RMBUF               *msg,
+		  const unsigned char *saddr,
+		  uint32_t            sport)
 {
 	static Locator_t raddr = {
 		LOCATOR_KIND_UDPv4,
@@ -1371,8 +1402,7 @@ void rtps_rx_msg (IP_CX         *cxp,
 #ifdef MSG_TRACE
 	if (cxp->trace || (msg->element.flags & RME_TRACE) != 0)
 		rtps_ip_trace (cxp->handle, 'R',
-			       &cxp->locator->locator,
-			       saddr, sport, msg->size);
+			       &cxp->locator->locator, saddr, sport, msg);
 #endif
 	raddr.kind = cxp->locator->locator.kind;
 	raddr.flags = cxp->locator->locator.flags;
@@ -1791,12 +1821,6 @@ void rtps_ip_rx_fd (SOCKET fd, short revents, void *arg)
 #endif
 	}
 #endif
-#ifdef MSG_TRACE
-	if (cxp->trace)
-		rtps_ip_trace (cxp->handle, 'R',
-			       &cxp->locator->locator,
-			       ap, raddr.port, nread);
-#endif
 	ADD_ULLONG (cxp->stats.octets_rcvd, (unsigned) nread);
 	cxp->stats.packets_rcvd++;
 	if (nread < (ssize_t) (sizeof (MsgHeader) + sizeof (SubmsgHeader))) {
@@ -2005,12 +2029,18 @@ void rtps_ip_rx_fd (SOCKET fd, short revents, void *arg)
 	raddr.sproto = 0;
 	if (mode > 0)
 		mp->element.flags |= RME_USER;
+#ifdef MSG_TRACE
+	if (cxp->trace)
+		rtps_ip_trace (cxp->handle, 'R',
+			       &cxp->locator->locator, 
+			       ap, raddr.port, mp);
+#endif
 	(*rtps_rxf) (cxp->id, mp, &raddr);
 #endif /* !DISABLE_RECEIVE */
 }
 #endif 
 
-/* rtps_ip_rem_locator -- Remove a UDP locator. */
+/* rtps_ip_rem_locator -- Remove an IP locator. */
 
 void rtps_ip_rem_locator (unsigned id, LocatorNode_t *lnp)
 {
@@ -2032,7 +2062,9 @@ void rtps_ip_rem_locator (unsigned id, LocatorNode_t *lnp)
 #endif
 	cxp = rtps_ip_lookup (id, lp);
 	if (cxp) {
-		log_printf (RTPS_ID, 0, "IP: removing %s (%d)\r\n", buf, cxp->handle);
+		log_printf (RTPS_ID, 0, "%s: removing %s (%d)\r\n",
+			(lnp->locator.kind & LOCATOR_KINDS_UDP) ? "UDP" : "TCP",
+			buf, cxp->handle);
 #ifdef DDS_SECURITY
 		if (cxp->locator->locator.sproto) {
 			if ((cxp->locator->locator.sproto & SECC_DTLS_UDP) != 0)
@@ -2068,6 +2100,11 @@ void rtps_ip_dump_cx (IP_CX *cxp, int extra)
 	static const char *tcp_control_state_str [] = {
 		"Idle", "WCxOk", "WIBindOk", "Control"
 	};
+#ifdef TCP_SUSPEND
+	static const char *tcp_notify_state_str [] = {
+		"Idle", "WCxOk", "WBindOk", "Notify"
+	};
+#endif
 	static const char *tcp_data_state_str [] = {
 		"Idle", "WControl", "WPortOk", "WCxOk", "WCBindOk", "Data"
 	};
@@ -2095,6 +2132,7 @@ void rtps_ip_dump_cx (IP_CX *cxp, int extra)
 				c = 'S';
 				break;
 			case ICM_CONTROL:
+			case ICM_NOTIFY:
 				if (cxp->cx_side == ICS_SERVER)
 					c = 'H';
 				else
@@ -2210,27 +2248,40 @@ void rtps_ip_dump_cx (IP_CX *cxp, int extra)
 			dbg_printf ("  state:%s", cx_state_str [cxp->cx_state]);
 			if (cxp->cx_type == CXT_TCP ||
 			    cxp->cx_type == CXT_TCP_TLS) {
-				if (cxp->cx_mode != ICM_DATA) {
+				if (cxp->cx_mode == ICM_CONTROL) {
 					c = 'C';
 					s = tcp_control_state_str [cxp->p_state];
 				}
-				else {
+#ifdef TCP_SUSPEND
+				else if (cxp->cx_mode == ICM_NOTIFY) {
+					c = 'N';
+					s = tcp_notify_state_str [cxp->p_state];
+				}
+#endif
+				else if (cxp->cx_mode == ICM_DATA) {
 					c = 'D';
 					s = tcp_data_state_str [cxp->p_state];
+				}
+				else {
+					c = '?';
+					s = "~~~";
 				}
 				dbg_printf ("/%c:%s", c, s);
 			}
 		}
 #endif /* DDS_TCP */
-		if (cxp->has_dst_addr || cxp->has_prefix) {
+		if (cxp->has_dst_addr || cxp->has_prefix || cxp->dst_port) {
 #ifdef DDS_TCP
 			if ((cxp->cx_type == CXT_TCP || 
 			     cxp->cx_type == CXT_TCP_TLS) &&
 			    cxp->has_prefix)
 				dbg_printf ("\r\n\t  ");
 #endif /* DDS_TCP */
-			if (cxp->has_dst_addr) {
+			if (cxp->has_dst_addr || cxp->dst_port) {
 				dbg_printf ("  dest:");
+				if (!cxp->has_dst_addr)
+					dbg_printf ("*:%u", cxp->dst_port);
+				else
 #ifdef DDS_IPV6
 				if (family == AF_INET)
 #endif
@@ -2272,8 +2323,10 @@ void rtps_ip_dump_cx (IP_CX *cxp, int extra)
 	DBG_PRINT_ULLONG (cxp->stats.octets_rcvd);
 	dbg_printf ("  packets Tx/Rx:%u/%u",
 			cxp->stats.packets_sent, cxp->stats.packets_rcvd);
-	if (cxp->stats.nqueued)
-		dbg_printf ("  queued:%u", cxp->stats.nqueued);
+	if (cxp->nqueued)
+		dbg_printf ("  queued:%u (%lu.%03lus)", cxp->nqueued, 
+				cxp->qstart / TICKS_PER_SEC,
+				(cxp->qstart % TICKS_PER_SEC) * TMR_UNIT_MS);
 	dbg_printf ("\r\n");
 	if (extra) {
 		dbg_printf ("\t    self:%p", (void *) cxp);
@@ -2302,7 +2355,7 @@ void rtps_ip_dump_queued (void)
 	dbg_printf ("Queued Locators:\r\n");
 	if (nlocators)
 		for (i = 0; i <= (unsigned) maxlocator; i++)
-			if (ip [i] && ip [i]->stats.nqueued)
+			if (ip [i] && ip [i]->nqueued)
 				rtps_ip_dump_cx (ip [i], 1);
 
 }
@@ -2331,6 +2384,9 @@ void rtps_ip_dump (const char *buf, int extra)
 	dbg_printf ("# of DTLS server events  = %lu\r\n", dtls_server_fd_count);
 	dbg_printf ("# of DTLS receive events = %lu\r\n", dtls_rx_fd_count);
 #endif
+#ifdef DDS_TCP
+	dbg_printf ("# of TCP queue drops     = %lu\r\n", tcp_qdropped);
+#endif
 #ifndef SIMULATION
 	if (send_udpv4) {
 		dbg_printf ("Sending UDP socket:\r\n");
@@ -2346,7 +2402,7 @@ void rtps_ip_dump (const char *buf, int extra)
 #ifdef DDS_TCP
 	nclients = 0;
 	if (tcpv4_server) {
-		dbg_printf ("TCP server:\r\n");
+		dbg_printf ("TCP control server:\r\n");
 		rtps_ip_dump_cx (tcpv4_server, extra);
 		if (tcpv4_server->clients) {
 			dbg_printf ("TCP control:\r\n");
@@ -2358,11 +2414,11 @@ void rtps_ip_dump (const char *buf, int extra)
 	}
 #ifdef DDS_IPV6
 	if (tcpv6_server) {
-		dbg_printf ("TCPv6 server:\r\n");
+		dbg_printf ("TCPv6 control server:\r\n");
 		rtps_ip_dump_cx (tcpv6_server, extra);
 		if (tcpv6_server->clients) {
 			if (!nclients)
-				dbg_printf ("TCP control:\r\n");
+				dbg_printf ("TCPv6 control:\r\n");
 			for (ccxp = tcpv6_server->clients; ccxp; ccxp = ccxp->next) {
 				rtps_ip_dump_cx (ccxp, extra);
 				nclients++;
@@ -2371,9 +2427,41 @@ void rtps_ip_dump (const char *buf, int extra)
 	}
 #endif
 	for (i = 0; i < 3 && tcp_client [i]; i++) {
-		dbg_printf ("TCP client:\r\n");
+		dbg_printf ("TCP control client:\r\n");
 		rtps_ip_dump_cx (tcp_client [i], extra);
 	}
+#ifdef TCP_SUSPEND
+	nclients = 0;
+	if (bgv4_server) {
+		dbg_printf ("TCP notify server:\r\n");
+		rtps_ip_dump_cx (bgv4_server, extra);
+		if (bgv4_server->clients) {
+			dbg_printf ("TCP notify:\r\n");
+			for (ccxp = bgv4_server->clients; ccxp; ccxp = ccxp->next) {
+				rtps_ip_dump_cx (ccxp, extra);
+				nclients++;
+			}
+		}
+	}
+#ifdef DDS_IPV6
+	if (bgv6_server) {
+		dbg_printf ("TCPv6 notify server:\r\n");
+		rtps_ip_dump_cx (bgv6_server, extra);
+		if (bgv6_server->clients) {
+			if (!nclients)
+				dbg_printf ("TCPv6 notify:\r\n");
+			for (ccxp = bgv6_server->clients; ccxp; ccxp = ccxp->next) {
+				rtps_ip_dump_cx (ccxp, extra);
+				nclients++;
+			}
+		}
+	}
+#endif
+	for (i = 0; i < BG_MAX_CLIENTS && bg_client [i]; i++) {
+		dbg_printf ("TCP notify client:\r\n");
+		rtps_ip_dump_cx (bg_client [i], extra);
+	}
+#endif
 #endif
 	dbg_printf ("Locators:\r\n");
 	if (nlocators)
@@ -2385,6 +2473,30 @@ void rtps_ip_dump (const char *buf, int extra)
 void rtps_ip_pool_dump (size_t sizes [PPT_SIZES])
 {
 	print_pool_table (mem_blocks, MB_END, sizes);
+}
+
+static void rtps_ip_close_cx (IP_CX *cxp)
+{
+	if (cxp->has_prefix &&
+	    cxp->locator && 
+	    (cxp->locator->locator.kind & LOCATOR_KINDS_TCP) != 0) {
+		dbg_printf ("Closing TCP connection (%u)!\r\n", cxp->handle);
+		rtps_tcp_cleanup_cx (cxp);
+	}
+	else
+		dbg_printf ("Not a connection that can be closed.\r\n");
+}
+
+void rtps_ip_close (unsigned cx)
+{
+	if (cx &&
+	    nlocators &&
+	    cx - 1 <= (unsigned) maxlocator &&
+	    ip [cx - 1])
+		rtps_ip_close_cx (ip [cx - 1]);
+	else
+		dbg_printf ("No such connection!\r\n");
+	
 }
 
 #endif /* DDS_DEBUG */
@@ -2452,7 +2564,7 @@ void rtps_ipv4_detach (void)
 #ifdef DDS_TCP
 	if ((ip_attached & LOCATOR_KIND_TCPv4) != 0) {
 		act_printf ("Detach TCPv4\r\n");
-		rtps_tcpv4_detach ();
+		rtps_tcpv4_detach (rtps_tcp_suspended);
 	}
 #endif
 	if ((ip_attached & LOCATOR_KIND_UDPv4) != 0) {
@@ -2525,6 +2637,12 @@ void rtps_ipv6_detach (void)
 		act_printf (" - already detached!\r\n");
 		return;
 	}
+#ifdef DDS_TCP
+	if ((ip_attached & LOCATOR_KIND_TCPv6) != 0) {
+		act_printf ("Detach TCPv6\r\n");
+		rtps_tcpv6_detach (rtps_tcp_suspended);
+	}
+#endif
 	if ((ip_attached & LOCATOR_KIND_UDPv6) != 0) {
 		act_printf ("Detach UDPv6\r\n");
 		rtps_udpv6_detach ();
@@ -2540,6 +2658,28 @@ void rtps_ipv6_detach (void)
 #endif
 #ifdef MSG_TRACE
 
+static int ip_cx_trace_set (IP_CX *cxp, int on)
+{
+	if (on < 0)
+		cxp->trace = !cxp->trace;
+	else
+		cxp->trace = (on != 0);
+	return (cxp->trace);
+}
+
+static int ip_cx_udp_trace_set (int on)
+{
+	int	active = 0;
+
+	if (send_udpv4)
+		active = ip_cx_trace_set (send_udpv4, on);
+#ifdef DDS_IPV6
+	if (send_udpv6)
+		active += ip_cx_trace_set (send_udpv6, on);
+#endif
+	return (active);
+}
+
 /* rtps_ip_cx_trace_mode -- Set/clear tracing on 1 (handle > 0) or all
 			    IP connections.  If on == -1, tracing is toggled.
 			    Otherwise tracing is set to the given argument.
@@ -2554,28 +2694,18 @@ int rtps_ip_cx_trace_mode (int handle, int on)
 
 	if (handle < 0) {
 		for (h = 0; (int) h <= maxlocator; h++)
-			if ((cxp = ip [h]) != NULL) {
-				if (on < 0)
-					cxp->trace = !cxp->trace;
-				else
-					cxp->trace = (on != 0);
-				if (cxp->trace)
-					active = 1;
-			}
+			if ((cxp = ip [h]) != NULL && ip_cx_trace_set (cxp, on))
+				active = 1;
 
-	}
-	else if (handle > 0) {
-		if (handle - 1 > maxlocator ||
-		    (cxp = ip [handle - 1]) == NULL)
-			return (-1);
-
-		if (on < 0)
-			cxp->trace = !cxp->trace;
-		else
-			cxp->trace = (on != 0);
-		if (cxp->trace)
+		if (ip_cx_udp_trace_set (on))
 			active = 1;
 	}
+	else if (!handle)
+		active = ip_cx_udp_trace_set (on);
+	else if (handle - 1 <= maxlocator && (cxp = ip [handle - 1]) != NULL)
+		active = ip_cx_trace_set (cxp, on);
+	else
+		return (-1);
 	return (active);
 }
 

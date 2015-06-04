@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical" >
+
+    <EditText
+        android:id="@+id/et_realm"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:hint="@string/add_realm_hint"
+        android:textSize="20sp" 
+        android:inputType="text"
+        android:layout_margin="10sp"
+        android:imeOptions="actionDone"
+           />
+
+    <Button
+        android:id="@+id/cancel_btn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/et_realm"
+        android:text="@string/cancel_btn"
+        android:layout_margin="10dp"
+        android:gravity="center_horizontal"
+        android:textSize="15sp" />
+
+    <Button
+        android:id="@+id/ok_btn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/et_realm"
+        android:layout_toRightOf="@+id/cancel_btn"
+        android:layout_marginLeft="10dp"
+        android:text="@string/ok_btn"
+        android:layout_margin="10dp"
+        android:gravity="center_horizontal"
+        android:textSize="15sp" />
+
+</RelativeLayout>

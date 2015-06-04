@@ -10,13 +10,14 @@ apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.grad
 apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidInstallerTools.gradle'
 
 //latest version of the supportV4 library
-ext.latestSupportV4 = [group: "com.android.support", name: "support-v4", version: "20.0.0"]
+ext.latestSupportV4 = [group: "com.android.support", name: "support-v4", version: "21.0.3"]
 //define adb executable
 ext.adb = new File(System.env.ANDROID_HOME ?: "/ANDROID_HOME/NOT/DEFINED/", "platform-tools${File.separator}adb");
 if (!adb.isFile()) {
     throw new GradleException("ANDROID_HOME is not correct, can't find ${adb}")
 }
-def androidBuildToolsVersion = "20.0.0"
+ext.androidBuildToolsVersion = "21.1.2"
+ext.androidSdkVersion = 21
 
 //
 // Include the android gradle plugin
@@ -29,7 +30,7 @@ buildscript {
         }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:0.12.+'
+        classpath 'com.android.tools.build:gradle:1.0.1'
     }
 }
 
@@ -57,10 +58,11 @@ if (enableUITests) {
 
 // Map gradle project layout to the one from eclipse
 android {
-    compileSdkVersion 19
+    ext.noDeviceTests = false
+    compileSdkVersion androidSdkVersion
     buildToolsVersion = androidBuildToolsVersion
     defaultConfig {
-        targetSdkVersion 19
+        targetSdkVersion androidSdkVersion
     }
     /*compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_7
@@ -91,11 +93,7 @@ android {
         androidTest.setRoot('instrumentTest') //This moves src/instrumentTest/* to instrumentTest/*
 
         if (enableUITests) {
-            uiTest {
-                java {
-                    srcDirs = ['uiTest/java']
-                }
-            }
+            uiTest.setRoot("uiTest")
         }
 
         defaultConfig {
@@ -113,6 +111,15 @@ android {
 
 
     if (!(project.ext.has('androidLibrary') && project.ext.androidLibrary)) {
+        signingConfigs {
+            debug {
+                File projectKeystore = rootProject.file("debug.keystore")
+                if (projectKeystore.exists()) {
+                    logger.info("Using keystore ${projectKeystore}");
+                    storeFile projectKeystore
+                }
+            }
+        }
         buildTypes {
             release {
                 // Release build is signed with debug keys. Proper signing is done by the HSM later on.
@@ -120,15 +127,13 @@ android {
             }
         }
         defaultConfig {
-            afterEvaluate {
-                //parse version number into versioncode
-                def matcher = version =~ /^(\d\d*)\.(\d\d*)\.(\d\d*)-.*$/
-                if (matcher.matches()) {
-                    versionCode = Integer.parseInt(matcher[0][1]) * 10000 + Integer.parseInt(matcher[0][2]) * 100 + Integer.parseInt(matcher[0][3])
-                }
-                else {
-                    throw new GradleException("Can't parse this version number. It must be in the format \"x.x.x-y\" where x is a number < 100")
-                }
+            //parse version number into versioncode
+            def matcher = version =~ /^(\d\d*)\.(\d\d*)\.(\d\d*)-.*$/
+            if (matcher.matches()) {
+                versionCode = Integer.parseInt(matcher[0][1]) * 10000 + Integer.parseInt(matcher[0][2]) * 100 + Integer.parseInt(matcher[0][3])
+            }
+            else {
+                throw new GradleException("Can't parse this version number. It must be in the format \"x.x.x-y\" where x is a number < 100")
             }
         }
     }
@@ -147,6 +152,7 @@ android {
         // if true, treat all warnings as errors
         warningsAsErrors false
         // turn off checking the given issue id's
+        disable 'NewerVersionAvailable' //this check needs internet connectivity, which can be problematic
         //disable 'TypographyFractions','TypographyQuotes'
         // turn on the given issue id's
         //enable 'RtlHardcoded','RtlCompat', 'RtlEnabled'
@@ -170,6 +176,21 @@ android {
         htmlReport true
         // optional path to report (default will be lint-results.html in the builddir)
         htmlOutput file("${buildDir}/reports/lint/lint-report.html")
+    }
+}
+
+afterEvaluate {
+    if (android.noDeviceTests) {
+        logger.info("Device tests for ${project.name} disabled")
+        //project has no device tests
+        dexDebugTest.enabled = false
+        packageDebugTest.enabled = false
+        connectedCheck.enabled = false
+        connectedAndroidTest.enabled = false
+        takeBugReportOnFailure.enabled = false
+        if (tasks.findByPath("preDexDebugTest") != null) {
+            preDexDebugTest.enabled = false
+        }
     }
 }
 
@@ -208,29 +229,27 @@ if (project.ext.has('androidPublishJar') && project.ext.androidPublishJar) {
     }
 }
 
-//Clean eclipse specific build directories
-clean.doLast {
-    project.delete "bin"
-    project.delete "gen"
-}
-
 // Only do this for android libraries. Javadoc works out of the box for java
 if (project.hasProperty('android') && project.ext.has('androidLibrary') && project.ext.androidLibrary) {
     task javadoc(type: Javadoc, dependsOn: assembleRelease) {
-        source = android.sourceSets.main.java.srcDirs
-        classpath += configurations.compile //add all dependecies to classpath
-        doFirst { //do something special for android dependencies. .aar files can't be added just as-is
-            FileTree tree = fileTree("${buildDir}/intermediates/exploded-aar/") {
-                //include all aar clases.jar. This may potentially be too much, but should not be a problem
-                include "*/*/*/classes.jar"
-            }
-            classpath += tree
-        }
+        afterEvaluate {
+            source = android.sourceSets.main.java.srcDirs
+            doFirst { //do something special for android dependencies. .aar files can't be added just as-is
+                classpath += configurations.compile //add all dependecies to classpath
+                classpath += configurations.releaseCompile //add all dependecies to classpath
+                classpath += files(jarAndroid)
+                classpath += files("${buildDir}/intermediates/classes/release")
 
-        classpath += files(jarAndroid)
-        classpath += files("${buildDir}/intermediates/classes/release")
-        if (project.hasProperty("javadocExclude")) {
-            exclude project.javadocExclude
+                FileTree tree = fileTree("${buildDir}/intermediates/exploded-aar/") {
+                    //include all aar clases.jar. This may potentially be too much, but should not be a problem
+                    include "**/classes.jar"
+                }
+                classpath += tree
+            }
+
+            if (project.hasProperty("javadocExclude")) {
+                exclude project.javadocExclude
+            }
         }
     }
 

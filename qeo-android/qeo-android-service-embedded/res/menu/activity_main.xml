@@ -1,0 +1,25 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context="org.qeo.android.service.MainActivity" >
+
+    <item
+        android:id="@+id/mainActivity_menu_manage_realm"
+        android:orderInCategory="100"
+        android:showAsAction="ifRoom"
+        android:title="@string/action_manage_realm"
+        android:visible="true"/>
+    <item
+        android:id="@+id/mainActivity_menu_about"
+        android:showAsAction="never"
+        android:title="@string/about"
+        android:visible="true">
+    </item>
+    <item
+        android:id="@+id/mainActivity_menu_leave"
+        android:showAsAction="never"
+        android:title="@string/leaveRealm"
+        android:visible="true">
+    </item>
+
+</menu>

@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <module name="org::qeo::sample::note">
+          <struct behavior="state" name="Wall">
+            <member name="id" type="int32" key="true">
+              <doc>Unique ID of the wall. This is a randomly generated number by the Wall.</doc>
+            </member>
+            <member name="description" type="string">
+              <doc>Description of the wall (e.g kitchen wall)</doc>
+            </member>
+          </struct>
+  </module>
+</types>

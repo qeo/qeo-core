@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -36,8 +36,12 @@
 #include "dcps_builtin.h"
 #include "dcps_pub.h"
 #include "dcps_sub.h"
+#include "dcps_notif.h"
 #ifdef DDS_SECURITY
 #include "security.h"
+#endif
+#ifdef TCP_SUSPEND
+#include "bgns.h"
 #endif
 #include "xtypes.h"
 
@@ -149,7 +153,7 @@ DDS_ReturnCode_t DDS_DomainParticipant_register_type (DDS_DomainParticipant dp,
 			/* Type already learned from remote peers? */
 			if (pts->ts_prefer >= MODE_V_TC) {
 				vtc = (unsigned char *) pts->ts_vtc;
-				if (!vtc_identical (ts, vtc)) {
+				if (vtc && !vtc_identical (ts, vtc)) {
 
 					/* Oops: already present in domain but 
 					   incompatible - notify later when
@@ -157,7 +161,7 @@ DDS_ReturnCode_t DDS_DomainParticipant_register_type (DDS_DomainParticipant dp,
 					typep->flags |= EF_INC_TYPE;
 					type_promote_tc (dp, typep, ts, NULL);
 				}
-				else {
+				else if (vtc) {
 					typep->flags &= ~EF_INC_TYPE;
 					type_promote_tc (dp, typep, ts, vtc);
 				}
@@ -165,16 +169,17 @@ DDS_ReturnCode_t DDS_DomainParticipant_register_type (DDS_DomainParticipant dp,
 				/* Replace with real type support.*/
 				xfree (typep->type_support);
 				typep->type_support = (TypeSupport_t *) ts;
-				vtc_free (vtc);
+				ts->ts_users++;
+				if (vtc)
+					vtc_free (vtc);
 			}
-			else
 
 			/* Already defined: check compatibility. */
-			if (ts->ts_prefer   != pts->ts_prefer ||
-			    ts->ts_keys     != pts->ts_keys ||
-			    ts->ts_fksize   != pts->ts_fksize ||
-			    ts->ts_length   != pts->ts_length ||
-			    ts->ts_mkeysize != pts->ts_mkeysize)
+			else if (ts->ts_prefer   != pts->ts_prefer ||
+				 ts->ts_keys     != pts->ts_keys ||
+				 ts->ts_fksize   != pts->ts_fksize ||
+				 ts->ts_length   != pts->ts_length ||
+				 ts->ts_mkeysize != pts->ts_mkeysize)
 				return (DDS_RETCODE_PRECONDITION_NOT_MET);
 
 			else if (ts->ts_prefer == MODE_CDR) {
@@ -189,7 +194,7 @@ DDS_ReturnCode_t DDS_DomainParticipant_register_type (DDS_DomainParticipant dp,
 			}
 			else
 #else
-			if (pts != ts)
+			     if (pts != ts)
 #endif
 				return (DDS_RETCODE_PRECONDITION_NOT_MET);
 		}
@@ -300,7 +305,7 @@ DDS_ReturnCode_t DDS_DomainParticipant_unregister_type (DDS_DomainParticipant dp
 			typep->nrefs--;
 			if (--typep->nlrefs == 0) {
 				typep->flags &= ~EF_LOCAL;
-				DDS_TypeSupport_delete(typep->type_support);
+				DDS_TypeSupport_delete (typep->type_support);
 			}
 		} 
 		else 
@@ -310,7 +315,7 @@ DDS_ReturnCode_t DDS_DomainParticipant_unregister_type (DDS_DomainParticipant dp
 	}
 	if (--typep->nlrefs == 0) {
 		typep->flags &= ~EF_LOCAL;
-		DDS_TypeSupport_delete(typep->type_support);
+		DDS_TypeSupport_delete (typep->type_support);
 		typep->type_support = NULL;
 	}
 	type_delete (dp, typep);
@@ -404,10 +409,10 @@ DDS_ReturnCode_t DDS_DomainParticipant_get_qos (DDS_DomainParticipant dp,
 	if (!domain_ptr (dp, 1, &ret))
 		return (ret);
 
-	qos_str2octets (dp->participant.p_user_data, &qos->user_data.value);
+	ret = qos_str2octets (dp->participant.p_user_data, &qos->user_data.value);
 	qos->entity_factory.autoenable_created_entities = dp->autoenable;
 	lock_release (dp->lock);
-	return (DDS_RETCODE_OK);
+	return (ret);
 }
 
 DDS_ReturnCode_t DDS_DomainParticipant_set_qos (DDS_DomainParticipant dp,
@@ -539,6 +544,9 @@ DDS_ReturnCode_t DDS_DomainParticipant_enable (DDS_DomainParticipant dp)
 		}
 #endif
 	}
+#ifdef TCP_SUSPEND
+	bgns_activate (dp);
+#endif
 	lock_release (dp->lock);
 	return (DDS_RETCODE_OK);
 }
@@ -722,7 +730,6 @@ DDS_ReturnCode_t DDS_DomainParticipant_get_default_publisher_qos (DDS_DomainPart
 	return (DDS_RETCODE_OK);
 }
 
-
 int dcps_delete_topic (Skiplist_t *list, void *node, void *arg)
 {
 	Topic_t			*tp, **tpp = (Topic_t **) node;
@@ -745,7 +752,6 @@ const char *DDS_TypeSupport_get_type_name (DDS_TypeSupport ts)
 {
 	return (ts ? ts->ts_name : NULL);
 }
-
 
 static int delete_type (Skiplist_t *list, void *node, void *arg)
 {
@@ -775,6 +781,11 @@ DDS_ReturnCode_t DDS_DomainParticipant_delete_contained_entities (DDS_DomainPart
 	if (!domain_ptr (dp, 1, &ret))
 		return (ret);
 
+	dcps_notif_cleanup (dp);
+
+#ifdef TCP_SUSPEND
+	bgns_dispose (dp);
+#endif
 	while ((up = dp->publishers.head) != NULL) {
 		delete_publisher_entities (dp, up);
                 if (up->nwriters != 0) {
@@ -1086,7 +1097,7 @@ DDS_OctetSeq *DDS_OctetSeq__alloc (void)
 {
 	DDS_OctetSeq	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_OctetSeq));
+	p = Alloc (sizeof (DDS_OctetSeq));
 	if (!p)
 		return (NULL);
 
@@ -1100,7 +1111,7 @@ void DDS_OctetSeq__free (DDS_OctetSeq *octets)
 		return;
 
 	DDS_OctetSeq__clear (octets);
-	mm_fcts.free_ (octets);
+	Free (octets);
 }
 
 void DDS_ParticipantBuiltinTopicData__init (DDS_ParticipantBuiltinTopicData *data)
@@ -1117,7 +1128,7 @@ DDS_ParticipantBuiltinTopicData *DDS_ParticipantBuiltinTopicData__alloc (void)
 {
 	DDS_ParticipantBuiltinTopicData	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_ParticipantBuiltinTopicData));
+	p = Alloc (sizeof (DDS_ParticipantBuiltinTopicData));
 	if (!p)
 		return (NULL);
 
@@ -1131,7 +1142,7 @@ void DDS_ParticipantBuiltinTopicData__free (DDS_ParticipantBuiltinTopicData *dat
 		return;
 
 	DDS_ParticipantBuiltinTopicData__clear (data);
-	mm_fcts.free_ (data);
+	Free (data);
 }
 
 DDS_ReturnCode_t DDS_DomainParticipant_get_discovered_participant_data (

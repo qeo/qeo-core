@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -66,6 +66,7 @@ static size_t		trc_length;
 
 int ctrace_used;
 int ctrace_saves;
+unsigned long ctrace_mask = ~0UL;
 
 /* ctrc_init -- Initialize the cyclic tracing buffer. */
 
@@ -76,7 +77,7 @@ void ctrc_init (size_t bufsize)
 	if (ctrace_used)
 		return;
 
-	first = mm_fcts.alloc_ (nunits * sizeof (CTRACE_UNIT_ST));
+	first = Alloc (nunits * sizeof (CTRACE_UNIT_ST));
 	if (!first)
 		return;
 
@@ -95,7 +96,7 @@ void ctrc_init (size_t bufsize)
 
 void ctrc_final (void)
 {
-	mm_fcts.free_ (first);
+	Free (first);
 	first = NULL;
 }
 
@@ -140,6 +141,12 @@ void ctrc_mode (int cycle)
 		trc_flags &= ~CTF_STOP;
 	else
 		trc_flags |= CTF_STOP;
+}
+
+void ctrc_mask (unsigned long ids)
+{
+	if (ids)
+		ctrace_mask = ids;
 }
 
 #define	MAX_ACTIONS	64
@@ -271,6 +278,9 @@ void ctrc_printd (unsigned id, unsigned index, const void *data, size_t length)
 	    (!ap || (ap->actions [0] & CTA_START) == 0))
 		return;
 
+	if (((1UL << id) & ctrace_mask) == 0)
+		return;
+
 	ctrc_lock ();
 	sys_gettime (&tail->time);
 	tailh = tail;
@@ -344,6 +354,9 @@ void ctrc_printf (unsigned id, unsigned index, const char *fmt, ...)
 	va_list	arg;
 	char	buf [128];
 
+	if (((1UL << id) & ctrace_mask) == 0)
+		return;
+
 	if ((trc_flags & CTF_RUNNING) == 0)
 		return;
 
@@ -369,6 +382,10 @@ void ctrc_begind (unsigned id, unsigned index, const void *data, size_t length)
 	    (!ap || (ap->actions [0] & CTA_START) == 0))
 		return;
 
+	if (((1UL << id) & ctrace_mask) == 0) {
+		trc_id = id;
+		return;
+	}
 	lock_takef (trc_lock_data);
 	trc_ap = ap;
 	trc_id = id;
@@ -381,6 +398,9 @@ void ctrc_begind (unsigned id, unsigned index, const void *data, size_t length)
 
 void ctrc_contd (const void *data, size_t length)
 {
+	if (((1UL << trc_id) & ctrace_mask) == 0)
+		return;
+
 	if ((trc_flags & CTF_RUNNING) == 0 &&
 	    (!trc_ap || (trc_ap->actions [0] & CTA_START) == 0))
 		return;
@@ -397,6 +417,9 @@ void ctrc_contd (const void *data, size_t length)
 
 void ctrc_endd (void)
 {
+	if (((1UL << trc_id) & ctrace_mask) == 0)
+		return;
+
 	if ((trc_flags & CTF_RUNNING) == 0 &&
 	    (!trc_ap || (trc_ap->actions [0] & CTA_START) == 0))
 		return;
@@ -479,6 +502,8 @@ static void ctrc_dump_entry (Time_t        *tp,
 			     size_t        len)
 {
 	unsigned	i;
+	unsigned char	c;
+	char		asc [5];
 
 	dbg_printf ("%010d.%03u,%03u - %8s:", tp->seconds, 
 					tp->nanos / 1000000,
@@ -488,15 +513,20 @@ static void ctrc_dump_entry (Time_t        *tp,
 		dbg_printf ("%s\t", log_fct_str [id][index]);
 	else
 		dbg_printf ("?(%u)\t", index);
-	if (len <= 4) {
-		for (i = 0; i < len; i++)
-			dbg_printf ("%02x", *dp++);
-		dbg_printf ("\r\n");
+	for (i = 0; i < ((len < 4) ? len : 4); i++) {
+		c = *dp++;
+		dbg_printf ("%02x", c);
+		if (c >= ' ' && c <= '~')
+			asc [i] = c;
+		else
+			asc [i] = '.';
 	}
-	else {
-		dbg_printf ("\r\n");
-		dbg_print_region (dp, len, 0, 0);
-	}
+	asc [i] = '\0';
+	if (i)
+		dbg_printf ("\t    %s", asc);
+	dbg_printf ("\r\n");
+	if (len > 4)
+		dbg_print_region (dp, len - 4, 0, 0);
 }
 
 /* ctrc_dump -- Dump the contents of the cyclic trace. */

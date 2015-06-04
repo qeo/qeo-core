@@ -1,0 +1,15 @@
+This file contains some information about authentication keys used by qeo-android-service
+-----------------------------------------------------------------------------------------
+
+MyTribe has google+ enable for authentication to the Qeo SMS:
+* Google user account: "qeoforandroid@gmail.com"
+* SMS client id: 412895151046-jvdfsed7tdq6g70bj8225p9qkbc0o9c6.apps.googleusercontent.com
+* Development signing key sha1: FA:8A:6B:72:5A:93:AC:FB:0E:6C:23:47:65:62:68:2D:BE:24:65:64
+* Production signgin key sha1: 30:5B:15:30:37:54:51:1E:1F:CF:B1:5F:AD:5A:E1:1F:7D:03:C0:98
+* Credentials for the public SMS:
+** client id: qeo-android-service
+** client secret: 00c32511-12e7-4316-9c59-3d86df4545c6
+* Credentials for the testing SMS (projectq.be):
+** client id: qeo-android-service
+** client secret: 7e0a7d27-d982-45bf-9b58-11d42ffcf4f8
+

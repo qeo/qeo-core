@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <include file="qeo_types.xml"/>
+  <module name="org::qeo::networking::pinhole">
+    <doc>
+      The goal of this QDM is to offer a simple pinhole-punching functionality
+      that allows clients to make an internal IP:port combination reachable
+      over the WAN.
+
+      Note that a pinhole is broader than a NAT portmap: the pinhole provider
+      may need to add some rules to the firewall as well to ensure WAN-side
+      connectivity to the requested IP:port combination is indeed possible.
+
+      The simplest scenario involves a realm that consists of a single home LAN
+      (with Qeo-enabled gateway of course) and a single pinhole provider.  In
+      this case, there is no question to which pinhole provider a request
+      should be directed, as there is only one.
+
+      However, more complex scenarios are possible, where a single realm spans
+      multiple homes and home LANs, all with Qeo-enabled gateways. For example,
+      one might have a regular home and a holiday home, both connected to the
+      Internet, with devices in both homes part of the same realm.  In this
+      case, the challenge is to direct the request for a pinhole to the correct
+      pinhole provider (i.e. the provider for the gateway in the correct LAN).
+      Due to the inevitable NAT on IPv4, there's a reasonable chance that the
+      hosts in both networks have the same IP addresses (e.g. both gateways
+      offer addresses in the 192.168.1.0/24 range). Hence, just providing the
+      IP address of the host you want to make reachable from the WAN is not
+      sufficient. Therefore, the general solution is to leverage on the
+      information provided by the device discovery QDM: each gateway will
+      publish information about the hosts it knows to be in its own LAN, and
+      this information can be used to determine the correct gateway to address
+      for a given pinhole request.
+    </doc>
+    <struct name="Provider" behavior="state">
+      <doc>
+        This topic is used to announce the presence of a pinhole provider in
+        the network. Typically, a pinhole provider will run on the LAN's 
+        gateway device, but this is not a strict necessity. Another Qeo-enabled
+        device may take up the role of pinhole provider, using for example
+        UPnP IGD to set up the actual port maps on the non-Qeo-enabled gateway.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>The pinhole provider's unique id.</doc>
+      </member>
+      <member name="name" type="string">
+        <doc>
+          This is a textual description of the pinhole provider.
+          e.g. "home gateway pinhole service"
+        </doc>
+      </member>
+      <member name="device" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId">
+        <doc>
+          Device ID of the device the pinhole provider is running on.
+        </doc>
+      </member>
+    </struct>
+    <struct name="Pinhole" behavior="state">
+      <doc>
+        This topic describes the state of the pinholes requested from the
+        pinhole providers. For every PinholeRequest, a corresponding Pinhole is 
+        published, even if the request could not be honoured for some reason.
+
+        The life cycle of a Pinhole instance is coupled to that of its
+        corresponding request. When a pinhole provider receives a request of
+        which it is the addressee, it will try to create the requested pinhole,
+        and publish the corresponding Pinhole instance. Once the original
+        requester loses interest, and removes its request instance, the pinhole
+        provider closes the pinhole, and removes the Pinhole instance.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>The pinhole's unique id, as specified in the PinholeRequest.</doc>
+      </member>
+      <member name="providerId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>The id of the pinhole provider maintaining this pinhole.</doc>
+      </member>
+      <member name="status" type="int32">
+        <doc>
+          Pinhole status. This is really an enumeration.
+          0 - Pinhole is opened
+          1 - An unknown error prohibited this pinhole from being opened.
+          In the future, more detailed error cases will be added.
+        </doc>
+      </member>
+      <member name="externalPort" type="int32">
+        <doc>
+          The chosen external port. The external port is relevant for IPv4 NAT
+          only. If the externalPort is not relevant then it is equal to 0.
+          Minimum = 1, maximum = 65535.
+        </doc>
+      </member>
+      <member name="internalPort" type="int32">
+        <doc>
+          The internal port the pinhole is mapped to.
+          Minimum = 1, maximum = 65535.
+        </doc>
+      </member>
+      <member name="protocol" type="int16">
+        <doc>
+          Refers to IANA Assigned Internet Protocol Numbers
+          (http://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml)
+          Minimum = 0, maximum = 254.
+        </doc>
+      </member>
+      <member name="internalIPAddress" type="string">
+        <doc>The internal IP address must be reachable from the pinhole provider.</doc>
+      </member>
+    </struct>
+    <struct name="PinholeRequest" behavior="state">
+      <doc>
+        This topic allows clients to express their need for a pinhole. The relevant
+        pinhole provider will pick up on the request, and publish a corresponding
+        Pinhole instance, which signals either success or failure in creating the 
+        pinhole.
+        The request instance must remain alive for as long as the client is interested
+        in keeping the pinhole open. If the client is done with the pinhole, and wants
+        it closed, it removes the request instance. This is the signal for the pinhole
+        provider to close the pinhole and remove the corresponding Pinhole instance.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>
+          The unique id for this pinhole request. This id will be reflected in
+          the corresponding pinhole entry's id member.
+        </doc>
+      </member>
+      <member name="providerId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>
+          This specifies the pinhole provider executing pinhole requests.
+          Example: From my holiday house I want to get access to the web server
+          of my NAS located at home. In the example the pinhole request must be
+          directed to the pinhole provider (e.g. the gateway) in my home, not
+          the provider in my holiday home.
+        </doc>
+      </member>
+      <member name="externalPortStart" type="int32">
+        <doc>
+          The external port range start. Request one external port from the
+          specified port range. The external port range is relevant for IPv4
+          NAT only.  Minimum = 1, maximum = 65535.
+        </doc>
+      </member>
+      <member name="externalPortEnd" type="int32">
+        <doc>
+          The maximum external port range end.
+          Minimum = 1, maximum = 65535.
+        </doc>
+      </member>
+      <member name="internalPort" type="int32">
+        <doc>
+          The internal port the pinhole is mapped to.
+          Minimum = 1, maximum = 65535.
+        </doc>
+      </member>
+      <member name="protocol" type="int16">
+        <doc>
+          Refers to IANA Assigned Internet Protocol Numbers
+          (http://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml)
+          Minimum = 0, maximum = 2
+        </doc>
+      </member>
+      <member name="internalIpAddress" type="string">
+        <doc>The internal IP address must be reachable from the pinhole provider.</doc>
+      </member>
+      <member name="foreignAddress" type="string">
+        <doc>
+          Optionally, a foreign IP address or FQDN can be supplied as a hint to
+          assist the pinhole provider in choosing the right WAN IP address as
+          external IP address for port maps.  If no foreign address is
+          specified the selection of the external IP address is implementation
+          defined.
+          See also org::qeo::networking::connectivity::WanIpAddress.
+        </doc>
+      </member>
+    </struct>
+  </module>
+</types>

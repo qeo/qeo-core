@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -79,6 +79,10 @@ int xt_lib_migrate (TypeLib *lp_dst,
 Type *xt_type_ptr (unsigned scope, unsigned id);
 
 /* Return a type pointer from a type scope and id. */
+
+Type *xt_type_lookup (TypeLib *lp, const char *name);
+
+/* Return a type pointer from a type library and a name. */
 
 Type *xt_d2type_ptr (DynType_t *type, int builder);
 

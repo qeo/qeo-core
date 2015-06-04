@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -59,6 +59,12 @@
 #define	act_printf(s)
 #endif
 
+#ifdef __APPLE__
+#define	NO_SIGPIPE	SO_NOSIGPIPE
+#else
+#define	NO_SIGPIPE	MSG_NOSIGNAL
+#endif
+
 static RTPS_UDP_PARS	udp_v4_pars;
 #ifdef DDS_IPV6
 static RTPS_UDP_PARS	udp_v6_pars;
@@ -78,9 +84,7 @@ static int rtps_udpv4_enable (void)
 	int		d [4];
 	struct in_addr	mc_dst;
 	int		error, set;
-#ifdef __APPLE__
-	int		yes = 1;
-#endif
+
 	act_printf ("rtps_udpv4_enable()\r\n");
 
 	/* Create sender socket. */
@@ -175,10 +179,10 @@ static int rtps_udpv4_enable (void)
 	}
 
 #ifdef __APPLE__
-	/* MSG_NOSIGNAL does not exist for Apple OS, but an equivalent socket option
-	   is available. */
-	if (setsockopt(send_udpv4->fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes)) < 0)
-		perror("__func__: setsockopt() failed");
+	/* Disable SIGPIPE on socket sends -- not valid on non-Apple/non-TCP sockets. */
+	set = 1;
+	if (setsockopt (send_udpv4->fd, SOL_SOCKET, NO_SIGPIPE, &set, sizeof (set)) < 0)
+		perror ("rtps_udpv4_enable: setsockopt (NO_SIGPIPE) failed");
 #endif
 	return (DDS_RETCODE_OK);
 }
@@ -448,14 +452,14 @@ void rtps_udp_send (unsigned id, Locator_t *first, LocatorList_t *next, RMBUF *m
 			assert (mep->pad < 4);
 			if ((mep->flags & RME_HEADER) != 0) {
 				n = sizeof (mep->header);
-				if (ofs + n > MAX_TX_SIZE)
+				if (ofs + n > rtps_max_tx_size)
 					break;
 				
 				memcpy (&rtps_tx_buf [ofs], &mep->header, n);
 				ofs += n;
 			}
 			if ((n = mep->length) != 0) {
-				if (ofs + n > MAX_TX_SIZE)
+				if (ofs + n > rtps_max_tx_size)
 					break;
 
 				if (mep->data != mep->d && mep->db)
@@ -466,7 +470,7 @@ void rtps_udp_send (unsigned id, Locator_t *first, LocatorList_t *next, RMBUF *m
 			}
 		}
 		if (mep) {
-			log_printf (RTPS_ID, 0, "rtps_ip_send: sendto(): packet too long (> %lu)\r\n", (unsigned long) MAX_TX_SIZE);
+			log_printf (RTPS_ID, 0, "rtps_ip_send: sendto(): packet too long (> %lu)\r\n", (unsigned long) rtps_max_tx_size);
 			continue;
 		}
 #endif /* !USE_SENDMSG && !USE_WSASENDTO */
@@ -593,7 +597,7 @@ void rtps_udp_send (unsigned id, Locator_t *first, LocatorList_t *next, RMBUF *m
 #endif
 					rtps_ip_trace (ucp->handle, 'T',
 						       &ucp->locator->locator,
-						       daddr, lp->port, nwritten);
+						       daddr, lp->port, mp);
 				}
 #endif
 				ADD_ULLONG (ucp->stats.octets_sent, (unsigned) nwritten);
@@ -838,7 +842,7 @@ static void rtps_udpv4_mc_join (IP_CX *mc_cxp, void *data)
 			    (char *) &jp->mreq, sizeof (jp->mreq));
 	if (error < 0) {
 		/*perror ("setsockopt (IP_ADD_MEMBERSHIP) failed");*/
-		log_printf (RTPS_ID, 0, "rtps_udp_add_locator(%s): setsockopt (IP_ADD_MEMBERSHIP) for %s failed - errno = %d.",
+		log_printf (RTPS_ID, 0, "rtps_udp_add_locator(%s): setsockopt (IP_ADD_MEMBERSHIP) for %s failed - errno = %d.\r\n",
 				jp->abuf, 
 				locator_str (&mc_cxp->locator->locator),
 				ERRNO);
@@ -917,6 +921,14 @@ static void rtps_add_unicast_ipv4 (DomainId_t domain_id, IP_CX *cxp)
 		jd.abuf = locator_str (&cxp->locator->locator);
 		rtps_ip_foreach (rtps_udpv4_mc_join, &jd);
 	}
+
+#ifdef RTPS_SPDP_BCAST
+
+	/* Enable broadcasts on UDP sending socket. */
+	set = 1;
+	if (setsockopt (cxp->fd, SOL_SOCKET, SO_BROADCAST, &set, sizeof (set)) < 0)
+		perror ("rtps_udpv4_enable:setsockopt (SO_BROADCAST) failed");
+#endif
 }
 
 typedef struct udp_join_data_st {
@@ -1270,6 +1282,12 @@ static int rtps_udpv6_enable (void)
 		perror ("rtps_udpv6_init: setsockopt (IPV6_MULTICAST_IF)");
 		warn_printf ("rtps_udpv6_init: setsockopt (IPV6_MULTICAST_IF) call failed - errno = %d.\r\n", ERRNO);
 	}
+
+	/* Disable SIGPIPE on socket sends. */
+	set = 1;
+	if (setsockopt (send_udpv6->fd, SOL_SOCKET, NO_SIGPIPE, &set, sizeof (set)) < 0)
+		perror ("rtps_udpv6_enable: setsockopt() failed");
+
 	return (DDS_RETCODE_OK);
 }
 

@@ -1,0 +1,29 @@
+//The emma.gradle file is needed to be able to check for code coverage.
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/emma.gradle'
+//The checkstyle.gradle file is needed to configure checkstyle with the correct configuration file.
+//apply from: '/checkstyle.gradle'
+//Apply plugins.
+apply plugin: 'java'
+apply plugin: 'findbugs'
+apply plugin: 'eclipse'
+
+group = "org.qeo"
+
+/*
+ignoreFailures is used to not let the build fail when there are 
+failing tests. This will allow us to keep using the tests to validate
+the behavior, without having the build fail constantly.
+TODO We do want to get rid of the ignoreFailures functionality.
+*/
+project.findbugs.ignoreFailures = true
+
+
+/*
+Compile and runtime dependencies have to be declared here.
+*/
+dependencies {
+  compile group: 'org.qeo', name: 'qeo-java', version: version
+  compile project(':sample-qgauge-java-lib')
+  testCompile group: 'junit', name: 'junit', version: '3.8.2+'
+  testRuntime group: 'org.qeo', name: 'qeo-java', version: version, classifier: 'native-host'
+}

@@ -1,0 +1,16 @@
+
+{
+    "meta": {
+        "appname": "qeo-android-tests-json",
+        "version": "1"
+    },
+    "application": {
+		"org::qeo::json::types::JsonAdvancedTypes": "rw",
+		"org::qeo::json::types::JsonTestArrayTypes": "rw",
+		"org::qeo::json::types::JsonTestTypes": "rw",
+		"org::qeo::json::types::JsonState": "rw",
+		"org::qeo::json::types::JsonStateAdvanced": "rw",
+		"org::qeo::json::types::JsonArrayTypes2": "rw"
+    }
+}
+

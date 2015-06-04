@@ -1,0 +1,56 @@
+//The emma.gradle file is needed to be able to check for code coverage.
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/emma.gradle'
+//The checkstyle.gradle file is needed to configure checkstyle with the correct configuration file.
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+//Set the checkstyle configuration
+//Apply plugins.
+apply plugin: 'java'
+apply plugin: 'findbugs'
+apply plugin: 'eclipse'
+apply plugin: 'osgi'
+
+group = "org.qeo"
+
+/*
+ignoreFailures is used to not let the build fail when there are 
+failing tests. This will allow us to keep using the tests to validate
+the behavior, without having the build fail constantly.
+TODO We do want to get rid of the ignoreFailures functionality.
+*/
+project.findbugs.ignoreFailures = true
+
+jar.doFirst {
+  copy {
+        from project(':sample-qgauge-java-lib').sourceSets.main.output.classesDir
+        into sourceSets.main.output.classesDir
+  }
+}
+
+jar {
+    //TODO uncomment the next line, this gives problems when publishing to artifactory
+    //baseName = 'org.qeo.demo.gauge.osgi.host'
+    manifest { // the manifest of the default jar is of type OsgiManifest
+        name = baseName 
+        instruction 'Private-Package',
+                'org.qeo.sample.gauge.osgi.host'
+        instruction 'Bundle-Vendor', 'Technicolor'
+        instruction 'Bundle-Description', 'Sample Gauge Publisher'
+        instruction 'Bundle-Activator', 'org.qeo.sample.gauge.osgi.host.Activator'
+        instruction 'Export-Package', ''
+        attributes( 'Import-Package': 'org.osgi.framework,org.osgi.service.log,org.qeo,org.qeo.exception,org.qeo.system,org.qeo.osgi')
+    }
+}
+
+
+
+/*
+Compile and runtime dependencies have to be declared here.
+*/
+dependencies {
+  compile group: 'org.osgi', name: 'FrameworkAPI', version: 'v4.2'
+  compile group: 'org.osgi', name: 'org.osgi.compendium', version: '4.2.0'
+  // DE3175 - get rid of this dependency
+  compile group: 'org.qeo', name: 'qeo-osgi', version: '0.+'
+  compile project(':sample-qgauge-java-lib')
+  testCompile group: 'junit', name: 'junit', version: '3.8.2+'
+}

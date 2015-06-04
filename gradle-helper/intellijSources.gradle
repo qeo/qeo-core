@@ -1,0 +1,47 @@
+
+//helper file to add extra source jars to intellij.
+//very useful for adding sources to aar files.
+
+configurations {
+    intellijSources
+}
+
+task addStudioSources() {
+    doLast {
+        File libDir = new File(rootProject.file(".idea"), "libraries")
+        if (!libDir.exists()) {
+            logger.info("No .ide/libraries dir found, skipping")
+        }
+        else {
+            configurations.intellijSources.dependencies.each { dep ->
+                configurations.intellijSources.files(dep).each { file ->
+                    //try to figure out xml file for the library
+                    //it can have 2 different names, so try both
+                    String filename = dep.name.replaceAll("-", "_") + "_" + dep.version.replaceAll("\\.", "_").replaceAll("-", "_") + ".xml"
+                    File xml = new File(libDir, filename)
+                    //try something else
+                    filename = file.name.replaceAll("\\.", "_").replaceAll("-", "_").replaceAll("_sources\\_jar\$", ".xml")
+                    File xml2 = new File(libDir, filename)
+                    if (!xml.exists() && !xml2.exists()) {
+                        logger.info("Can't find file android studio library file for ${dep}. Tried ${xml} and ${xml2}")
+                    }
+                    else {
+                        if (!xml.exists()) {
+                            xml = xml2
+                        }
+                        logger.info("Going to add source jar to ${xml}")
+                        
+                        def root = new XmlParser().parse(xml)
+                        def node = root.library[0].SOURCES[0]
+                        node.children().clear()
+                        node.appendNode('root', [url: "jar://${file.absolutePath}!/"])
+                        new XmlNodePrinter(new PrintWriter(new FileWriter(xml))).print(root)
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.preBuild.dependsOn(addStudioSources)
+

@@ -19,6 +19,7 @@ DBG        = ${BASE}/dbg
 DYNIP      = ${BASE}/dynip
 TYPE       = ${BASE}/xtypes
 SQL        = ${BASE}/sql
+BGNS       = ${BASE}/bgns
 SECURITY   = ${BASE}/security
 NSEC	   = ${BASE}/nsec
 
@@ -34,7 +35,7 @@ dcps_CSRCS = ${DCPS}/dcps_main.c ${DCPS}/dcps_dpfact.c ${DCPS}/dcps_part.c \
 	     ${DCPS}/dcps_pub.c ${DCPS}/dcps_sub.c ${DCPS}/dcps_topic.c \
 	     ${DCPS}/dcps_reader.c ${DCPS}/dcps_writer.c ${DCPS}/dcps_event.c \
 	     ${DCPS}/dcps_waitset.c ${DCPS}/dcps_builtin.c ${DCPS}/dcps_qos.c \
-	     ${DCPS}/dcps_entity.c ${DCPS}/dcps_dbg.c
+	     ${DCPS}/dcps_entity.c ${DCPS}/dcps_notif.c ${DCPS}/dcps_dbg.c
 cache_CSRCS= ${CACHE}/cache.c
 disc_CSRCS = ${DISC}/disc_tc.c ${DISC}/disc_sub.c ${DISC}/disc_pub.c \
 	     ${DISC}/disc_msg.c ${DISC}/disc_ep.c ${DISC}/disc_match.c \
@@ -48,13 +49,14 @@ rtps_CSRCS = ${RTPS}/rtps_main.c ${RTPS}/rtps_mux.c ${RTPS}/rtps_msg.c \
 	     ${RTPS}/rtps_dbg.c ${RTPS}/rtps_trace.c ${RTPS}/rtps_ft.c \
 	     ${RTPS}/rtps_fwd.c
 trans_CSRCS= ${TRANS}/ip/rtps_ip.c ${TRANS}/ip/ri_udp.c ${TRANS}/ip/ri_dtls.c \
-	     ${TRANS}/ip/ri_tcp.c ${TRANS}/ip/ri_tcp_sock.c ${TRANS}/ip/ri_tls.c
+	     ${TRANS}/ip/ri_tcp.c ${TRANS}/ip/ri_tcp_sock.c ${TRANS}/ip/ri_tls.c \
+	     ${TRANS}/ip/ri_bgcp.c
 co_CSRCS   = ${CO}/pool.c ${CO}/sys.c ${CO}/error.c ${CO}/ipc.c ${CO}/timer.c \
 	     ${CO}/sock.c ${CO}/skiplist.c ${CO}/str.c ${CO}/heap.c ${CO}/md5.c \
 	     ${CO}/db.c ${CO}/handle.c ${CO}/tty.c ${CO}/thread.c ${CO}/log.c \
 	     ${CO}/hash.c ${CO}/prof.c ${CO}/strseq.c ${CO}/random.c \
 	     ${CO}/nmatch.c ${CO}/ipfilter.c ${CO}/libx.c ${CO}/config.c \
-	     ${CO}/cmdline.c
+	     ${CO}/cmdline.c ${CO}/table.c ${CO}/ctrace.c
 #sec_CSRCS  = ${SECURITY}/security.c
 sec_CSRCS  = ${NSEC}/sec_main.c ${NSEC}/sec_id.c ${NSEC}/sec_perm.c \
 	     ${NSEC}/sec_auth.c ${NSEC}/sec_access.c ${NSEC}/sec_crypto.c \
@@ -73,10 +75,12 @@ splug_CSRCS= ${NSECP}/sp_auth.c ${NSECP}/sp_crypto.c \
 sql_CSRCS  = ${SQL}/scan.c ${SQL}/parse.c ${SQL}/bytecode.c
 dbg_CSRCS  = ${DBG}/debug.c
 dynip_CSRCS= ${DYNIP}/di_main.c ${DYNIP}/di_linux.c
+bgns_CSRCS = ${BGNS}/bgns.c
 
 prog_CSRCS = main.c ${dds_CSRCS} ${type_CSRCS} ${dcps_CSRCS} ${disc_CSRCS} \
 	     ${cache_CSRCS} ${rtps_CSRCS} ${trans_CSRCS} ${dbg_CSRCS} \
-	     ${sql_CSRCS} ${dynip_CSRCS} ${co_CSRCS} ${sec_CSRCS} ${splug_CSRCS}
+	     ${sql_CSRCS} ${dynip_CSRCS} ${bgns_CSRCS} ${co_CSRCS} ${sec_CSRCS} \
+	     ${splug_CSRCS}
 prog_COBJS = ${prog_CSRCS:.c=.o}
 prog_CHDRS = ${BASE}/include/*.h ../../api/headers/dds/*.h
 
@@ -99,7 +103,8 @@ DEFINES  = -DRTPS_USED -DRTPS_TRACE -DLOG_FILE -DFILT_VMWARE -DPTHREADS_USED \
 	   -DCDD_USED -DXTYPES_USED -DDDS_IPV6 -DDDS_DEBUG -DDDS_TYPECODE \
 	   -DDDS_DYN_IP -DDDS_TRACE -DRTPS_TRACE -DDDS_TCP -DBIGDATA -DDDS_FORWARD \
 	   -DEXTRA_STATS -DUSE_BYTESWAP -DDDS_SECURITY -DMSECPLUG_WITH_SECXML \
-	   -DMSG_TRACE -DDDS_NATIVE_SECURITY
+	   -DMSG_TRACE -DDDS_NATIVE_SECURITY -DTCP_SUSPEND -DFORCE_MALLOC \
+	   -DCTRACE_USED
 #-DDS_NO_MCAST
 #-DFORCE_MALLOC 
 #-DTTY_NORMAL

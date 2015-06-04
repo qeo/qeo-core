@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -21,6 +21,7 @@
 #include <arpa/inet.h>
 #endif
 #include "log.h"
+#include "prof.h"
 #include "error.h"
 #include "dds/dds_security.h"
 #include "nsecplug/nsecplug.h"
@@ -29,6 +30,11 @@
 #include "sec_plugin.h"
 #include "sec_a_qeo.h"
 #include "sec_qeo_policy.h"
+
+PROF_PID (qeo_p_req)
+PROF_PID (qeo_p_reply)
+PROF_PID (qeo_p_final)
+PROF_PID (qeo_p_cfinal)
 
 typedef struct sec_qeo_data_st QeoData_t;
 
@@ -340,6 +346,8 @@ static DDS_OctetSeq *char_to_seq (unsigned char *data,
 	DDS_ReturnCode_t ret;
 
 	seq = DDS_OctetSeq__alloc ();
+	if (!seq)
+		return (NULL);
 
 	ret = dds_seq_require (seq, length);
 	if (ret) {
@@ -447,16 +455,14 @@ static DDS_ReturnCode_t aps_add_permissions_enc_property (DDS_DataHolder *p,
 
 	pp = DDS_DataHolder_add_binary_property (p, 
 					  QEO_CLASSID_SECURITY_PERM_CREDENTIAL_ENC_PROPERTY);
-	
-	pp->value = *perm;
-
 	if (!pp) {
 		DDS_OctetSeq__free (perm);
 		ret = DDS_RETCODE_OUT_OF_RESOURCES;
 	}
-	else 
+	else {
+		pp->value = *perm;
 		ret = DDS_RETCODE_OK;
-
+	}
 	return (ret);
 }
 
@@ -518,16 +524,14 @@ static DDS_ReturnCode_t aps_add_permissions_sig_property (DDS_DataHolder *p,
 
 	pp = DDS_DataHolder_add_binary_property (p, 
 					  QEO_CLASSID_SECURITY_PERM_CREDENTIAL_SIG_PROPERTY);
-
-	pp->value = *perm;
-
 	if (!pp) {
 		DDS_OctetSeq__free (perm);
 		ret = DDS_RETCODE_OUT_OF_RESOURCES;
 	}
-	else
+	else {
+		pp->value = *perm;
 		ret = DDS_RETCODE_OK;
-
+	}
 	return (ret);
 }
 
@@ -680,6 +684,8 @@ static DDS_HandshakeToken *qeo_request (const SEC_AUTH *ap,
 
 	ARG_NOT_USED (req)
 
+	prof_start (qeo_p_req);
+
 	p = xmalloc (sizeof (QeoData_t));
 	if (!p)
 		return (NULL);
@@ -709,6 +715,9 @@ static DDS_HandshakeToken *qeo_request (const SEC_AUTH *ap,
 #endif
 	p->h = 0;
 	*pdata = p;
+
+	prof_stop (qeo_p_req, 1);
+
 	return (token);
 
     mem_error:
@@ -765,6 +774,8 @@ static DDS_DataHolder *qeo_reply (const SEC_AUTH            *ap,
 	QeoData_t		*p;
 
 	ARG_NOT_USED (rem_perm_tok)
+
+	prof_start (qeo_p_reply);
 
 	*rem_id = NULL;
 	*rem_perm = NULL;
@@ -881,6 +892,9 @@ static DDS_DataHolder *qeo_reply (const SEC_AUTH            *ap,
 
 	p->h = 0;
 	*pdata = p;
+
+	prof_stop (qeo_p_reply, 1);
+
 	return (token);
 
     mem_error:
@@ -960,6 +974,8 @@ static DDS_DataHolder *qeo_final (const SEC_AUTH            *ap,
 	size_t          len;
 
 	ARG_NOT_USED (rem_perm_tok)
+
+	prof_start (qeo_p_final);
 
 	*error = DDS_RETCODE_OK;
 
@@ -1043,7 +1059,9 @@ static DDS_DataHolder *qeo_final (const SEC_AUTH            *ap,
 		rem_perm_p_sig = DDS_DataHolder_get_binary_property (msg_in, 
 								     QEO_CLASSID_SECURITY_PERM_CREDENTIAL_SIG_PROPERTY);
 		/* Decrypt and verify the sign */
-		if (!aps_decrypt_perm_cred (rem_perm_p_enc, req, &policy_file, &len) ||
+		if (!rem_perm_p_enc ||
+		    !aps_decrypt_perm_cred (rem_perm_p_enc, req, &policy_file, &len) ||
+		    !rem_perm_p_sig ||
 		    !aps_verify_perm_cred_sign (rem_perm_p_sig, peer, policy_file, len)) {
 			log_printf (SEC_ID, 0, "qeo_final: policy file decryption or sign failed\r\n");
 			if (policy_file)
@@ -1130,6 +1148,8 @@ static DDS_DataHolder *qeo_final (const SEC_AUTH            *ap,
 	p->next = secrets;
 	secrets = p;
 
+	prof_stop (qeo_p_final, 1);
+
 	return (token);
 
     mem_error:
@@ -1167,12 +1187,14 @@ static DDS_ReturnCode_t qeo_check_final (const SEC_AUTH            *ap,
 	unsigned char	shared_secret [SHARED_SECRET_LENGTH];
 	unsigned char	buf [NONCE_LENGTH + MAX_RSA_KEY_SIZE];
 	DDS_BinaryProperty *rem_perm_p_enc, *rem_perm_p_sig;
-	unsigned char      *policy_file;
+	unsigned char      *policy_file = NULL;
 	size_t             len;
 
 	ARG_NOT_USED (rem_id);
 	ARG_NOT_USED (rem_id_tok);
 	ARG_NOT_USED (rem_perm_tok);
+
+	prof_start (qeo_p_cfinal);
 
 	/* Verify that final is indeed a final handshake */
 	if (!final ||
@@ -1221,7 +1243,9 @@ static DDS_ReturnCode_t qeo_check_final (const SEC_AUTH            *ap,
 		rem_perm_p_sig = DDS_DataHolder_get_binary_property (final, 
 								     QEO_CLASSID_SECURITY_PERM_CREDENTIAL_SIG_PROPERTY);
 		
-		if (!aps_decrypt_perm_cred (rem_perm_p_enc, replier, &policy_file, &len) ||
+		if (!rem_perm_p_enc ||
+		    !aps_decrypt_perm_cred (rem_perm_p_enc, replier, &policy_file, &len) ||
+		    !rem_perm_p_sig ||
 		    !aps_verify_perm_cred_sign (rem_perm_p_sig, peer, policy_file, len)) {
 			log_printf (SEC_ID, 0, "qeo_check_final: policy file decryption or sign failed\r\n");
 			if (policy_file)
@@ -1293,6 +1317,9 @@ static DDS_ReturnCode_t qeo_check_final (const SEC_AUTH            *ap,
 	*pdata = NULL;
 	p->next = secrets;
 	secrets = p;
+
+	prof_stop (qeo_p_cfinal, 1);
+
 	return (DDS_RETCODE_OK);
 }
 
@@ -1348,6 +1375,11 @@ static const SEC_AUTH sec_auth_qeo = {
 
 int sec_auth_add_qeo (void)
 {
+	PROF_INIT ("Q:Req", qeo_p_req);
+	PROF_INIT ("Q:Reply", qeo_p_reply);
+	PROF_INIT ("Q:Final", qeo_p_final);
+	PROF_INIT ("Q:CFinal", qeo_p_cfinal);
+
 	return (sec_auth_add (&sec_auth_qeo, 1));
 }
 

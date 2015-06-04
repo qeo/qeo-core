@@ -1,0 +1,61 @@
+ifneq ($($(qeo-java_INCLUDED)),1)
+
+override COMPONENT          := org.qeo-java
+override COMPONENT_SEARCH_PATH_PREFIX := $(projectdir/)../../*/%/Makefile_component
+
+# The license of this component
+
+# The exported header files for this component
+qeo-java_INCLUDES             := api/headers
+
+# The linker flags that have to be added to use the libraries of this component
+qeo-java_LIBS                 := -lqeoJNI $$(rt_LIBS)
+
+# The parts (libraries and programs) that make up this component
+qeo-java_PARTS_INSTALL        := libqeoJNI.so@$$(libdir/)libqeoJNI.so:644
+qeo-java_TEST_RUN              = 
+
+# The tests need check, both at compile time and at deploy time
+qeo-java_DEPS               := qeo-c-core
+
+include $(projectdir/)build/Makefile_component_top
+
+qeo-java.LIBRARIES               := libqeoJNI
+
+qeo-java.libqeoJNI_SRCS          := src/main/c/jni_wrapper.c
+ifdef ANDROID_ARCH
+qeo-java.libqeoJNI_SRCS          += src/main/c/jni_platform_android.c
+else
+ifdef OSGI
+qeo-java.libqeoJNI_SRCS          += src/main/c/jni_platform_android.c
+else
+ifeq ($(E),KLOCWORK)
+qeo-java.libqeoJNI_SRCS          += src/main/c/jni_platform_android.c
+else
+qeo-java.libqeoJNI_SRCS          += src/main/c/jni_platform_stub.c
+endif
+endif
+endif
+qeo-java.libqeoJNI_LOCALINCLUDES := $(qeo-c-core_INCLUDES) $(OUTPUT_PREFIX/)gradle/javah
+qeo-java.libqeoJNI_LOCALDEFINES  := $(qeo-c-core_CFLAGS)
+qeo-java.libqeoJNI_LDADD         := -L$(qeo-c-core_$(E)_PREFIX) -lqeocore_pic -L$(qeo-c-util_$(E)_PREFIX) -lqeoutil_pic -L$(dds_$(E)_PREFIX) -L$(qeo-openssl-engine-pkcs12_$(E)_PREFIX) -lqeo-openssl-engine-pkcs12_pic -L$(qeo-management-client_$(E)_PREFIX) -lqeomgmtclient_pic -ldds_pic $(rt_LIBS) -L$(libcurl_$(E)_PREFIX) -lcurl_pic -L$(openssl_$(E)_PREFIX) -lssl_pic -lcrypto_pic -ldl -L$(jansson_$(E)_PREFIX) -ljansson_pic -lm
+# Some compiler checks disabled for MIPS (3.4.6 compiler doesn't understand those options)
+ifneq ($(TARG_ARCH),MIPS)
+qeo-java.libqeoJNI_LOCALDEFINES  += -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast -Werror
+qeo-java.libqeoJNI_LDADD         += -z noexecstack
+#qeo-java.libqeoJNI_LOCALDEFINES  += -Wall
+endif
+ifeq ($(E),HOSTLINUX)
+qeo-java.libqeoJNI_LDADD         += -lidn -lz
+endif
+ifdef ANDROID_ARCH
+qeo-java.libqeoJNI_LDADD         += -llog -lz
+qeo-java.libqeoJNI_LOCALDEFINES  += -DANDROID
+endif
+override qeo-java.libqeoJNI_LDDEPS         := $(qeo-c-core_$(E)_PREFIX)/libqeocore_pic.a $(qeo-c-util_$(E)_PREFIX)/libqeoutil_pic.a $(dds_$(E)_PREFIX)/libdds_pic.a $(openssl_$(E)_PREFIX)/libssl_pic.a $(openssl_$(E)_PREFIX)/libcrypto_pic.a $(qeo-openssl-engine-pkcs12_$(E)_PREFIX)/libqeo-openssl-engine-pkcs12_pic.a $(qeo-management-client_$(E)_PREFIX)/libqeomgmtclient_pic.a $(libcurl_$(E)_PREFIX)/libcurl_pic.a $(jansson_$(E)_PREFIX)/libjansson_pic.a
+
+include $(projectdir/)build/Makefile_component_bot
+endif
+
+# Vim Modeline, used to enable folds on this Makefile
+# vim: foldmethod=marker foldmarker=##<,##> :

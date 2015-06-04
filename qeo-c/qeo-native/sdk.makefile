@@ -4,7 +4,7 @@ CC = gcc
 TARGET = __TARGET__
 LIBDIR = $(QEO_HOME)/c/lib/$(PLATFORM)
 LIBS = -lqeo -lqeoutil -lrt -lpthread
-CFLAGS = -m32 -g -Wall __CFLAGS__ -I$(QEO_HOME)/c/include -I$(QEO_HOME)/qdms/qdm/c
+CFLAGS =  -g -Wall __CFLAGS__ -I$(QEO_HOME)/c/include -I$(QEO_HOME)/qdms/qdm/c
 
 ifeq ($(QEO_HOME),)
 $(error QEO_HOME is not defined)
@@ -22,7 +22,7 @@ HEADERS = $(wildcard *.h)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(TARGET): $(OBJECTS)
-	$(CC) -pthread -m32 -L$(LIBDIR) -Wl,-rpath,$(LIBDIR) $(OBJECTS) -Wall $(LIBS) -o $@
+	$(CC) -pthread  -L$(LIBDIR) -Wl,-rpath,$(LIBDIR) $(OBJECTS) -Wall $(LIBS) -o $@
 	@echo "$(TARGET) created."
 
 clean:

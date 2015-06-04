@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -41,6 +41,9 @@ int nmatch (const char *pattern, const char *name, int flags)
 		fflags |= (1 << 4)/*FNM_CASEFOLD*/;
 	if ((flags & NM_SQL) != 0) {
 		fnpattern = strdup (pattern);
+		if (!fnpattern)
+			return (NM_NOMATCH);
+
 		esc = 0;
 		for (sp = fnpattern; *sp; sp++) {
 			ch = *sp;

@@ -1,0 +1,9 @@
+//The artifactory.gradle file will be used as a helper function in order to use the functionality of artifactory.
+ext.artifactoryDeferLoading = true
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+ext.isSDKSample = true
+
+subprojects {
+    version = project.qeoVersion
+}
+

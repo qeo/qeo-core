@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -154,6 +154,10 @@ Participant_t *disc_remote_participant_add (Domain_t                      *domai
 void disc_remote_participant_enable (Domain_t *dp, Participant_t *pp, unsigned secret);
 
 /* Enable a discovered participant, when it was previously ignored. */
+
+void disc_remote_participant_delete (Participant_t *pp);
+
+/* Delete a discovered participant. */
 
 Topic_t *disc_remote_topic_add (Participant_t *pp,
 				DiscoveredTopicData *data);

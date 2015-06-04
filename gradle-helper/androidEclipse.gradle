@@ -108,3 +108,11 @@ task(eclipseProjectProperties) {
 tasks.eclipse.dependsOn(eclipseProjectProperties)
 /*Clean everything instead only the eclipse files*/
 tasks.cleanEclipse.dependsOn(clean)
+
+cleanEclipse {
+    doLast {
+        project.delete "bin"
+        project.delete "gen"
+    }
+}
+

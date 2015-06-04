@@ -6,6 +6,9 @@ global:
     qeo_factory_close;
     qeo_version_string;
     qeo_security_set_init_openssl;
+    qeo_bgns_register;
+    qeo_bgns_suspend;
+    qeo_bgns_resume;
 
     /* qeo_dyntype.h */
     qeocore_type_register;
@@ -70,6 +73,7 @@ global:
     qeocore_reader_read;
     qeocore_reader_take;
     qeocore_reader_policy_update;
+    qeocore_reader_bgns_notify;
     
     qeocore_writer_open;
     qeocore_writer_enable;

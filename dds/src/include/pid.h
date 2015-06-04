@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -374,6 +374,11 @@ void pid_reader_data_cleanup (DiscoveredReaderData *rp);
 void pid_writer_data_cleanup (DiscoveredWriterData *wp);
 
 /* Cleanup received publication data extra allocations. */
+
+
+void endpoint_key_from_guid (const GuidPrefix_t *prefix,
+			     EntityId_t         *eid,
+			     KeyHash_t          *key);
 
 
 /* Message creation functions.

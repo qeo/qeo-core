@@ -47,12 +47,21 @@ if (project.hasProperty('android')) {
 
 if (project.hasProperty("findbugsHtml") && project.findbugsHtml) {
     //enable readable findbugs reports, you can't do both
-    logger.warn("Creating findbugs HTML instead of XML")
-    findbugsMain.reports.html.enabled = true
-    findbugsMain.reports.xml.enabled = false  
+    findbugsMain {
+        reports.html.enabled = true
+        reports.xml.enabled = false
+        doFirst {
+            logger.info("Creating findbugs HTML instead of XML")
+        }
+    }
     if (tasks.findByPath("findbugsTest") != null) {
-        findbugsTest.reports.html.enabled = true
-        findbugsTest.reports.xml.enabled = false  
+        findbugsTest {
+            reports.html.enabled = true
+            reports.xml.enabled = false
+            doFirst {
+                logger.info("Creating findbugs HTML instead of XML")
+            }
+        }
     }
 }
 
@@ -79,4 +88,10 @@ if (tasks.findByPath("findbugsTest") != null) {
 project.findbugs.ignoreFailures = false
 project.findbugs.reportLevel = "medium"
 
+def noAbortProperty = "noAbortFindbugs"
+
+if (project.hasProperty(noAbortProperty)) {
+    //to be used if jenkins wants to interprete the results
+    project.findbugs.ignoreFailures = Boolean.parseBoolean(project.getProperty(noAbortProperty))
+}
 

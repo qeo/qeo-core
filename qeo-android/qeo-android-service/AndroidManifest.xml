@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="org.qeo.android.service"
+    android:sharedUserId="org.qeo.android.service">
+
+    <uses-sdk android:minSdkVersion="9"/>
+
+    <application
+        android:name="org.qeo.android.settings.SettingsApplication"
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name">
+
+
+        <meta-data
+            android:name="org.qeo.rest.google.client.id"
+            />
+        <meta-data
+            android:name="org.qeo.rest.qeo.client.secret"
+            />
+        <meta-data
+            android:name="org.qeo.rest.qeo.client.id"
+            />
+
+
+        <service
+            android:name="org.qeo.android.service.QeoService"
+            android:exported="true"
+            tools:replace="android:exported">
+        </service>
+        <service android:name="org.qeo.android.service.QeoServiceTimeout"/>
+        <service
+            android:name="org.qeo.android.service.QeoServiceVersion"
+            android:exported="true"
+            tools:replace="android:exported">
+        </service>
+
+        <activity
+            android:name="org.qeo.android.service.ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+    </application>
+
+
+</manifest>

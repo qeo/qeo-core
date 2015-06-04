@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -140,6 +140,12 @@ void qeocore_reader_policy_update_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_lin
 void qeocore_reader_policy_update_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, const qeocore_reader_t* reader, qeo_retcode_t cmock_to_return);
 typedef qeo_retcode_t (* CMOCK_qeocore_reader_policy_update_CALLBACK)(const qeocore_reader_t* reader, int cmock_num_calls);
 void qeocore_reader_policy_update_StubWithCallback(CMOCK_qeocore_reader_policy_update_CALLBACK Callback);
+#define qeocore_reader_bgns_notify_IgnoreAndReturn(cmock_retval) qeocore_reader_bgns_notify_CMockIgnoreAndReturn(__LINE__, cmock_retval)
+void qeocore_reader_bgns_notify_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeo_retcode_t cmock_to_return);
+#define qeocore_reader_bgns_notify_ExpectAndReturn(reader, on, cmock_retval) qeocore_reader_bgns_notify_CMockExpectAndReturn(__LINE__, reader, on, cmock_retval)
+void qeocore_reader_bgns_notify_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_reader_t* reader, bool on, qeo_retcode_t cmock_to_return);
+typedef qeo_retcode_t (* CMOCK_qeocore_reader_bgns_notify_CALLBACK)(qeocore_reader_t* reader, bool on, int cmock_num_calls);
+void qeocore_reader_bgns_notify_StubWithCallback(CMOCK_qeocore_reader_bgns_notify_CALLBACK Callback);
 #define qeocore_writer_open_IgnoreAndReturn(cmock_retval) qeocore_writer_open_CMockIgnoreAndReturn(__LINE__, cmock_retval)
 void qeocore_writer_open_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_writer_t* cmock_to_return);
 #define qeocore_writer_open_ExpectAndReturn(factory, type, topic_name, flags, listener, rc, cmock_retval) qeocore_writer_open_CMockExpectAndReturn(__LINE__, factory, type, topic_name, flags, listener, rc, cmock_retval)

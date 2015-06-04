@@ -1,0 +1,44 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/RelativeLayout1"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical" >
+
+    <TextView
+        android:id="@+id/fragment_select_user_textview_info"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignBottom="@+id/fragment_select_user_button_add_user"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentTop="true"
+        android:textIsSelectable="true"
+        android:layout_toLeftOf="@+id/fragment_select_user_button_add_user"
+        android:padding="5dp" />
+
+    <Button
+        android:id="@+id/fragment_select_user_button_add_user"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentTop="true"
+        android:text="@string/action_add_user" />
+
+    <ListView
+        android:id="@+id/fragment_select_user_list"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_below="@+id/fragment_select_user_button_add_user"
+        android:choiceMode="singleChoice" >
+    </ListView>
+
+    <ProgressBar
+        android:id="@+id/fragment_select_user_progressBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/fragment_select_user_button_add_user"
+        android:layout_centerHorizontal="true" >
+    </ProgressBar>
+
+</RelativeLayout>

@@ -1,0 +1,950 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXAggregateTarget section */
+		896DD50A1875464C00FECCC3 /* Documentation */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 896DD50B1875464C00FECCC3 /* Build configuration list for PBXAggregateTarget "Documentation" */;
+			buildPhases = (
+				896DD50E1875467A00FECCC3 /* ShellScript */,
+			);
+			dependencies = (
+			);
+			name = Documentation;
+			productName = Documentation;
+		};
+		89A5FAEC183370EE0006DC79 /* qeo-c-core */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 89A5FAEE183370EE0006DC79 /* Build configuration list for PBXAggregateTarget "qeo-c-core" */;
+			buildPhases = (
+				89A5FAED183370EE0006DC79 /* ShellScript */,
+			);
+			dependencies = (
+			);
+			name = "qeo-c-core";
+			productName = Qeo.framework;
+		};
+		89E531DF187BEF4900E13398 /* Tarball */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 89E531E0187BEF4900E13398 /* Build configuration list for PBXAggregateTarget "Tarball" */;
+			buildPhases = (
+				89E531E3187BEF4E00E13398 /* ShellScript */,
+			);
+			dependencies = (
+				89B6635C1884120B0055FD37 /* PBXTargetDependency */,
+				89B6635A188412040055FD37 /* PBXTargetDependency */,
+			);
+			name = Tarball;
+			productName = Tarball;
+		};
+		D0183BAA181077B4000802F9 /* Qeo.framework */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = D0183BAB181077B4000802F9 /* Build configuration list for PBXAggregateTarget "Qeo.framework" */;
+			buildPhases = (
+				D0183BAE181077BE000802F9 /* ShellScript */,
+			);
+			dependencies = (
+				89D0CB3C1ACED6A60059851F /* PBXTargetDependency */,
+				89C20CD718C60420000BAEB0 /* PBXTargetDependency */,
+			);
+			name = Qeo.framework;
+			productName = Qeo.framework;
+		};
+/* End PBXAggregateTarget section */
+
+/* Begin PBXBuildFile section */
+		00D685B51844C1F900477E08 /* QEOPlatform.h in Headers */ = {isa = PBXBuildFile; fileRef = 00D685B31844C1F900477E08 /* QEOPlatform.h */; };
+		00D685B61844C1F900477E08 /* QEOPlatform.m in Sources */ = {isa = PBXBuildFile; fileRef = 00D685B41844C1F900477E08 /* QEOPlatform.m */; };
+		00E4FFF618474B570091E7E2 /* qeo-c-core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 00E4FFF518474B570091E7E2 /* qeo-c-core.framework */; };
+		892C8FB81AD808B1008C1389 /* QEORegistration_iPad.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 89E1E58F1845FE2900477E03 /* QEORegistration_iPad.storyboard */; };
+		892C8FB91AD808B6008C1389 /* QEORegistration_iPhone.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 89E1E5901845FE2900477E03 /* QEORegistration_iPhone.storyboard */; };
+		895F13A418C0809400B9914F /* QEOFactoryContext.h in Headers */ = {isa = PBXBuildFile; fileRef = 895F13A218C0809400B9914F /* QEOFactoryContext.h */; };
+		895F13A518C0809400B9914F /* QEOFactoryContext.m in Sources */ = {isa = PBXBuildFile; fileRef = 895F13A318C0809400B9914F /* QEOFactoryContext.m */; };
+		89628949189FE1D700164E8C /* QEOSpinnerViewController.h in Headers */ = {isa = PBXBuildFile; fileRef = 89628947189FE1D700164E8C /* QEOSpinnerViewController.h */; };
+		8962894A189FE1D700164E8C /* QEOSpinnerViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 89628948189FE1D700164E8C /* QEOSpinnerViewController.m */; };
+		897048EE187FD9C700C65613 /* EmptySegue.h in Headers */ = {isa = PBXBuildFile; fileRef = 897048EC187FD9C700C65613 /* EmptySegue.h */; };
+		897048EF187FD9C700C65613 /* EmptySegue.m in Sources */ = {isa = PBXBuildFile; fileRef = 897048ED187FD9C700C65613 /* EmptySegue.m */; };
+		897048F6187FD9F800C65613 /* QEOOTCRegistrationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 897048F0187FD9F800C65613 /* QEOOTCRegistrationViewController.m */; };
+		897048F7187FD9F800C65613 /* QEOQRCodeRegistrationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 897048F1187FD9F800C65613 /* QEOQRCodeRegistrationViewController.m */; };
+		897048F8187FD9F800C65613 /* QEOContainerViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 897048F2187FD9F800C65613 /* QEOContainerViewController.m */; };
+		897048F9187FD9F800C65613 /* QEOContainerViewController.h in Headers */ = {isa = PBXBuildFile; fileRef = 897048F3187FD9F800C65613 /* QEOContainerViewController.h */; };
+		897048FA187FD9F800C65613 /* QEOQRCodeRegistrationViewController.h in Headers */ = {isa = PBXBuildFile; fileRef = 897048F4187FD9F800C65613 /* QEOQRCodeRegistrationViewController.h */; };
+		897048FB187FD9F800C65613 /* QEOOTCRegistrationViewController.h in Headers */ = {isa = PBXBuildFile; fileRef = 897048F5187FD9F800C65613 /* QEOOTCRegistrationViewController.h */; };
+		89D0CB391ACEB6BD0059851F /* QEOEntityWrapper.h in Headers */ = {isa = PBXBuildFile; fileRef = 89D0CB371ACEB6BD0059851F /* QEOEntityWrapper.h */; };
+		89D0CB3A1ACEB6BD0059851F /* QEOEntityWrapper.m in Sources */ = {isa = PBXBuildFile; fileRef = 89D0CB381ACEB6BD0059851F /* QEOEntityWrapper.m */; };
+		89E1E5781845FD1000477E03 /* QEORegistrationViewController.h in Headers */ = {isa = PBXBuildFile; fileRef = 89E1E5761845FD1000477E03 /* QEORegistrationViewController.h */; };
+		89E1E5791845FD1000477E03 /* QEORegistrationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 89E1E5771845FD1000477E03 /* QEORegistrationViewController.m */; };
+		89E1E5811845FD5600477E03 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 89E1E5801845FD5600477E03 /* CoreFoundation.framework */; };
+		89E1E5871845FD5600477E03 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 89E1E5851845FD5600477E03 /* InfoPlist.strings */; };
+		950E9DBC181E7B69002D1F38 /* Qeo.h in Headers */ = {isa = PBXBuildFile; fileRef = 950E9DBB181E7B69002D1F38 /* Qeo.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		950E9DC6181E7B76002D1F38 /* QEOEventReader.m in Sources */ = {isa = PBXBuildFile; fileRef = 950E9DBD181E7B76002D1F38 /* QEOEventReader.m */; };
+		950E9DC7181E7B76002D1F38 /* QEOEventWriter.m in Sources */ = {isa = PBXBuildFile; fileRef = 950E9DBE181E7B76002D1F38 /* QEOEventWriter.m */; };
+		950E9DC8181E7B76002D1F38 /* QEOFactory.m in Sources */ = {isa = PBXBuildFile; fileRef = 950E9DBF181E7B76002D1F38 /* QEOFactory.m */; };
+		950E9DCC181E7B76002D1F38 /* QEOPolicyIdentity.m in Sources */ = {isa = PBXBuildFile; fileRef = 950E9DC3181E7B76002D1F38 /* QEOPolicyIdentity.m */; };
+		950E9DCD181E7B76002D1F38 /* QEOStateReader.m in Sources */ = {isa = PBXBuildFile; fileRef = 950E9DC4181E7B76002D1F38 /* QEOStateReader.m */; };
+		950E9DCE181E7B76002D1F38 /* QEOStateWriter.m in Sources */ = {isa = PBXBuildFile; fileRef = 950E9DC5181E7B76002D1F38 /* QEOStateWriter.m */; };
+		95F2999A183FC27F00B17C29 /* QEOEntity.h in Headers */ = {isa = PBXBuildFile; fileRef = 95F2998C183FC27F00B17C29 /* QEOEntity.h */; };
+		95F2999B183FC27F00B17C29 /* QEOEntity.m in Sources */ = {isa = PBXBuildFile; fileRef = 95F2998D183FC27F00B17C29 /* QEOEntity.m */; };
+		95F2999C183FC27F00B17C29 /* QEOEventReader.h in Headers */ = {isa = PBXBuildFile; fileRef = 95F2998E183FC27F00B17C29 /* QEOEventReader.h */; };
+		95F2999D183FC27F00B17C29 /* QEOEventWriter.h in Headers */ = {isa = PBXBuildFile; fileRef = 95F2998F183FC27F00B17C29 /* QEOEventWriter.h */; };
+		95F2999E183FC27F00B17C29 /* QEOFactory.h in Headers */ = {isa = PBXBuildFile; fileRef = 95F29990183FC27F00B17C29 /* QEOFactory.h */; };
+		95F2999F183FC27F00B17C29 /* QEOIdentity.h in Headers */ = {isa = PBXBuildFile; fileRef = 95F29991183FC27F00B17C29 /* QEOIdentity.h */; };
+		95F299A0183FC27F00B17C29 /* QEOIdentity.m in Sources */ = {isa = PBXBuildFile; fileRef = 95F29992183FC27F00B17C29 /* QEOIdentity.m */; };
+		95F299A1183FC27F00B17C29 /* QEOPolicyIdentity.h in Headers */ = {isa = PBXBuildFile; fileRef = 95F29993183FC27F00B17C29 /* QEOPolicyIdentity.h */; };
+		95F299A2183FC27F00B17C29 /* QEOStateChangeReader.h in Headers */ = {isa = PBXBuildFile; fileRef = 95F29994183FC27F00B17C29 /* QEOStateChangeReader.h */; };
+		95F299A3183FC27F00B17C29 /* QEOStateChangeReader.m in Sources */ = {isa = PBXBuildFile; fileRef = 95F29995183FC27F00B17C29 /* QEOStateChangeReader.m */; };
+		95F299A4183FC27F00B17C29 /* QEOStateReader.h in Headers */ = {isa = PBXBuildFile; fileRef = 95F29996183FC27F00B17C29 /* QEOStateReader.h */; };
+		95F299A5183FC27F00B17C29 /* QEOStateWriter.h in Headers */ = {isa = PBXBuildFile; fileRef = 95F29997183FC27F00B17C29 /* QEOStateWriter.h */; };
+		95F299A6183FC27F00B17C29 /* QEOType.h in Headers */ = {isa = PBXBuildFile; fileRef = 95F29998183FC27F00B17C29 /* QEOType.h */; };
+		95F299A7183FC27F00B17C29 /* QEOType.m in Sources */ = {isa = PBXBuildFile; fileRef = 95F29999183FC27F00B17C29 /* QEOType.m */; };
+		D0183B9D181074E4000802F9 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = D0183B9B181074E4000802F9 /* InfoPlist.strings */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		89B66359188412040055FD37 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D0183B8B181074E4000802F9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D0183BAA181077B4000802F9;
+			remoteInfo = Qeo.framework;
+		};
+		89B6635B1884120B0055FD37 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D0183B8B181074E4000802F9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 896DD50A1875464C00FECCC3;
+			remoteInfo = Documentation;
+		};
+		89C20CD618C60420000BAEB0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D0183B8B181074E4000802F9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 89E1E57E1845FD5600477E03;
+			remoteInfo = QeoResources;
+		};
+		89D0CB3B1ACED6A60059851F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D0183B8B181074E4000802F9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 89A5FAEC183370EE0006DC79;
+			remoteInfo = "qeo-c-core";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		00D685B31844C1F900477E08 /* QEOPlatform.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOPlatform.h; path = src/platform/QEOPlatform.h; sourceTree = "<group>"; };
+		00D685B41844C1F900477E08 /* QEOPlatform.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOPlatform.m; path = src/platform/QEOPlatform.m; sourceTree = "<group>"; };
+		00E4FFF518474B570091E7E2 /* qeo-c-core.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = "qeo-c-core.framework"; path = "../qeo-c/qeo-native/Products/qeo-c-core.framework"; sourceTree = "<group>"; };
+		895F13A218C0809400B9914F /* QEOFactoryContext.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOFactoryContext.h; path = src/QEOFactoryContext.h; sourceTree = "<group>"; };
+		895F13A318C0809400B9914F /* QEOFactoryContext.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOFactoryContext.m; path = src/QEOFactoryContext.m; sourceTree = "<group>"; };
+		89628947189FE1D700164E8C /* QEOSpinnerViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOSpinnerViewController.h; path = src/viewControllers/QEOSpinnerViewController.h; sourceTree = "<group>"; };
+		89628948189FE1D700164E8C /* QEOSpinnerViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOSpinnerViewController.m; path = src/viewControllers/QEOSpinnerViewController.m; sourceTree = "<group>"; };
+		896DD50F187546EC00FECCC3 /* readme.markdown */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = readme.markdown; path = documentation/readme.markdown; sourceTree = "<group>"; };
+		896DD510187546EC00FECCC3 /* Qeo_doc.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Qeo_doc.h; path = documentation/Qeo_doc.h; sourceTree = "<group>"; };
+		897048E9187FD97E00C65613 /* README.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = README.txt; path = documentation/README.txt; sourceTree = "<group>"; };
+		897048EC187FD9C700C65613 /* EmptySegue.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = EmptySegue.h; path = src/Segue/EmptySegue.h; sourceTree = "<group>"; };
+		897048ED187FD9C700C65613 /* EmptySegue.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = EmptySegue.m; path = src/Segue/EmptySegue.m; sourceTree = "<group>"; };
+		897048F0187FD9F800C65613 /* QEOOTCRegistrationViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOOTCRegistrationViewController.m; path = src/viewControllers/QEOOTCRegistrationViewController.m; sourceTree = "<group>"; };
+		897048F1187FD9F800C65613 /* QEOQRCodeRegistrationViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOQRCodeRegistrationViewController.m; path = src/viewControllers/QEOQRCodeRegistrationViewController.m; sourceTree = "<group>"; };
+		897048F2187FD9F800C65613 /* QEOContainerViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOContainerViewController.m; path = src/viewControllers/QEOContainerViewController.m; sourceTree = "<group>"; };
+		897048F3187FD9F800C65613 /* QEOContainerViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOContainerViewController.h; path = src/viewControllers/QEOContainerViewController.h; sourceTree = "<group>"; };
+		897048F4187FD9F800C65613 /* QEOQRCodeRegistrationViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOQRCodeRegistrationViewController.h; path = src/viewControllers/QEOQRCodeRegistrationViewController.h; sourceTree = "<group>"; };
+		897048F5187FD9F800C65613 /* QEOOTCRegistrationViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOOTCRegistrationViewController.h; path = src/viewControllers/QEOOTCRegistrationViewController.h; sourceTree = "<group>"; };
+		89D0CB371ACEB6BD0059851F /* QEOEntityWrapper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOEntityWrapper.h; path = src/QEOEntityWrapper.h; sourceTree = "<group>"; };
+		89D0CB381ACEB6BD0059851F /* QEOEntityWrapper.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOEntityWrapper.m; path = src/QEOEntityWrapper.m; sourceTree = "<group>"; };
+		89E1E5761845FD1000477E03 /* QEORegistrationViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEORegistrationViewController.h; path = src/viewControllers/QEORegistrationViewController.h; sourceTree = "<group>"; };
+		89E1E5771845FD1000477E03 /* QEORegistrationViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEORegistrationViewController.m; path = src/viewControllers/QEORegistrationViewController.m; sourceTree = "<group>"; };
+		89E1E57F1845FD5600477E03 /* Qeo.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Qeo.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
+		89E1E5801845FD5600477E03 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
+		89E1E5841845FD5600477E03 /* QeoResources-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "QeoResources-Info.plist"; sourceTree = "<group>"; };
+		89E1E5861845FD5600477E03 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		89E1E5881845FD5600477E03 /* QeoResources-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "QeoResources-Prefix.pch"; sourceTree = "<group>"; };
+		89E1E58F1845FE2900477E03 /* QEORegistration_iPad.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = QEORegistration_iPad.storyboard; path = res/QEORegistration_iPad.storyboard; sourceTree = "<group>"; };
+		89E1E5901845FE2900477E03 /* QEORegistration_iPhone.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = QEORegistration_iPhone.storyboard; path = res/QEORegistration_iPhone.storyboard; sourceTree = "<group>"; };
+		89F49E681843932500FF88C9 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
+		89F49E6A1843932500FF88C9 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		89F49E6C1843932500FF88C9 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = Library/Frameworks/UIKit.framework; sourceTree = DEVELOPER_DIR; };
+		950E9DBB181E7B69002D1F38 /* Qeo.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Qeo.h; path = headers/Qeo.h; sourceTree = "<group>"; };
+		950E9DBD181E7B76002D1F38 /* QEOEventReader.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOEventReader.m; path = src/QEOEventReader.m; sourceTree = "<group>"; };
+		950E9DBE181E7B76002D1F38 /* QEOEventWriter.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOEventWriter.m; path = src/QEOEventWriter.m; sourceTree = "<group>"; };
+		950E9DBF181E7B76002D1F38 /* QEOFactory.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOFactory.m; path = src/QEOFactory.m; sourceTree = "<group>"; };
+		950E9DC3181E7B76002D1F38 /* QEOPolicyIdentity.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOPolicyIdentity.m; path = src/QEOPolicyIdentity.m; sourceTree = "<group>"; };
+		950E9DC4181E7B76002D1F38 /* QEOStateReader.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOStateReader.m; path = src/QEOStateReader.m; sourceTree = "<group>"; };
+		950E9DC5181E7B76002D1F38 /* QEOStateWriter.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOStateWriter.m; path = src/QEOStateWriter.m; sourceTree = "<group>"; };
+		95F2998C183FC27F00B17C29 /* QEOEntity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOEntity.h; path = src/QEOEntity.h; sourceTree = "<group>"; };
+		95F2998D183FC27F00B17C29 /* QEOEntity.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOEntity.m; path = src/QEOEntity.m; sourceTree = "<group>"; };
+		95F2998E183FC27F00B17C29 /* QEOEventReader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOEventReader.h; path = src/QEOEventReader.h; sourceTree = "<group>"; };
+		95F2998F183FC27F00B17C29 /* QEOEventWriter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOEventWriter.h; path = src/QEOEventWriter.h; sourceTree = "<group>"; };
+		95F29990183FC27F00B17C29 /* QEOFactory.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOFactory.h; path = src/QEOFactory.h; sourceTree = "<group>"; };
+		95F29991183FC27F00B17C29 /* QEOIdentity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOIdentity.h; path = src/QEOIdentity.h; sourceTree = "<group>"; };
+		95F29992183FC27F00B17C29 /* QEOIdentity.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOIdentity.m; path = src/QEOIdentity.m; sourceTree = "<group>"; };
+		95F29993183FC27F00B17C29 /* QEOPolicyIdentity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOPolicyIdentity.h; path = src/QEOPolicyIdentity.h; sourceTree = "<group>"; };
+		95F29994183FC27F00B17C29 /* QEOStateChangeReader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOStateChangeReader.h; path = src/QEOStateChangeReader.h; sourceTree = "<group>"; };
+		95F29995183FC27F00B17C29 /* QEOStateChangeReader.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOStateChangeReader.m; path = src/QEOStateChangeReader.m; sourceTree = "<group>"; };
+		95F29996183FC27F00B17C29 /* QEOStateReader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOStateReader.h; path = src/QEOStateReader.h; sourceTree = "<group>"; };
+		95F29997183FC27F00B17C29 /* QEOStateWriter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOStateWriter.h; path = src/QEOStateWriter.h; sourceTree = "<group>"; };
+		95F29998183FC27F00B17C29 /* QEOType.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = QEOType.h; path = src/QEOType.h; sourceTree = "<group>"; };
+		95F29999183FC27F00B17C29 /* QEOType.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = QEOType.m; path = src/QEOType.m; sourceTree = "<group>"; };
+		D0183B93181074E4000802F9 /* Qeo.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Qeo.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		D0183B9A181074E4000802F9 /* Qeo-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Qeo-Info.plist"; sourceTree = "<group>"; };
+		D0183B9C181074E4000802F9 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		D0183B9E181074E4000802F9 /* Qeo-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Qeo-Prefix.pch"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		89E1E57C1845FD5600477E03 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				89E1E5811845FD5600477E03 /* CoreFoundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0183B90181074E4000802F9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00E4FFF618474B570091E7E2 /* qeo-c-core.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		000D01601843A09F0059AE46 /* platform */ = {
+			isa = PBXGroup;
+			children = (
+				00D685B31844C1F900477E08 /* QEOPlatform.h */,
+				00D685B41844C1F900477E08 /* QEOPlatform.m */,
+			);
+			name = platform;
+			sourceTree = "<group>";
+		};
+		896DD509187544D900FECCC3 /* documentation */ = {
+			isa = PBXGroup;
+			children = (
+				897048E9187FD97E00C65613 /* README.txt */,
+				896DD50F187546EC00FECCC3 /* readme.markdown */,
+				896DD510187546EC00FECCC3 /* Qeo_doc.h */,
+			);
+			name = documentation;
+			sourceTree = "<group>";
+		};
+		897048EB187FD9B500C65613 /* Segue */ = {
+			isa = PBXGroup;
+			children = (
+				897048EC187FD9C700C65613 /* EmptySegue.h */,
+				897048ED187FD9C700C65613 /* EmptySegue.m */,
+			);
+			name = Segue;
+			sourceTree = "<group>";
+		};
+		89E1E57A1845FD2400477E03 /* viewControllers */ = {
+			isa = PBXGroup;
+			children = (
+				897048F5187FD9F800C65613 /* QEOOTCRegistrationViewController.h */,
+				897048F0187FD9F800C65613 /* QEOOTCRegistrationViewController.m */,
+				897048F4187FD9F800C65613 /* QEOQRCodeRegistrationViewController.h */,
+				897048F1187FD9F800C65613 /* QEOQRCodeRegistrationViewController.m */,
+				897048F3187FD9F800C65613 /* QEOContainerViewController.h */,
+				897048F2187FD9F800C65613 /* QEOContainerViewController.m */,
+				89E1E5761845FD1000477E03 /* QEORegistrationViewController.h */,
+				89E1E5771845FD1000477E03 /* QEORegistrationViewController.m */,
+				89628947189FE1D700164E8C /* QEOSpinnerViewController.h */,
+				89628948189FE1D700164E8C /* QEOSpinnerViewController.m */,
+			);
+			name = viewControllers;
+			sourceTree = "<group>";
+		};
+		89E1E5821845FD5600477E03 /* QeoResources */ = {
+			isa = PBXGroup;
+			children = (
+				89E1E5831845FD5600477E03 /* Supporting Files */,
+			);
+			path = QeoResources;
+			sourceTree = "<group>";
+		};
+		89E1E5831845FD5600477E03 /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				89E1E5841845FD5600477E03 /* QeoResources-Info.plist */,
+				89E1E5851845FD5600477E03 /* InfoPlist.strings */,
+				89E1E5881845FD5600477E03 /* QeoResources-Prefix.pch */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+		89E1E58E1845FDF100477E03 /* res */ = {
+			isa = PBXGroup;
+			children = (
+				89E1E58F1845FE2900477E03 /* QEORegistration_iPad.storyboard */,
+				89E1E5901845FE2900477E03 /* QEORegistration_iPhone.storyboard */,
+			);
+			name = res;
+			sourceTree = "<group>";
+		};
+		950E9DBA181E78ED002D1F38 /* headers */ = {
+			isa = PBXGroup;
+			children = (
+				950E9DBB181E7B69002D1F38 /* Qeo.h */,
+			);
+			name = headers;
+			sourceTree = "<group>";
+		};
+		D0183B8A181074E4000802F9 = {
+			isa = PBXGroup;
+			children = (
+				D0183B98181074E4000802F9 /* Qeo */,
+				89E1E5821845FD5600477E03 /* QeoResources */,
+				D0183B95181074E4000802F9 /* Frameworks */,
+				D0183B94181074E4000802F9 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D0183B94181074E4000802F9 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D0183B93181074E4000802F9 /* Qeo.framework */,
+				89E1E57F1845FD5600477E03 /* Qeo.bundle */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D0183B95181074E4000802F9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				00E4FFF518474B570091E7E2 /* qeo-c-core.framework */,
+				89F49E681843932500FF88C9 /* XCTest.framework */,
+				89F49E6A1843932500FF88C9 /* Foundation.framework */,
+				89F49E6C1843932500FF88C9 /* UIKit.framework */,
+				89E1E5801845FD5600477E03 /* CoreFoundation.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		D0183B98181074E4000802F9 /* Qeo */ = {
+			isa = PBXGroup;
+			children = (
+				896DD509187544D900FECCC3 /* documentation */,
+				950E9DBA181E78ED002D1F38 /* headers */,
+				89E1E58E1845FDF100477E03 /* res */,
+				D0183BA418107603000802F9 /* src */,
+				D0183B99181074E4000802F9 /* Supporting Files */,
+			);
+			path = Qeo;
+			sourceTree = "<group>";
+		};
+		D0183B99181074E4000802F9 /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				D0183B9A181074E4000802F9 /* Qeo-Info.plist */,
+				D0183B9B181074E4000802F9 /* InfoPlist.strings */,
+				D0183B9E181074E4000802F9 /* Qeo-Prefix.pch */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+		D0183BA418107603000802F9 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				897048EB187FD9B500C65613 /* Segue */,
+				89E1E57A1845FD2400477E03 /* viewControllers */,
+				000D01601843A09F0059AE46 /* platform */,
+				95F2998C183FC27F00B17C29 /* QEOEntity.h */,
+				95F2998D183FC27F00B17C29 /* QEOEntity.m */,
+				95F2998E183FC27F00B17C29 /* QEOEventReader.h */,
+				950E9DBD181E7B76002D1F38 /* QEOEventReader.m */,
+				95F2998F183FC27F00B17C29 /* QEOEventWriter.h */,
+				950E9DBE181E7B76002D1F38 /* QEOEventWriter.m */,
+				95F29990183FC27F00B17C29 /* QEOFactory.h */,
+				950E9DBF181E7B76002D1F38 /* QEOFactory.m */,
+				95F29991183FC27F00B17C29 /* QEOIdentity.h */,
+				95F29992183FC27F00B17C29 /* QEOIdentity.m */,
+				95F29993183FC27F00B17C29 /* QEOPolicyIdentity.h */,
+				950E9DC3181E7B76002D1F38 /* QEOPolicyIdentity.m */,
+				95F29994183FC27F00B17C29 /* QEOStateChangeReader.h */,
+				95F29995183FC27F00B17C29 /* QEOStateChangeReader.m */,
+				95F29996183FC27F00B17C29 /* QEOStateReader.h */,
+				950E9DC4181E7B76002D1F38 /* QEOStateReader.m */,
+				95F29997183FC27F00B17C29 /* QEOStateWriter.h */,
+				950E9DC5181E7B76002D1F38 /* QEOStateWriter.m */,
+				95F29998183FC27F00B17C29 /* QEOType.h */,
+				95F29999183FC27F00B17C29 /* QEOType.m */,
+				895F13A218C0809400B9914F /* QEOFactoryContext.h */,
+				895F13A318C0809400B9914F /* QEOFactoryContext.m */,
+				89D0CB371ACEB6BD0059851F /* QEOEntityWrapper.h */,
+				89D0CB381ACEB6BD0059851F /* QEOEntityWrapper.m */,
+			);
+			name = src;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		D0183BA818107786000802F9 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				89E1E5781845FD1000477E03 /* QEORegistrationViewController.h in Headers */,
+				95F2999C183FC27F00B17C29 /* QEOEventReader.h in Headers */,
+				950E9DBC181E7B69002D1F38 /* Qeo.h in Headers */,
+				89D0CB391ACEB6BD0059851F /* QEOEntityWrapper.h in Headers */,
+				95F299A1183FC27F00B17C29 /* QEOPolicyIdentity.h in Headers */,
+				95F299A5183FC27F00B17C29 /* QEOStateWriter.h in Headers */,
+				95F299A2183FC27F00B17C29 /* QEOStateChangeReader.h in Headers */,
+				00D685B51844C1F900477E08 /* QEOPlatform.h in Headers */,
+				95F2999E183FC27F00B17C29 /* QEOFactory.h in Headers */,
+				897048FA187FD9F800C65613 /* QEOQRCodeRegistrationViewController.h in Headers */,
+				89628949189FE1D700164E8C /* QEOSpinnerViewController.h in Headers */,
+				897048FB187FD9F800C65613 /* QEOOTCRegistrationViewController.h in Headers */,
+				895F13A418C0809400B9914F /* QEOFactoryContext.h in Headers */,
+				95F299A6183FC27F00B17C29 /* QEOType.h in Headers */,
+				95F2999D183FC27F00B17C29 /* QEOEventWriter.h in Headers */,
+				897048EE187FD9C700C65613 /* EmptySegue.h in Headers */,
+				95F2999F183FC27F00B17C29 /* QEOIdentity.h in Headers */,
+				897048F9187FD9F800C65613 /* QEOContainerViewController.h in Headers */,
+				95F2999A183FC27F00B17C29 /* QEOEntity.h in Headers */,
+				95F299A4183FC27F00B17C29 /* QEOStateReader.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		89E1E57E1845FD5600477E03 /* QeoResources */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 89E1E5891845FD5600477E03 /* Build configuration list for PBXNativeTarget "QeoResources" */;
+			buildPhases = (
+				89E1E57B1845FD5600477E03 /* Sources */,
+				89E1E57C1845FD5600477E03 /* Frameworks */,
+				89E1E57D1845FD5600477E03 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = QeoResources;
+			productName = QeoResources;
+			productReference = 89E1E57F1845FD5600477E03 /* Qeo.bundle */;
+			productType = "com.apple.product-type.bundle";
+		};
+		D0183B92181074E4000802F9 /* Qeo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D0183BA1181074E4000802F9 /* Build configuration list for PBXNativeTarget "Qeo" */;
+			buildPhases = (
+				D0183B8F181074E4000802F9 /* Sources */,
+				D0183B90181074E4000802F9 /* Frameworks */,
+				D0183B91181074E4000802F9 /* Resources */,
+				D0183BA818107786000802F9 /* Headers */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Qeo;
+			productName = Qeo;
+			productReference = D0183B93181074E4000802F9 /* Qeo.framework */;
+			productType = "com.apple.product-type.bundle";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D0183B8B181074E4000802F9 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 0500;
+				ORGANIZATIONNAME = technicolor;
+			};
+			buildConfigurationList = D0183B8E181074E4000802F9 /* Build configuration list for PBXProject "Qeo" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = D0183B8A181074E4000802F9;
+			productRefGroup = D0183B94181074E4000802F9 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D0183BAA181077B4000802F9 /* Qeo.framework */,
+				89A5FAEC183370EE0006DC79 /* qeo-c-core */,
+				D0183B92181074E4000802F9 /* Qeo */,
+				89E1E57E1845FD5600477E03 /* QeoResources */,
+				896DD50A1875464C00FECCC3 /* Documentation */,
+				89E531DF187BEF4900E13398 /* Tarball */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		89E1E57D1845FD5600477E03 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				89E1E5871845FD5600477E03 /* InfoPlist.strings in Resources */,
+				892C8FB91AD808B6008C1389 /* QEORegistration_iPhone.storyboard in Resources */,
+				892C8FB81AD808B1008C1389 /* QEORegistration_iPad.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0183B91181074E4000802F9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D0183B9D181074E4000802F9 /* InfoPlist.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		896DD50E1875467A00FECCC3 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Remove old log file and dump stdout and stderr to file\nrm -f ${SRCROOT}/script_help_log_file.txt\nexec > ${SRCROOT}/script_help_log_file.txt 2>&1\n\nsource build_documentation.sh";
+		};
+		89A5FAED183370EE0006DC79 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Remove old log file and dump stdout and stderr to file\nrm -f ${SRCROOT}/script_qeo_c_log_file.txt\nexec > ${SRCROOT}/script_qeo_c_log_file.txt 2>&1\n\n\n# Abort script on errors\nset -e\n\n# Setup your path to qeo-native repository\nROOTTPATH=`pwd`\ncd \"${ROOTTPATH}/../qeo-c/qeo-native/\"\nexport PATH=/usr/local/bin:$PATH\n\n# Run build script\nif [ \"$CONFIGURATION\" == \"Release\" ]; then\necho \"Release\"\n./build_ios_framework.sh -s\nelif [ \"$CONFIGURATION\" == \"Debug\" ]; then\necho \"Debug\"\n./build_ios_framework.sh -d\nelse\necho \"not supported\"\nexit 1\nfi\n\n# Go back\ncd ${ROOTTPATH}\n";
+		};
+		89E531E3187BEF4E00E13398 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Remove old log file and dump stdout and stderr to file\nrm -f ${SRCROOT}/script_tarball_log_file.txt\nexec > ${SRCROOT}/script_tarball_log_file.txt 2>&1\n\nsource build_tarball.sh";
+		};
+		D0183BAE181077BE000802F9 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Remove old log file and dump stdout and stderr to file\nrm -f ${SRCROOT}/script_log_file.txt\nexec > ${SRCROOT}/script_log_file.txt 2>&1\n\n# Build Qeo framework\nsource build_framework.sh\n\ncd ${SRCROOT}/Products/${CONFIGURATION}\nTARBALL_NAME=qeo-objc\n\n# Create tarball (framework + resource bundle)\nif [ \"${CONFIGURATION}\" = \"Release\" ]\nthen\n    tar czf \"${TARBALL_NAME}.tgz\" --exclude \".*\" \"Qeo.framework\" \"Qeo.bundle\"\nelse\n    tar czf \"${TARBALL_NAME}-debug.tgz\" --exclude \".*\" \"Qeo.framework\" \"Qeo.bundle\"\nfi;\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		89E1E57B1845FD5600477E03 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0183B8F181074E4000802F9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				950E9DC6181E7B76002D1F38 /* QEOEventReader.m in Sources */,
+				89E1E5791845FD1000477E03 /* QEORegistrationViewController.m in Sources */,
+				950E9DC7181E7B76002D1F38 /* QEOEventWriter.m in Sources */,
+				950E9DCD181E7B76002D1F38 /* QEOStateReader.m in Sources */,
+				897048EF187FD9C700C65613 /* EmptySegue.m in Sources */,
+				00D685B61844C1F900477E08 /* QEOPlatform.m in Sources */,
+				897048F6187FD9F800C65613 /* QEOOTCRegistrationViewController.m in Sources */,
+				95F299A7183FC27F00B17C29 /* QEOType.m in Sources */,
+				895F13A518C0809400B9914F /* QEOFactoryContext.m in Sources */,
+				950E9DC8181E7B76002D1F38 /* QEOFactory.m in Sources */,
+				95F2999B183FC27F00B17C29 /* QEOEntity.m in Sources */,
+				897048F7187FD9F800C65613 /* QEOQRCodeRegistrationViewController.m in Sources */,
+				950E9DCE181E7B76002D1F38 /* QEOStateWriter.m in Sources */,
+				89D0CB3A1ACEB6BD0059851F /* QEOEntityWrapper.m in Sources */,
+				8962894A189FE1D700164E8C /* QEOSpinnerViewController.m in Sources */,
+				95F299A3183FC27F00B17C29 /* QEOStateChangeReader.m in Sources */,
+				950E9DCC181E7B76002D1F38 /* QEOPolicyIdentity.m in Sources */,
+				897048F8187FD9F800C65613 /* QEOContainerViewController.m in Sources */,
+				95F299A0183FC27F00B17C29 /* QEOIdentity.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		89B6635A188412040055FD37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D0183BAA181077B4000802F9 /* Qeo.framework */;
+			targetProxy = 89B66359188412040055FD37 /* PBXContainerItemProxy */;
+		};
+		89B6635C1884120B0055FD37 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 896DD50A1875464C00FECCC3 /* Documentation */;
+			targetProxy = 89B6635B1884120B0055FD37 /* PBXContainerItemProxy */;
+		};
+		89C20CD718C60420000BAEB0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 89E1E57E1845FD5600477E03 /* QeoResources */;
+			targetProxy = 89C20CD618C60420000BAEB0 /* PBXContainerItemProxy */;
+		};
+		89D0CB3C1ACED6A60059851F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 89A5FAEC183370EE0006DC79 /* qeo-c-core */;
+			targetProxy = 89D0CB3B1ACED6A60059851F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		89E1E5851845FD5600477E03 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				89E1E5861845FD5600477E03 /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		D0183B9B181074E4000802F9 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				D0183B9C181074E4000802F9 /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		896DD50C1875464C00FECCC3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		896DD50D1875464C00FECCC3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		89A5FAEF183370EE0006DC79 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				FRAMEWORK_VERSION = 0.16.0;
+				PRODUCT_NAME = "Qeo.framework copy";
+			};
+			name = Debug;
+		};
+		89A5FAF0183370EE0006DC79 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				FRAMEWORK_VERSION = 0.16.0;
+				PRODUCT_NAME = "Qeo.framework copy";
+			};
+			name = Release;
+		};
+		89E1E58A1845FD5600477E03 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CONFIGURATION_BUILD_DIR = "$(SRCROOT)/Products/Debug";
+				DEAD_CODE_STRIPPING = NO;
+				GCC_PRECOMPILE_PREFIX_HEADER = NO;
+				GCC_PREFIX_HEADER = "QeoResources/QeoResources-Prefix.pch";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				INFOPLIST_FILE = "QeoResources/QeoResources-Info.plist";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Bundles";
+				MACOSX_DEPLOYMENT_TARGET = "";
+				ONLY_ACTIVE_ARCH = NO;
+				PRODUCT_NAME = Qeo;
+				SDKROOT = iphoneos;
+				STRINGS_FILE_OUTPUT_ENCODING = "UTF-8";
+				VERSION_INFO_FILE = "";
+				WRAPPER_EXTENSION = bundle;
+			};
+			name = Debug;
+		};
+		89E1E58B1845FD5600477E03 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CONFIGURATION_BUILD_DIR = "$(SRCROOT)/Products/Release";
+				DEAD_CODE_STRIPPING = NO;
+				GCC_PRECOMPILE_PREFIX_HEADER = NO;
+				GCC_PREFIX_HEADER = "QeoResources/QeoResources-Prefix.pch";
+				INFOPLIST_FILE = "QeoResources/QeoResources-Info.plist";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Bundles";
+				MACOSX_DEPLOYMENT_TARGET = "";
+				ONLY_ACTIVE_ARCH = NO;
+				PRODUCT_NAME = Qeo;
+				SDKROOT = iphoneos;
+				STRINGS_FILE_OUTPUT_ENCODING = "UTF-8";
+				VERSION_INFO_FILE = "";
+				WRAPPER_EXTENSION = bundle;
+			};
+			name = Release;
+		};
+		89E531E1187BEF4900E13398 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		89E531E2187BEF4900E13398 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		D0183B9F181074E4000802F9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "$(ARCHS_STANDARD_INCLUDING_64_BIT)";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = "";
+				ONLY_ACTIVE_ARCH = NO;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = "$(ARCHS_STANDARD_INCLUDING_64_BIT)";
+			};
+			name = Debug;
+		};
+		D0183BA0181074E4000802F9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "$(ARCHS_STANDARD_INCLUDING_64_BIT)";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = "";
+				ONLY_ACTIVE_ARCH = NO;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = "$(ARCHS_STANDARD_INCLUDING_64_BIT)";
+			};
+			name = Release;
+		};
+		D0183BA2181074E4000802F9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../qeo-c/qeo-native/Products/**",
+				);
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_PRECOMPILE_PREFIX_HEADER = NO;
+				GCC_PREFIX_HEADER = "";
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include,
+					"$(SRCROOT)/../qeo-c/qeo-native/Products/qeo-c-core.framework/Headers/**",
+				);
+				INFOPLIST_FILE = "Qeo/Qeo-Info.plist";
+				INFOPLIST_OUTPUT_FORMAT = "same-as-input";
+				INSTALL_PATH = "$(BUILT_PRODUCTS_DIR)";
+				LINK_WITH_STANDARD_LIBRARIES = NO;
+				MACH_O_TYPE = mh_object;
+				OTHER_LDFLAGS = "-ObjC";
+				PLIST_FILE_OUTPUT_FORMAT = "same-as-input";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRINGS_FILE_OUTPUT_ENCODING = "UTF-8";
+				USER_HEADER_SEARCH_PATHS = "$(SRCROOT)/../qeo-c/qeo-native/Products/qeo-c-core.framework/Headers/**";
+				WRAPPER_EXTENSION = framework;
+			};
+			name = Debug;
+		};
+		D0183BA3181074E4000802F9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../qeo-c/qeo-native/Products/**",
+				);
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_PRECOMPILE_PREFIX_HEADER = NO;
+				GCC_PREFIX_HEADER = "";
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include,
+					"$(SRCROOT)/../qeo-c/qeo-native/Products/qeo-c-core.framework/Headers/**",
+				);
+				INFOPLIST_FILE = "Qeo/Qeo-Info.plist";
+				INFOPLIST_OUTPUT_FORMAT = "same-as-input";
+				INSTALL_PATH = "$(BUILT_PRODUCTS_DIR)";
+				LINK_WITH_STANDARD_LIBRARIES = NO;
+				MACH_O_TYPE = mh_object;
+				OTHER_LDFLAGS = "-ObjC";
+				PLIST_FILE_OUTPUT_FORMAT = "same-as-input";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRINGS_FILE_OUTPUT_ENCODING = "UTF-8";
+				USER_HEADER_SEARCH_PATHS = "$(SRCROOT)/../qeo-c/qeo-native/Products/qeo-c-core.framework/Headers/**";
+				WRAPPER_EXTENSION = framework;
+			};
+			name = Release;
+		};
+		D0183BAC181077B4000802F9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				FRAMEWORK_VERSION = 0.16.0;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		D0183BAD181077B4000802F9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				FRAMEWORK_VERSION = 0.16.0;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		896DD50B1875464C00FECCC3 /* Build configuration list for PBXAggregateTarget "Documentation" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				896DD50C1875464C00FECCC3 /* Debug */,
+				896DD50D1875464C00FECCC3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		89A5FAEE183370EE0006DC79 /* Build configuration list for PBXAggregateTarget "qeo-c-core" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				89A5FAEF183370EE0006DC79 /* Debug */,
+				89A5FAF0183370EE0006DC79 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		89E1E5891845FD5600477E03 /* Build configuration list for PBXNativeTarget "QeoResources" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				89E1E58A1845FD5600477E03 /* Debug */,
+				89E1E58B1845FD5600477E03 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		89E531E0187BEF4900E13398 /* Build configuration list for PBXAggregateTarget "Tarball" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				89E531E1187BEF4900E13398 /* Debug */,
+				89E531E2187BEF4900E13398 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D0183B8E181074E4000802F9 /* Build configuration list for PBXProject "Qeo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D0183B9F181074E4000802F9 /* Debug */,
+				D0183BA0181074E4000802F9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D0183BA1181074E4000802F9 /* Build configuration list for PBXNativeTarget "Qeo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D0183BA2181074E4000802F9 /* Debug */,
+				D0183BA3181074E4000802F9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D0183BAB181077B4000802F9 /* Build configuration list for PBXAggregateTarget "Qeo.framework" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D0183BAC181077B4000802F9 /* Debug */,
+				D0183BAD181077B4000802F9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D0183B8B181074E4000802F9 /* Project object */;
+}

@@ -1,18 +1,16 @@
---- a/ssl/d1_both.c	2014-02-25 16:36:26.684497214 +0100
-+++ b/ssl/d1_both.c	2014-02-25 16:36:38.052497283 +0100
-@@ -217,8 +217,13 @@
+--- a/ssl/d1_both.c	2015-04-21 12:02:44.009309682 +0200
++++ b/ssl/d1_both.c	2015-04-21 12:03:42.568959359 +0200
+@@ -215,9 +215,11 @@
+ {
  
- 	if (frag->msg_header.is_ccs)
- 		{
--		EVP_CIPHER_CTX_free(frag->msg_header.saved_retransmit_state.enc_write_ctx);
--		EVP_MD_CTX_destroy(frag->msg_header.saved_retransmit_state.write_hash);
-+
-+		if (frag->msg_header.saved_retransmit_state.enc_write_ctx)
-+             EVP_CIPHER_CTX_free(frag->msg_header.saved_retransmit_state.enc_write_ctx);
-+        
+     if (frag->msg_header.is_ccs) {
+-        EVP_CIPHER_CTX_free(frag->msg_header.
++        if (frag->msg_header.saved_retransmit_state.enc_write_ctx)
++            EVP_CIPHER_CTX_free(frag->msg_header.
+                             saved_retransmit_state.enc_write_ctx);
+-        EVP_MD_CTX_destroy(frag->msg_header.
 +        if (frag->msg_header.saved_retransmit_state.write_hash)
-+            EVP_MD_CTX_destroy(frag->msg_header.saved_retransmit_state.write_hash);
-+
- 		}
- 	if (frag->fragment) OPENSSL_free(frag->fragment);
- 	if (frag->reassembly) OPENSSL_free(frag->reassembly);
++            EVP_MD_CTX_destroy(frag->msg_header.
+                            saved_retransmit_state.write_hash);
+     }
+     if (frag->fragment)

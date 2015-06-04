@@ -1,0 +1,77 @@
+// ext.findbugsHtml = true //uncomment for readable findbugs report. Don't check it in.
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'application'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/findbugs.gradle'
+
+
+group = 'org.qeo'
+version = project.qeoVersion
+mainClassName = "org.qeo.sample.simplechat.swing.QSimpleChat"
+
+//Set JDK source/target to version 6
+sourceCompatibility=1.6
+targetCompatibility=1.6
+
+eclipse {
+    jdt {
+        //set JDK source/target in eclipse to version 6
+        sourceCompatibility = 1.6
+        targetCompatibility = 1.6
+    }
+    classpath {
+        //Set eclipse properties to use JDK 6 JVM for compilation
+        containers.clear()
+        containers.add('org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.6')
+    }
+}
+
+task executableJar(type: Jar) {
+	dependsOn classes
+	description "Create an executable jar-file with all libraries packaged (for debugging)"
+	group "Build"
+	doFirst {
+	    from files(sourceSets.main.output.classesDir)
+    	from configurations.runtime.asFileTree.files.collect { zipTree(it) }
+		classifier "executable"
+
+	    manifest {
+    	    attributes 'Main-Class': mainClassName
+	    }
+	}
+}
+
+/*
+Compile and runtime dependencies have to be declared here.
+*/
+dependencies {
+	if (System.properties['qeo.src.qeo-java'] == null) {
+		//normal approach
+		compile group: 'org.qeo', name: 'qeo-java',         version: version
+		compile group: 'org.qeo', name: 'qeo-java',         version: version, classifier: 'native-host'
+	}
+	else {
+		//compile dependency from source
+		logger.error("ERROR: Compiling qeo-java from source for qeo-android-service is not yet working")
+		compile project(':qeo-java')
+	}
+}
+
+artifacts {
+	archives distZip
+}
+
+/*
+TODO Clean-up checkstyle and findbugs problems.
+*/
+project.findbugs.ignoreFailures = true
+
+checkstyleMain {
+    ignoreFailures = true
+}
+checkstyleTest {
+    ignoreFailures = true
+}

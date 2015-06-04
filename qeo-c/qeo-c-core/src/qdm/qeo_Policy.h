@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -21,22 +21,31 @@
 
 #include <qeo/types.h>
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 
 /**
  * The currently enforced policy
  */
 typedef struct {
-    /**
-     * [Key] Policy Sequence Nr.
-     */
+  /**
+   * [Key]
+   * Policy Sequence Nr.
+   */
     int64_t seqnr;
-    /**
-     * Policy content.
-     */
+  /**
+   * Policy content.
+   */
     char * content;
 } org_qeo_system_Policy_t;
 extern const DDS_TypeSupport_meta org_qeo_system_Policy_type[];
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* QDM_QEO_POLICY_H_ */
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2014 - Qeo LLC
+# Copyright (c) 2015 - Qeo LLC
 #
 # The source code form of this Qeo Open Source Project component is subject
 # to the terms of the Clear BSD license.
@@ -12,7 +12,7 @@
 # See LICENSE file for more details.
 
 
-#VG="valgrind --num-callers=50 --leak-check=full --show-reachable=yes --track-origins=yes --log-file=vg.%p"
+#VG="valgrind --num-callers=50 --leak-check=full --show-reachable=yes --track-origins=yes --error-limit=no --log-file=vg.%p"
 exit_code=0
 program=$1
 domain=$2
@@ -20,7 +20,7 @@ sec=$3
 prefix=$4
 cert=qeoCerts/first.pem
 key=qeoCerts/first-key.pem
-start_delay=7000
+start_delay=10000
 packets=4
 test_timeout=180
 
@@ -102,7 +102,7 @@ function find_fail()
 	then
 	    if [[ "$count" -gt $1 ]]
 	    then
-		echo "To much handshakes succeeded for $f , maybe some other test are running"
+		echo "Too many handshakes succeeded for $f , maybe some other tests are running"
 	    else
 		echo "Some handshakes have failed for $f"
 		exit_code=1
@@ -148,8 +148,8 @@ function test2()
 
     cleanup
 
-    TDDS_TCP_PORT=7400 ./${prefix}${program} -k ${prefix}${key} -c ${prefix}${cert} -wv -n $packets -i $domain -j ${prefix}${sec} -o $start_delay -y ${prefix}output1.txt > /dev/null &
-    TDDS_TCP_SERVER=localhost:7400 TDDS_UDP_MODE=disabled ./${prefix}${program} -k ${prefix}${key} -c ${prefix}${cert} -wv -n $packets -i $domain -j ${prefix}${sec} -o $start_delay -y ${prefix}output2.txt > /dev/null &
+    TDDS_TCP_PORT=7400 ${VG} ./${prefix}${program} -k ${prefix}${key} -c ${prefix}${cert} -wv -n $packets -i $domain -j ${prefix}${sec} -o $start_delay -y ${prefix}output1.txt > /dev/null &
+    TDDS_TCP_SERVER=localhost:7400 TDDS_UDP_MODE=disabled ${VG} ./${prefix}${program} -k ${prefix}${key} -c ${prefix}${cert} -wv -n $packets -i $domain -j ${prefix}${sec} -o $start_delay -y ${prefix}output2.txt > /dev/null &
 
     timeout 1
 
@@ -169,9 +169,9 @@ function test3()
 
     cleanup
 
-    TDDS_FORWARD=15 TDDS_TCP_PORT=15000 ./${prefix}${program} -k ${prefix}${key} -c ${prefix}${cert} -wv -n $packets -i $domain -j ${prefix}${sec} -o $start_delay -y ${prefix}output3.txt > /dev/null &
-    TDDS_TCP_SERVER=localhost:15000 TDDS_UDP_MODE=disabled ./${prefix}${program} -k ${prefix}${key} -c ${prefix}${cert} -wv -n $packets -i $domain -j ${prefix}${sec} -o $start_delay -y ${prefix}output1.txt > /dev/null &
-    ./${prefix}${program} -k ${prefix}${key} -c ${prefix}${cert} -wv -n $packets -i $domain -j ${prefix}${sec} -o $start_delay -y ${prefix}output2.txt > /dev/null &
+    TDDS_FORWARD=15 TDDS_TCP_PORT=15000 ${VG} ./${prefix}${program} -k ${prefix}${key} -c ${prefix}${cert} -wv -n $packets -i $domain -j ${prefix}${sec} -o $start_delay -y ${prefix}output3.txt > /dev/null &
+    TDDS_TCP_SERVER=localhost:15000 TDDS_UDP_MODE=disabled ${VG} ./${prefix}${program} -k ${prefix}${key} -c ${prefix}${cert} -wv -n $packets -i $domain -j ${prefix}${sec} -o $start_delay -y ${prefix}output1.txt > /dev/null &
+    ${VG} ./${prefix}${program} -k ${prefix}${key} -c ${prefix}${cert} -wv -n $packets -i $domain -j ${prefix}${sec} -o $start_delay -y ${prefix}output2.txt > /dev/null &
 #TDDS_IP_INTF=eth1 
     timeout 1
 

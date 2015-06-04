@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -16,6 +16,10 @@
 #define __cdr_h_
 
 #include "typecode.h"
+
+#ifndef CDR_DOFS
+#define	CDR_DOFS	0
+#endif
 
 #define	cdr_is_container(tc)	((tc) >= CDR_TYPECODE_STRUCT && (tc) <= CDR_TYPECODE_ARRAY)
 #define	cdr_is_struct(tc)	((tc) >= CDR_TYPECODE_STRUCT && (tc) <= CDR_TYPECODE_ENUM)

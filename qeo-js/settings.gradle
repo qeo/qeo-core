@@ -1,0 +1,4 @@
+include "qeo-js", "qeo-js-tests"
+rootProject.name = 'qeo-js-root'
+
+

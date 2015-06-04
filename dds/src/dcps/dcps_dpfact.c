@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -29,6 +29,9 @@
 #include "dcps_builtin.h"
 #include "dcps_dpfact.h"
 #include "error.h"
+#ifdef TCP_SUSPEND
+#include "bgns.h"
+#endif	
 #ifdef DDS_SECURITY
 #include "security.h"
 #ifdef DDS_NATIVE_SECURITY
@@ -136,7 +139,9 @@ DDS_DomainParticipant DDS_DomainParticipantFactory_create_participant (
 	dp->participant.p_permissions = permissions;
 	dp->participant.p_sec_caps = sec_caps;
 	dp->participant.p_sec_locs = NULL;
+#ifdef DDS_SECURITY
 	dp->participant.p_id_tokens = dp->participant.p_p_tokens = NULL;
+#endif
 	if (secure) {
 #ifdef DDS_NATIVE_SECURITY
 		dp->participant.p_id = local_identity;
@@ -189,7 +194,6 @@ DDS_DomainParticipant DDS_DomainParticipantFactory_create_participant (
 	dp->def_subscriber_qos = qos_def_subscriber_qos;
 	
 	nparticipants++;
-
 	lock_release (dp->lock);
 
 	if (autoenable_created_entities)
@@ -217,6 +221,9 @@ DDS_ReturnCode_t DDS_DomainParticipantFactory_delete_participant (DDS_DomainPart
 		return (DDS_RETCODE_PRECONDITION_NOT_MET);
 	}
 
+#ifdef TCP_SUSPEND
+	bgns_deactivate (dp);
+#endif
 #ifdef DCPS_BUILTIN_READERS
 	dcps_delete_builtin_readers (dp);
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -23,6 +23,7 @@
 
 extern int ctrace_used;
 extern int ctrace_saves;
+extern unsigned long ctrace_mask;
 
 #ifdef CTRACE_USED
 
@@ -51,6 +52,9 @@ void ctrc_mode (int cyclic);
 
 /* Set the trace mode to either cyclic (cyclic=1) or stop on full (cyclic=0). */
 
+void ctrc_mask (unsigned long ids);
+
+/* Enable only the ids in the bitset (default: all). */
 
 void ctrc_printd (unsigned id, unsigned index, const void *data, size_t length);
 

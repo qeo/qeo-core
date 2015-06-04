@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -28,9 +28,34 @@ void forwarder_config_public_locator(const char *ip,
 void forwarder_config_local_port(const char *port);
 
 /**
+ * Disable the notification service.
+ */
+void forwarder_disable_notification_service(void);
+
+/**
+ * Disable the forwarding service on this forwarder (...don't ask...).
+ */
+void forwarder_disable_forwarding_service(void);
+
+/**
+ * Retry when the factory creation of the forwarder failed.
+ * This can happen when a remote registration window is finished,
+ * but the forwarder is not registered in that time frame.
+ * Wait for "delay" seconds before trying again.
+ */
+void forwarder_retry_on_failed_remote_registration(int delay);
+
+/**
  * Set the time out period for discovering a local forwarder.
  */
 void forwarder_config_local_discovery(unsigned int discover_timeout);
+
+/**
+ * When calling this function, there will be no portmap added.
+ * Either a portmap is not needed (forwarder on gateway listening on public ip)
+ * or the user sets his own portmap. The chosen public port is written to path
+ */
+void forwarder_disable_portmap(char *path);
 
 /**
  * Set the initial UPnP-IGD discovery timeout (in ms) as well as the period

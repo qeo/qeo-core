@@ -1,0 +1,56 @@
+# This file contains proguard configuration that is used for debug and release builds.
+
+# callbacks only called from the JNI layer.
+-keep class * {
+    @org.qeo.jni.NativeCallback *;
+}
+# keep classes marked with NoProguard
+-keep class * {
+    @org.qeo.android.internal.NoProguard *;
+}
+
+# Don't do anything (especially don't obfuscate) QeoType classes.
+-keep class org.qeo.QeoType { *; }
+-keep @org.qeo.QeoType public class * { *; }
+
+# Some warnings that can be disabled.
+-dontwarn javax.naming.**
+-dontwarn javax.servlet.**
+
+# actionbarsherlock misses BuildConfig file in 4.4.0, hence next line is needed. See https://github.com/JakeWharton/ActionBarSherlock/issues/1001
+-dontwarn com.actionbarsherlock.internal.**
+
+-keep class com.actionbarsherlock.** { *; }
+-keep interface com.actionbarsherlock.** { *; }
+
+##############################
+# part for google-api-client #
+# ############################
+#http://code.google.com/p/google-api-java-client/source/browse/google-api-client-assembly/proguard-google-api-client.txt?r=3f98a58ffd74d9af661c0f79a8d17d7f7a4edef8
+# Needed by google-http-client to keep generic types and @Key annotations accessed via reflection
+
+-keepattributes Signature,RuntimeVisibleAnnotations,AnnotationDefault
+
+-keepclassmembers class * {
+@com.google.api.client.util.Key <fields>;
+}
+
+# Needed by Guava
+# See https://groups.google.com/forum/#!topic/guava-discuss/YCZzeCiIVoI
+
+-dontwarn sun.misc.Unsafe
+-dontwarn com.google.common.collect.MinMaxPriorityQueue
+
+# Needed by google-http-client-android when linking against an older platform version
+
+-dontwarn com.google.api.client.extensions.android.**
+
+# Needed by google-api-client-android when linking against an older platform version
+
+-dontwarn com.google.api.client.googleapis.extensions.android.**
+
+-keep class org.codehaus.jackson.JsonLocation { *; }
+##################################
+# end part for google-api-client #
+# ################################
+

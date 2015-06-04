@@ -61,32 +61,44 @@ task artifactDownloadUnzip() {
     //configuration parameters
     ext.outputDir = "${buildDir}/download"
     ext.useNativeUnzip = false
+    ext.appendName = false
+    ext.appendClassifier = false
 
     afterEvaluate {
         outputs.dir files(outputDir)
         project.configurations.downloadUnzip.resolvedConfiguration.resolvedArtifacts.each { artifact ->
             inputs.file artifact.file
-            filesToFetch += artifact.file
+            filesToFetch += artifact
         }
     }
     doLast {
-        filesToFetch.each { f ->
+        filesToFetch.each { artifact ->
+            def f = artifact.file
+            File out = new File(outputDir)
+            if (artifact instanceof ResolvedArtifact) {
+                if (appendName) {
+                    out = new File(out, artifact.name)
+                }
+                if (appendClassifier) {
+                    out = new File(out, artifact.classifier)
+                }
+            }
             if (useNativeUnzip) {
-                if (f.name.endsWith(".zip")) {
+                if (f.name.endsWith(".zip") || f.name.endsWith(".jar")) {
 	                // This enables the correct extraction of symbolic links on Un*x systems
 	                logger.info("unzipping (native) ${f} into ${outputDir}")
-	                mkdir outputDir
+	                mkdir out
 	                exec {
-	                    workingDir = outputDir
+	                    workingDir = out
 	                    commandLine = [ 'unzip', f ]
 	                }
                 }
                 else if (f.name.endsWith(".tgz")) {
                     // This enables the correct extraction of symbolic links on Un*x systems
                     logger.info("unzipping (native) ${f} into ${outputDir}")
-                    mkdir outputDir
+                    mkdir out
                     exec {
-                        workingDir = outputDir
+                        workingDir = out
                         commandLine = [ 'tar', '-zxf', f ]
                     }
                 }
@@ -97,17 +109,17 @@ task artifactDownloadUnzip() {
             else {
                 copy {
                     if (f.name.endsWith(".zip") || f.name.endsWith(".jar") || f.name.endsWith(".apk")) {
-                        logger.info("unzipping ${f} into ${outputDir}")
+                        logger.info("unzipping ${f} into ${out}")
                         from zipTree(f)
                     }
                     else if (f.name.endsWith(".tgz") || f.name.endsWith(".tar.gz")) {
-                        logger.info("untgz ${f} into ${outputDir}")
+                        logger.info("untgz ${f} into ${out}")
                         from tarTree(resources.gzip(f))
                     }
                     else {
                         throw new IllegalArgumentException("can't handle file for \"downloadUnzip\" configuration: ${f}");
                     }
-                    into file(outputDir)
+                    into out
                 }
             }
         }

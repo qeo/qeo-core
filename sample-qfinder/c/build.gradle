@@ -1,0 +1,8 @@
+
+// ext.cSdkSampleDebug = true //uncomment this to use DEBUG native libraries. Don't check this in.
+version = qeoVersion
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/klocwork.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/mwbuild.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/CSDKSample.gradle'
+

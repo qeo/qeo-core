@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -22,6 +22,7 @@
 #include <unistd.h>
 #endif
 #include "log.h"
+#include "prof.h"
 #include "error.h"
 #include "dcps.h"
 #include "guard.h"
@@ -131,11 +132,9 @@ void user_reader_notify (DiscoveredReader_t *rp, int new1)
 	if (!cp)
 		goto notif_err;
 
-	memcpy (hash.hash, &rp->dr_participant->p_guid_prefix, 
-						sizeof (GuidPrefix_t) - 4);
-	memcpy (&hash.hash [sizeof (GuidPrefix_t) - 4], &rp->dr_entity_id,
-							sizeof (EntityId_t));
-	memset (&hash.hash [12], 0, 4); 
+	endpoint_key_from_guid (&rp->dr_participant->p_guid_prefix,
+				&rp->dr_entity_id,
+				&hash);
 	lock_take (nrp->r_lock);
 	cache = nrp->r_cache;
 	cp->c_writer = cp->c_handle = rp->dr_handle;
@@ -183,11 +182,9 @@ void user_writer_notify (DiscoveredWriter_t *wp, int new1)
 	if (!cp)
 		goto notif_err;
 
-	memcpy (hash.hash, &wp->dw_participant->p_guid_prefix, 
-						sizeof (GuidPrefix_t) - 4);
-	memcpy (&hash.hash [sizeof (GuidPrefix_t) - 4], &wp->dw_entity_id,
-							sizeof (EntityId_t));
-	memset (&hash.hash [12], 0, 4); 
+	endpoint_key_from_guid (&wp->dw_participant->p_guid_prefix,
+				&wp->dw_entity_id,
+				&hash);
 	lock_take (rp->r_lock);
 	cache = rp->r_cache;
 	cp->c_writer = cp->c_handle = wp->dw_handle;
@@ -259,7 +256,7 @@ void user_notify_delete (Domain_t       *dp,
 	if (!error)
 		return;
 
-	warn_printf ("Deletion of discovered %s notification failed! (%d)", 
+	log_printf (DISC_ID, 0, "Deletion of discovered %s notification failed! (%d)", 
 							btype_str [type], error);
 }
 
@@ -290,13 +287,15 @@ void disc_new_matched_reader (Writer_t *wp, DiscoveredReader_t *peer_rp)
 	rtps_matched_reader_add (wp, peer_rp);
 #if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
 	if (NATIVE_SECURITY (dp) && (wp->w_submsg_prot || wp->w_payload_prot)) {
+		prof_start (disc_mr_sec);
+
 		crypto = sec_register_remote_datareader (wp->w_crypto,
 						 peer_rp->dr_participant->p_crypto,
 						 peer_rp,
 						 0,
 						 &ret);
 		if (!crypto) {
-			warn_printf ("disc_new_matched_reader: can't create crypto material!");
+			log_printf (DISC_ID, 0, "disc_new_matched_reader: can't create crypto material!");
 			return;
 		}
 		rtps_peer_reader_crypto_set (wp, peer_rp, crypto);
@@ -305,12 +304,14 @@ void disc_new_matched_reader (Writer_t *wp, DiscoveredReader_t *peer_rp)
 							  crypto,
 							  &msg.message_data);
 		if (ret) {
-			warn_printf ("disc_new_matched_reader: cant't create crypto tokens!");
+			log_printf (DISC_ID, 0, "disc_new_matched_reader: cant't create crypto tokens!");
 			return;
 		}
 		msg.message_class_id = GMCLASSID_SECURITY_DATAWRITER_CRYPTO_TOKENS;
 		ctt_send (dp, peer_rp->dr_participant, &wp->w_ep, &peer_rp->dr_ep, &msg);
 		sec_release_tokens (&msg.message_data);
+
+		prof_stop (disc_mr_sec, 1);
 	}
 #endif
 	dcps_publication_match (wp, 1, &peer_rp->dr_ep);
@@ -344,12 +345,14 @@ void disc_new_matched_writer (Reader_t *rp, DiscoveredWriter_t *peer_wp)
 	rtps_matched_writer_add (rp, peer_wp);
 #if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
 	if (NATIVE_SECURITY (dp) && (rp->r_submsg_prot || rp->r_payload_prot)) {
+		prof_start (disc_mw_sec);
+
 		crypto = sec_register_remote_datawriter (rp->r_crypto,
 						peer_wp->dw_participant->p_crypto,
 						peer_wp,
 						&ret);
 		if (!crypto) {
-			warn_printf ("disc_new_matched_writer: can't create crypto material!");
+			log_printf (DISC_ID, 0, "disc_new_matched_writer: can't create crypto material!");
 			return;
 		}
 		rtps_peer_writer_crypto_set (rp, peer_wp, crypto);
@@ -358,12 +361,14 @@ void disc_new_matched_writer (Reader_t *rp, DiscoveredWriter_t *peer_wp)
 							  crypto,
 							  &msg.message_data);
 		if (ret) {
-			warn_printf ("disc_new_matched_writer: cant't create crypto tokens!");
+			log_printf (DISC_ID, 0, "disc_new_matched_writer: cant't create crypto tokens!");
 			return;
 		}
 		msg.message_class_id = GMCLASSID_SECURITY_DATAREADER_CRYPTO_TOKENS;
 		ctt_send (dp, peer_wp->dw_participant, &rp->r_ep, &peer_wp->dw_ep, &msg);
 		sec_release_tokens (&msg.message_data);
+
+		prof_stop (disc_mw_sec, 1);
 	}
 #endif
 	dcps_subscription_match (rp, 1, &peer_wp->dw_ep);

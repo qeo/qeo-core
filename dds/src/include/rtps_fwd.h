@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -47,6 +47,14 @@ RMRXF rfwd_init (RMRXF rxfct, MEM_DESC msg_md, MEM_DESC el_md);
 void rfwd_final (void);
 
 /* Cleanup all forwarding related resources. */
+
+int rfwd_domain_init (unsigned id);
+
+/* Initialize forwarder data for a new domain. */
+
+void rfwd_domain_final (unsigned id);
+
+/* Free forwarder data for a domain. */
 
 int rfwd_locators_update (DomainId_t domain_id, unsigned id);
 

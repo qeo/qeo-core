@@ -2,7 +2,11 @@ qeoforwarder_0.1 {
 global:
     forwarder_config_public_locator;
     forwarder_config_local_port;
+    forwarder_disable_notification_service;
+    forwarder_disable_forwarding_service;
+    forwarder_retry_on_failed_remote_registration;
     forwarder_config_local_discovery;
+    forwarder_disable_portmap;
     forwarder_config_upnp;
     forwarder_start;
     forwarder_stop;

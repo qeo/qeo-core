@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -615,14 +615,14 @@ static void rtps_dtls_send_msgs (IP_CX *cxp)
 		for (mep = mp->first; mep; mep = mep->next) {
 			if ((mep->flags & RME_HEADER) != 0) {
 				n = sizeof (mep->header);
-				if (len + n > MAX_TX_SIZE)
+				if (len + n > rtps_max_tx_size)
 					break;
 			
 				memcpy (&rtps_tx_buf [len], &mep->header, n);
 				len += n;
 			}
 			if ((n = mep->length) != 0) {
-				if (len + n > MAX_TX_SIZE)
+				if (len + n > rtps_max_tx_size)
 					break;
 
 				if (mep->data != mep->d && mep->db)
@@ -650,7 +650,7 @@ static void rtps_dtls_send_msgs (IP_CX *cxp)
 					rtps_ip_trace (cxp->handle, 'T',
 						       &cxp->locator->locator,
 						       ap, cxp->dst_port,
-						       len);
+						       mp);
 				}
 #endif
 				++dtls->sent_msg_cnt;
@@ -699,7 +699,7 @@ static void rtps_dtls_receive (IP_CX *cxp)
 
 	do {
 		dtls->rstate = SSR_IDLE;
-		nread = SSL_read (dtls->ssl, rtps_rx_buf, MAX_RX_SIZE);
+		nread = SSL_read (dtls->ssl, rtps_rx_buf, rtps_max_rx_size);
 		error = SSL_get_error (dtls->ssl, nread);
 		rtps_dtls_start_protocol_timer (cxp);
 		switch (error) {

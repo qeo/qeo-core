@@ -1,0 +1,86 @@
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+
+import javax.xml.XMLConstants
+import javax.xml.transform.stream.StreamSource
+import javax.xml.validation.SchemaFactory
+
+group = "org.qeo"
+version = project.qeoVersion
+
+subprojects {
+    group = project.qeoGroup
+    version = project.qeoVersion
+}
+
+/**
+* Validate the QDM file using the QDM xsd scheme.
+*/
+task SDKSampleValidateQDM(description: 'Validate the QDM files according to the Qeo xsd scheme') << {
+    def xsdscheme = new File("${project.rootDir}/xsd/qeo_qdm.xsd")
+    fileTree("${project.rootDir}/qdm").grep(~/^.*\.xml$/).each {File file ->
+        logger.info("Validating " + file)
+        def factory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+        def schema = factory.newSchema(xsdscheme)
+        def validator = schema.newValidator()
+        try {
+            //validator.validate(new StreamSource(new StringReader(file.text)))
+            validator.validate(new StreamSource(new FileInputStream(file)))
+        }
+        catch (Exception e) {
+            //Catch exception and throw a new one where the filename is mentioned
+            throw new GradleException("validation error in ${file}\n" + e.getMessage())
+        }
+    }
+}
+
+task zipQDM(type: Zip, description: 'Create core QDM archive') {
+	dependsOn SDKSampleValidateQDM
+    from("${project.rootDir}/qdm") {
+        into('qdm')
+		include('catalog/**')
+    }
+    from("${project.rootDir}/xsd") {
+        into('xsd')
+    }
+}
+
+task zipQdmPublic(type: Zip, description: 'Create archive of public core QDMs') {
+    dependsOn SDKSampleValidateQDM
+    from("${project.rootDir}/qdm") {
+        into('qdm')
+        include('catalog/qeo_types.xml')
+        include('catalog/qeo_DeviceInfo.xml')
+        include('catalog/qeo_RegistrationRequest.xml')
+        include('catalog/qeo_RegistrationCredentials.xml')
+    }
+    from("${project.rootDir}/xsd") {
+        into('xsd')
+    }
+    classifier 'public'
+}
+
+task zipQdmApps(type: Zip, description: 'Create archive of application QDMs') {
+	dependsOn SDKSampleValidateQDM
+	from("${project.rootDir}/qdm") {
+		into('qdm')
+		include('apps/**')
+	}
+	classifier 'applications'
+}
+
+task zipQdmSamples(type: Zip, description: 'Create archive of sample application QDMs') {
+	dependsOn SDKSampleValidateQDM
+	from("${project.rootDir}/qdm") {
+		into('qdm')
+		include('samples/**')
+	}
+	classifier 'samples'
+}
+
+artifacts {
+    archives zipQDM
+    archives zipQdmPublic
+    archives zipQdmApps
+    archives zipQdmSamples
+}

@@ -1,0 +1,17 @@
+
+<FindBugsFilter>
+
+	<!-- Class org.qeo.android.internal.ParcelableException is not derived from an Exception, even though it is named as such -->
+	<Match>
+		<Class name="org.qeo.android.internal.ParcelableException"/>
+		<Bug pattern="NM_CLASS_NOT_EXCEPTION"/>
+	</Match>
+
+    <!-- null references as soon as possible to have them garbage collected sooner -->	
+    <Match>
+		<Class name="org.qeo.android.internal.QeoParceler"/>
+		<Bug pattern="DLS_DEAD_LOCAL_STORE_OF_NULL"/>
+	</Match>
+
+</FindBugsFilter>
+

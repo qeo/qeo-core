@@ -15,6 +15,9 @@ global:
     qeo_factory_close;
     qeo_version_string;
     qeo_security_set_init_openssl;
+    qeo_bgns_register;
+    qeo_bgns_suspend;
+    qeo_bgns_resume;
 
     /* api.h (qeo-c) */
     qeo_factory_create_event_reader;
@@ -28,9 +31,11 @@ global:
     qeo_state_reader_close;
     qeo_state_reader_foreach;
     qeo_state_reader_policy_update;
+    qeo_state_reader_bgns_notify;
     qeo_factory_create_state_change_reader;
     qeo_state_change_reader_close;
     qeo_state_change_reader_policy_update;
+    qeo_state_change_reader_bgns_notify;
     qeo_factory_create_state_writer;
     qeo_state_writer_close;
     qeo_state_writer_write;

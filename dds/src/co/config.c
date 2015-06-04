@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -51,6 +51,9 @@ typedef enum {
 #ifdef DDS_IPV6
       ,	G_IPv6
 #endif
+#ifdef TCP_SUSPEND
+      ,	G_BGNS
+#endif
 } GroupType_t;
 
 typedef struct par_val_st {
@@ -73,12 +76,8 @@ static ParVal_t common_pars [] = {
 	{ G_Common, DC_Environment, "ENVIRONMENT", V_Number, 0, NULL, {0}},
 	{ G_Common, DC_PurgeDelay,  "PURGE_DELAY", V_Number, 0, NULL, {0}},
 	{ G_Common, DC_SampleSize,  "MAX_SAMPLE",  V_Number, 0, NULL, {0}},
-#ifdef DDS_DEBUG
-	/* TODO: Remove this and all related code once dtls/tls are fully working */
-	{ G_Common, DC_NoSecurity,  "NOSECURITY",  V_Number, 0, NULL, {0}},
-#endif
 	{ G_Common, DC_Forward,     "FORWARD",     V_Number, 0, NULL, {0}},
-	{ G_Common, DC_LogDir,      "LOG_DIR",     V_String, 0, NULL, {0}}
+	{ G_Common, DC_LogDir,      "LOG_DIR",     V_String, 0, NULL, {0}},
 };
 
 #define N_COMMON_PARS	(sizeof (common_pars) / sizeof (ParVal_t))
@@ -183,9 +182,17 @@ static ParVal_t tcp_pars [] = {
 	{ G_TCP, DC_TCP_Mode,     "MODE",          V_Mode,   0, NULL, {0}},
 	{ G_TCP, DC_TCP_Port,     "PORT",          V_Number, 0, NULL, {0}},
 	{ G_TCP, DC_TCP_Server,   "SERVER",        V_String, 0, NULL, {0}},
+#ifdef DDS_IPV6
+	{ G_TCP, DC_TCP_Port6,    "PORT6",         V_Number, 0, NULL, {0}},
+	{ G_TCP, DC_TCP_Server6,  "SERVER6",       V_String, 0, NULL, {0}},
+#endif
 #ifdef DDS_SECURITY
 	{ G_TCP, DC_TCP_SecPort,  "SEC_PORT",      V_Number, 0, NULL, {0}},
 	{ G_TCP, DC_TCP_SecServer,"SEC_SERVER",    V_String, 0, NULL, {0}},
+#ifdef DDS_IPV6
+	{ G_TCP, DC_TCP_SecPort6,  "SEC_PORT6",    V_Number, 0, NULL, {0}},
+	{ G_TCP, DC_TCP_SecServer6,"SEC_SERVER6",  V_String, 0, NULL, {0}},
+#endif
 #endif
 	{ G_TCP, DC_TCP_Public,   "PUBLIC",        V_String, 0, NULL, {0}},
 	{ G_TCP, DC_TCP_Private,  "PRIVATE",       V_Mode,   0, NULL, {0}},
@@ -217,6 +224,30 @@ static ParVal_t ipv6_pars [] = {
 
 #endif
 
+#ifdef TCP_SUSPEND
+
+static ParVal_t bgns_pars [] = {
+	{ G_BGNS, DC_BGNS_Domain,    "DOMAIN",      V_Number, 0, NULL, {0}},
+	{ G_BGNS, DC_BGNS_Port,      "PORT",        V_String, 0, NULL, {0}},
+	{ G_BGNS, DC_BGNS_Server,    "SERVER",      V_String, 0, NULL, {0}}
+#ifdef DDS_IPV6
+      ,	{ G_BGNS, DC_BGNS_Port6,     "PORT6",       V_String, 0, NULL, {0}},
+	{ G_BGNS, DC_BGNS_Server6,   "SERVER6",     V_String, 0, NULL, {0}}
+#endif
+#ifdef DDS_SECURITY
+      ,	{ G_BGNS, DC_BGNS_SecPort,   "SEC_PORT",    V_String, 0, NULL, {0}},
+	{ G_BGNS, DC_BGNS_SecServer, "SEC_SERVER",  V_String, 0, NULL, {0}}
+#ifdef DDS_IPV6
+      ,	{ G_BGNS, DC_BGNS_SecPort6,  "SEC_PORT6",   V_String, 0, NULL, {0}},
+	{ G_BGNS, DC_BGNS_SecServer6,"SEC_SERVER6", V_String, 0, NULL, {0}}
+#endif
+#endif
+};
+
+#define	N_BGNS_PARS	(sizeof (bgns_pars) / sizeof (ParVal_t))
+
+#endif
+
 typedef struct par_group_st {
 	const char	*name;		/* Group name. */
 	unsigned	npars;		/* # of parameters. */
@@ -234,6 +265,9 @@ static ParGroup_t groups [] = {
 #endif
 #ifdef DDS_IPV6
       , { "IPV6", 0, {0}}
+#endif
+#ifdef TCP_SUSPEND
+      ,	{ "BGNS", 0, {0}}
 #endif
 };
 
@@ -282,6 +316,9 @@ int config_init (void)
 #endif
 #ifdef DDS_IPV6
 	config_init_group (ipv6_pars,   N_IPV6_PARS);
+#endif
+#ifdef TCP_SUSPEND
+	config_init_group (bgns_pars,   N_BGNS_PARS);
 #endif
 	return (DDS_RETCODE_OK);
 }
@@ -1070,10 +1107,79 @@ void config_dump (void)
 
 		if (pp->group)
 			dbg_printf ("%s_", groups [pp->group].name);
-		dbg_printf ("%s = ", pp->name);
+		dbg_printf ("%s=", pp->name);
 		dbg_printf ("%s", par2str (pp, buf, sizeof (buf)));
 		dbg_printf ("\r\n");
 	}
+	lock_release (cfg_lock);
+}
+
+static void config_list_all (void)
+{
+	ParVal_t	*pp;
+	GroupType_t	group = G_UDP;
+	unsigned	i, x = 0, d;
+
+	for (i = 0; i < N_CONFIG_PARS; i++) {
+		pp = parameters [i];
+		if (!pp)
+			continue;
+
+		if (pp->group != group) {
+			if (i) {
+				dbg_printf ("\r\n");
+				dbg_printf ("%s:\r\n\t", groups [pp->group].name);
+			}
+			else
+				dbg_printf ("\t");
+			group = pp->group;
+			x = 8;
+		}
+		d = strlen (pp->name) + 1;
+		if (x + d >= 80) {
+			dbg_printf ("\r\n\t");
+			x = 8;
+		}
+		dbg_printf ("%s ", pp->name);
+		x += d;
+	}
+	dbg_printf ("\r\n");
+}
+
+static void config_info_var (const char *arg)
+{
+	ParVal_t	*pp;
+	char		buf [128];
+	static const char *type_str [] = {
+		"<string>",
+		"<number>",
+		"<min>-<max>",
+		"ENABLE[D]|DISABLE[D]|PREFER[ED]"
+	};
+
+	pp = config_lookup (arg);
+	if (!pp) {
+		dbg_printf ("No such variable!\r\n");
+		return;
+	}
+	dbg_printf ("[TDDS_]");
+	if (pp->group != G_Common)
+		dbg_printf ("%s_", groups [pp->group].name);
+	dbg_printf ("%s", pp->name);
+	if (pp->valid)
+		dbg_printf ("=%s", par2str (pp, buf, sizeof (buf)));
+	dbg_printf ("\r\n\tId: %u", pp->id);
+	dbg_printf ("\r\n\tExpects: %s", type_str [pp->type]);
+	dbg_printf ("\r\n\tNotification: %s\r\n", (pp->notify) ? "enabled" : "disabled");
+}
+
+void config_info (const char *arg)
+{
+	lock_take (cfg_lock);
+	if (arg [0] == '?' && arg [1] == '\0')
+		config_list_all ();
+	else
+		config_info_var (arg);
 	lock_release (cfg_lock);
 }
 

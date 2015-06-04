@@ -1,0 +1,40 @@
+ext.artifactoryPomPackaging = "tgz"
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+
+version = project.qeoVersion
+
+generateTypes {
+    ext.language = 'c'
+    ext.outputDir = "${buildDir}/gen-src/c"
+    ext.qdms = [
+        file("${project.rootDir}/qdm/catalog/qeo_types.xml"),
+        file("${project.rootDir}/qdm/catalog/qeo_DeviceInfo.xml"),
+    ]
+}
+
+task zipGeneratedCode(type: Tar, description: 'Archive generated code for public Qeo types') {
+    dependsOn generateTypes
+    compression = Compression.GZIP
+    from("${buildDir}/gen-src/c") {
+        into('qdm/c')
+        include('**')
+    }
+}
+
+task zipGeneratedCodeHeaders(type: Tar, description: 'Archive generated code (headers only) for public Qeo types') {
+    dependsOn generateTypes
+    compression = Compression.GZIP
+    from("${buildDir}/gen-src/c") {
+        into('qdm/c')
+        include('*.h')
+    }
+    classifier 'headers'
+}
+
+artifacts {
+    archives zipGeneratedCode
+    archives zipGeneratedCodeHeaders
+}

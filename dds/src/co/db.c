@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -202,7 +202,7 @@ static DB *db_alloc_db (size_t size, int linear)
 				return (NULL);
 			}
 #endif
-			dbp = mm_fcts.alloc_ ((size + 3 + DB_HDRSIZE) & ~3);
+			dbp = Alloc ((size + 3 + DB_HDRSIZE) & ~3);
 			if (!dbp) {
 				lock_release (db_lock);
 				err_printf ("db_alloc_db: out of memory!\r\n");
@@ -295,7 +295,7 @@ DB *db_alloc_rx (void)
 		mdata_pool->md_xcount++;
 		if (mdata_pool->md_xcount > mdata_pool->md_mxcount)
 			mdata_pool->md_mxcount = mdata_pool->md_xcount;
-		dbp = mm_fcts.alloc_ (mdata_pool->md_esize);
+		dbp = Alloc (mdata_pool->md_esize);
 		if (!dbp) {
 			lock_release (db_lock);
 			return (NULL);
@@ -375,7 +375,7 @@ void db_free_data (DB *dp)
 					SUB_ULLONG (cur_balloc_size, dp->size + DB_HDRSIZE);
 					num_bfrees++;
 				}
-				mm_fcts.free_ (dp);
+				Free (dp);
 				lock_release (stats_lock);
 			}
 		}

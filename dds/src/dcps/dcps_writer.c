@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -273,7 +273,7 @@ DDS_InstanceHandle_t DDS_DataWriter_register_instance_w_timestamp (
 	ctrc_contd (time, sizeof (*time));
 	ctrc_endd ();
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_register_instance (wp, data, 0, &ftime));
 }
 
@@ -365,7 +365,7 @@ DDS_ReturnCode_t DDS_DataWriter_unregister_instance_w_timestamp (
 	ctrc_contd (time, sizeof (*time));
 	ctrc_endd ();
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_unregister_instance (wp, instance_data, 0, handle, &ftime, NULL));
 }
 
@@ -400,7 +400,7 @@ DDS_ReturnCode_t DDS_DataWriter_unregister_instance_w_timestamp_directed (
 	ctrc_contd (dests, sizeof (*dests));
 	ctrc_endd ();
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_unregister_instance (wp, data, 0, handle, &ftime, dests));
 }
 
@@ -669,7 +669,7 @@ DDS_ReturnCode_t DDS_DataWriter_write_w_timestamp (
 	ctrc_contd (time, sizeof (*time));
 	ctrc_endd ();
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_write (wp, data, 0, handle, &ftime, NULL));
 }
 
@@ -707,7 +707,7 @@ DDS_ReturnCode_t DDS_DataWriter_write_w_timestamp_directed (
 	ctrc_contd (dests, sizeof (dests));
 	ctrc_endd ();
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_write (wp, data, 0, handle, &ftime, dests));
 }
 
@@ -809,7 +809,7 @@ DDS_ReturnCode_t DDS_DataWriter_dispose_w_timestamp (
 	ctrc_contd (time, sizeof (*time));
 	ctrc_endd ();
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_dispose (wp, data, 0, handle, &ftime, NULL));
 }
 
@@ -847,7 +847,7 @@ DDS_ReturnCode_t DDS_DataWriter_dispose_w_timestamp_directed (
 	ctrc_contd (&dests, sizeof (dests));
 	ctrc_endd ();
 
-	FTIME_SET (ftime, time->sec, time->nanosec);
+	time2ftime ((const Time_t *) time, &ftime);
 	return (dcps_dispose (wp, data, 0, handle, &ftime, dests));
 }
 

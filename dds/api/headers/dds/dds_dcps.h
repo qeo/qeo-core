@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -395,8 +395,10 @@ DDS_SEQUENCE(DDS_QosPolicyCount, DDS_QosPolicyCountSeq);
 
 /* === Builtin Topics ======================================================= */
 
+#define	DDS_BUILTIN_TOPIC_SIZE_NATIVE	4
+
 typedef struct {
-	DDS_BUILTIN_TOPIC_TYPE_NATIVE value [3];
+	DDS_BUILTIN_TOPIC_TYPE_NATIVE value [DDS_BUILTIN_TOPIC_SIZE_NATIVE];
 } DDS_BuiltinTopicKey_t;
 
 typedef struct {

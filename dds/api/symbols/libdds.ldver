@@ -1,6 +1,12 @@
-/* Auto generated file - Wed Jun 26 18:31:25 CEST 2013 - tools/build_ldver.sh */
+/* Auto generated file - Wed Jan 7 14:00:24 CET 2015 - tools/build_ldver.sh */
 dds_0.1 {
 global:
+	DDS_Activities_client_info;
+	DDS_Activities_notify;
+	DDS_Activities_register;
+	DDS_Activities_resume;
+	DDS_Activities_suspend;
+	DDS_Activities_unnotify;
 	DDS_alloc_fcts_set;
 	DDS_AnnotationDescriptor__alloc;
 	DDS_AnnotationDescriptor__clear;
@@ -62,6 +68,7 @@ global:
 	DDS_DataReader_delete_contained_entities;
 	DDS_DataReader_delete_readcondition;
 	DDS_DataReader_enable;
+	DDS_DataReader_get_data_tag;
 	DDS_DataReader_get_instance_handle;
 	DDS_DataReader_get_key_value;
 	DDS_DataReader_get_listener;
@@ -107,6 +114,7 @@ global:
 	DDS_DataSeq__clear;
 	DDS_DataSeq__free;
 	DDS_DataSeq__init;
+	DDS_DataWriter_add_data_tag;
 	DDS_DataWriter_assert_liveliness;
 	DDS_DataWriter_dispose;
 	DDS_DataWriter_dispose_directed;
@@ -383,6 +391,7 @@ global:
 	DDS_DynamicTypeMembersByName__clear;
 	DDS_DynamicTypeMembersByName__reset;
 	DDS_DynamicType_register;
+	DDS_DynamicType_set_type;
 	DDS_DynamicTypeSupport_create_type_support;
 	DDS_DynamicTypeSupport_delete_type_support;
 	DDS_DynamicTypeSupport_get_type;
@@ -516,6 +525,7 @@ global:
 	DDS_Parameters__clear;
 	DDS_parameter_set;
 	DDS_Parameters__reset;
+	DDS_parameter_unset;
 	DDS_ParticipantBuiltinTopicData__alloc;
 	DDS_ParticipantBuiltinTopicData__clear;
 	DDS_ParticipantBuiltinTopicData__free;
@@ -577,16 +587,21 @@ global:
 	DDS_SampleInfoSeq__free;
 	DDS_SampleInfoSeq__init;
 	DDS_schedule;
+	DDS_Security_cleanup_credentials;
+	DDS_Security_enable_logging;
+	DDS_Security_log;
 	DDS_Security_permissions_changed;
 	DDS_Security_permissions_notify;
+	DDS_Security_qeo_write_policy_version;
+	DDS_Security_revoke_participant;
 	DDS_Security_set_credentials;
-	DDS_Security_cleanup_credentials;
+	DDS_Security_set_crypto;
 	DDS_Security_set_library_init;
 	DDS_Security_set_library_lock;
+	DDS_Security_set_log_options;
 	DDS_Security_set_policy;
-	DDS_Security_unset_library_lock;
 	DDS_Security_topics_reevaluate;
-	DDS_Security_qeo_write_policy_version;
+	DDS_Security_unset_library_lock;
 	dds_seq_append;
 	dds_seq_cleanup;
 	dds_seq_copy;
@@ -606,6 +621,7 @@ global:
 	DDS_set_pool_constraints;
 	DDS_set_purge_delay;
 	DDS_SP_access_db_cleanup;
+	DDS_SP_access_db_dump;
 	DDS_SP_add_domain;
 	DDS_SP_add_participant;
 	DDS_SP_add_partition;
@@ -620,20 +636,22 @@ global:
 	DDS_SP_get_topic_access;
 	DDS_SP_get_topic_handle;
 	DDS_SP_init_engine;
+	DDS_SP_init_library;
+	DDS_SP_parse_xml;
 	DDS_SP_remove_domain;
-	DDS_SP_remove_fine_grained_topic;
 	DDS_SP_remove_fine_grained_app_topic;
+	DDS_SP_remove_fine_grained_topic;
 	DDS_SP_remove_participant;
 	DDS_SP_remove_partition;
 	DDS_SP_remove_topic;
 	DDS_SP_set_domain_access;
+	DDS_SP_set_extra_authentication_check;
 	DDS_SP_set_fine_grained_app_topic;
 	DDS_SP_set_fine_grained_topic;
-	DDS_SP_set_extra_authentication_check;
 	DDS_SP_set_participant_access;
 	DDS_SP_set_partition_access;
-    DDS_SP_set_policy;
-    DDS_SP_set_policy_cb;
+	DDS_SP_set_policy;
+	DDS_SP_set_policy_cb;
 	DDS_SP_set_topic_access;
 	DDS_SP_set_userdata_match_cb;
 	DDS_SP_update_done;

@@ -1,0 +1,27 @@
+//The artifactory.gradle file will be used as a helper function in order to use the functionality of artifactory.
+ext.androidLibrary = true
+ext.androidPublishJar = true
+ext.hasAidl = true
+ext.javadocExclude = 'org/qeo/android/internal/**'
+ext.findbugsExclude = ["**/org/qeo/android/internal/IServiceQeo**"]
+//ext.findbugsHtml = true //enable this to genereate findbugs html instead of xml for local development. don't push this!
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/findbugs.gradle'
+
+android.noDeviceTests = true //no device tests for this project
+
+dependencies {
+	if (System.properties['qeo.src.qeo-java'] == null) {
+		//normal approach
+		compile group: project.javaGroup, name: 'qeo-java-core', version: project.javaVersion
+	}
+	else {
+		//compile dependency from source
+		compile project(':qeo-java-core')
+	}
+}
+
+ext.defaultExtension = "aar"
+

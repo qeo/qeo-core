@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -1568,7 +1568,7 @@ static size_t cdr_parse_string (const unsigned char *src,
 
 			/* Key data requested. */
 			if (l) {
-				if ((dcp = mm_fcts.alloc_ (l)) == NULL)
+				if ((dcp = Alloc (l)) == NULL)
 					return (0);
 			}
 			else
@@ -2383,7 +2383,7 @@ static size_t cdr_parse_array (const unsigned char *src,
 	Type		*tp;
 	DynData_t	*p;
 	size_t		dofs;
-	int		dump;
+	int		dump = 0;
 
 	for (i = 1; i < atp->nbounds; i++)
 		nelems *= atp->bound [i];
@@ -2459,7 +2459,7 @@ static size_t cdr_parse_seqmap (const unsigned char *src,
 	uint32_t	nelem;
 	unsigned	i, n, dofs, s, ts;
 	size_t		esize;
-	int		dump;
+	int		dump = 0;
 	
 	tp = real_type_ptr (stp->collection.type.scope,
 			    stp->collection.element_type);
@@ -2526,7 +2526,7 @@ static size_t cdr_parse_seqmap (const unsigned char *src,
 
 					/* Key data requested. */
 					if (nelem &&
-					    (dp = mm_fcts.alloc_ (nelem * 
+					    (dp = Alloc (nelem * 
 					       stp->collection.element_size)) == NULL)
 						return (0);
 					else

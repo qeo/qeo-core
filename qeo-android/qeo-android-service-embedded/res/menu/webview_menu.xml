@@ -1,0 +1,10 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android" >
+
+    <item
+        android:id="@+id/OTC_Login"
+        android:showAsAction="ifRoom"
+        android:title="@string/otc_login"
+        android:visible="true">
+    </item>
+
+</menu>

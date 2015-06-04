@@ -1,0 +1,54 @@
+
+//execute with "-PserviceClassifier=debug" to use debug service
+//execute with "-PserviceClassifier=release" to use release service (notice you'll have to accept the manifest manually)
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+
+apply from: "serviceInstaller.gradle"
+
+checkstyleMain {
+    //disable this task, it's all testrelated code
+    enabled = false
+}
+
+checkstyleTest {
+    //add main sourcetree to test sourcetree to apply test coding conventions
+    source "src"
+}
+
+task jarAndroidClasses(type: Jar) {
+    dependsOn assembleDebug
+    File dir = file("${buildDir}/intermediates/classes/debug")
+    from dir
+    File dir2 = file("${buildDir}/intermediates/classes/test/debug")
+    from (dir2) {
+        include "org/qeo/testframework/**"
+    }
+    exclude "org/qeo/android/library/**" //don't include the BuildConfig file
+    doFirst {
+        assert (dir.exists())
+        assert (dir2.exists())
+    }
+}
+
+dependencies {
+    compile project(':qeo-android')
+    androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'tests', ext: "jar"
+    androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'testlib', ext: "jar"
+}
+
+File testprogramApk = file("${buildDir}/outputs/apk/qeo-android-tests-debug-unaligned.apk")
+File testsApk = file("${buildDir}/outputs/apk/qeo-android-tests-debug-test-unaligned.apk")
+
+artifacts {
+    archives jarAndroidClasses //publish classes
+    afterEvaluate {
+        archives file: testprogramApk, name: project.name, classifier: 'testprogram', builtBy:assembleDebug
+        archives file: testsApk, name: project.name, classifier: 'tests', builtBy:assembleDebugTest
+    }
+
+}
+
+
+

@@ -1,0 +1,8 @@
+[meta]
+# application name
+appname = qsimplechat
+# manifest file format version
+version = 1
+
+[application]
+org::qeo::sample::simplechat::ChatMessage=rw

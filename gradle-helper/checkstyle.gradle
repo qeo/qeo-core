@@ -179,6 +179,8 @@ class DownloadFileTask extends DefaultTask {
     }
 }
 
+def noAbortProperty = "noAbortCheckstyle"
+
 checkstyleMain {
     configFile = project.file ("$buildDir/checkstyle.xml")
     if (project.hasProperty('android')){
@@ -194,6 +196,10 @@ checkstyleMain {
 				}
 			}
 		}
+    }
+    if (project.hasProperty(noAbortProperty)) {
+        //to be used if jenkins wants to interprete the results
+        ignoreFailures = Boolean.parseBoolean(project.getProperty(noAbortProperty))
     }
 }
 
@@ -212,6 +218,10 @@ checkstyleTest {
 				}
 			}
 		}
+    }
+    if (project.hasProperty(noAbortProperty)) {
+        //to be used if jenkins wants to interprete the results
+        ignoreFailures = Boolean.parseBoolean(project.getProperty(noAbortProperty))
     }
 }
 

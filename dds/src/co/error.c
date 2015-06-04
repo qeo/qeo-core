@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -65,7 +65,7 @@
 #define	ERROR_ACTION	(ACT_PRINT_ERR | LOGF)
 #endif
 #ifndef FATAL_ACTION
-#define	FATAL_ACTION	(ACT_PRINT_ERR | LOGF | ACT_EXIT)
+#define	FATAL_ACTION	(ACT_PRINT_ERR | LOGF)
 #endif
 
 #ifdef _WIN32
@@ -241,26 +241,47 @@ unsigned log_logged (unsigned id, unsigned level)
 
 /* err_actions_set -- Set/replace all actions for the given error level. */
 
-void err_actions_set (ErrLevel_t level, unsigned acts)
+unsigned err_actions_set (ErrLevel_t level, unsigned acts)
 {
-	if (level <= EL_FATAL)
+	unsigned	prev;
+
+	if (level <= EL_FATAL) {
+		prev = cur_actions [level];
 		cur_actions [level] = acts;
+	}
+	else
+		prev = 0;
+	return (prev);
 }
 
 /* err_actions_add -- Add actions to the given error level. */
 
-void err_actions_add (ErrLevel_t level, unsigned acts)
+unsigned err_actions_add (ErrLevel_t level, unsigned acts)
 {
-	if (level <= EL_FATAL)
+	unsigned	prev;
+
+	if (level <= EL_FATAL) {
+		prev = cur_actions [level];
 		cur_actions [level] |= acts;
+	}
+	else
+		prev = 0;
+	return (prev);
 }
 
 /* err_actions_remove -- Remove actions from the given error level. */
 
-void err_actions_remove (ErrLevel_t level, unsigned acts)
+unsigned err_actions_remove (ErrLevel_t level, unsigned acts)
 {
-	if (level <= EL_FATAL && acts)
+	unsigned	prev;
+
+	if (level <= EL_FATAL && acts) {
+		prev = cur_actions [level];
 		cur_actions [level] &= ~acts;
+	}
+	else
+		prev = 0;
+	return (prev);
 }
 
 #ifdef _WIN32
@@ -309,11 +330,7 @@ static void do_actions (ErrLevel_t level,
 {
 	FILE		*f;
 	struct timeval	tv;
-#ifdef _WIN32
-	struct tm	tm_data, *tm = &tm_data;
-#else
-	struct tm	*tm;
-#endif
+	struct tm	tm_data, *tm;
 	char		tmbuf [40];
 	int		n;
 #ifndef NO_SYSLOG
@@ -405,8 +422,9 @@ static void do_actions (ErrLevel_t level,
 			gettimeofday (&tv, NULL);
 #ifdef _WIN32
 			_localtime32_s (&tm_data, &tv.tv_sec);
+			tm = &tm_data;
 #else
-			tm = localtime (&tv.tv_sec);
+			tm = localtime_r (&tv.tv_sec, &tm_data);
 			if (!tm) {
 #ifdef LOG_DATE
 				fprintf (f, "\?\?\?\?-\?\?\?-\?\? ");
@@ -440,11 +458,7 @@ static void do_actions (ErrLevel_t level,
 	}
 	if ((act_flags & ACT_EXIT) != 0) {
 		printf ("Exiting program!\r\n");
-#ifdef USE_ABORT
-		abort ();
-#else
-		exit (1);
-#endif
+		exit (0);
 	}
 }
 
@@ -634,12 +648,31 @@ void dbg_print_region (const void *dstp, size_t length, int show_addr, int ofs)
 	}
 }
 
-void dbg_print_time (const FTime_t *t)
+static char *ftime_str (const FTime_t *t, char buf [])
 {
+#if 0
 	FTime_t	rel = *t;
 
 	FTIME_SUB (rel, sys_startup_time);
-	dbg_printf ("%d.%09us", FTIME_SEC (rel), FTIME_NSEC (rel));
+	sprintf (buf, "%d.%09us", FTIME_SEC (rel), FTIME_NSEC (rel));
+#else
+	Time_t	tt;
+	time_t	time;
+
+	ftime2time (t, &tt);
+	time = tt.seconds;
+	ctime_r (&time, buf);
+	buf [strlen (buf) - 1] = '\0';
+	sprintf (buf + strlen (buf), " 0.%09us", tt.nanos);
+#endif
+	return (buf);
+}
+
+void dbg_print_time (const FTime_t *t)
+{
+	char	buf [32];
+
+	dbg_printf ("%s", ftime_str (t, buf));
 }
 
 /* dbg_indent -- Set the indent string (e.g. <TAB> or ' '*n). */
@@ -748,6 +781,13 @@ void log_print_region (unsigned   id,
 	}
 }
 
+void log_print_time (unsigned id, unsigned level, const FTime_t *t)
+{
+	char	buf [32];
+
+	log_printf (id, level, "%s", ftime_str (t, buf));
+}
+
 void log_flush (unsigned id, unsigned level)
 {
 	unsigned	acts;
@@ -805,7 +845,7 @@ void fatal_printf (const char *fmt, ...)
 	va_end (arg);
 	do_actions (EL_FATAL, cur_actions [EL_FATAL], "Fatal", sbuf, 1);
 #ifdef USE_ABORT
-	abort();
+	abort ();
 #else
 	exit (1);
 #endif

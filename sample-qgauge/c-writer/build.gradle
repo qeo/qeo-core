@@ -1,0 +1,28 @@
+
+version = qeoVersion
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/klocwork.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/mwbuild.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/CSDKSample.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+
+generateTypes {
+    language = "c"
+    //note: generated files have to be listed in .gitignore to avoid them being checkedin
+    qdms = ["samples/QGauge_NetStatMessage.xml"]
+}
+
+clean.doLast {
+    //remove generated files
+    project.delete file("src/QGauge_NetStatMessage.c")
+    project.delete file("src/QGauge_NetStatMessage.h")
+}
+
+dependencies {
+    //for codegen
+    generated "org.qeo:qeo-qdm:${project.qeoVersion}:samples@zip"
+}
+
+
+
+

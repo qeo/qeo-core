@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <include file="qeo_types.xml"/>
+  <module name="org::qeo::communication::sessionlog">
+    <doc>
+      This QDM models the communication sessions (voice and video calls).  
+      It is agnostic of the specific communication technology (PSTN, cellular, VoIP,...) in use.  
+      The data model represents both ongoing calls and historical data (i.e. a call log) in a single session log.
+
+      The goal of this QDM is not to manipulate (set-up, tear down,...) these communication sessions, but to provide 
+      a view on which calls are currently ongoing, and which calls have been made or missed in the past.
+
+      The basic principle is that each device that functions as a call end-point (a gateway terminating VoIP, 
+      a cell phone, an IP DECT phone, ...) publishes its own session log containing details of the calls it is handling 
+      or has handled in the past.
+    </doc>
+
+    <struct name="Log" behavior="state">
+      <doc>
+        This topic advertises the presence of a session log on a device.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>
+          The unique id of the session log.
+        </doc>
+      </member>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId">
+        <doc>
+          The Qeo Device ID of the device publishing this log.
+        </doc>
+      </member>
+      <member name="name" type="string">
+        <doc>
+          This is a friendly name for the session log.  E.g. "Tom's cell phone"
+        </doc>
+      </member>
+      <member name="numEntries" type="int32">
+        <doc>
+          The total number of LogEntries in this Log.
+        </doc>
+      </member>
+      <member name="numIncomingSessions" type="int32">
+        <doc>
+          The number of incoming sessions on this device.  This does not necessarily match the amount of
+          LogEntries (for incoming calls) in this Log, because older LogEntries can be cleaned-up at some point.
+        </doc>
+      </member>
+      <member name="numOutgoingSessions" type="int32">
+        <doc>
+          The number of outgoing sessions on this device. This does not necessarily match the amount of
+          LogEntries (for outgoing calls) in this Log, because older LogEntries can be cleaned-up at some point.
+        </doc>
+      </member>
+    </struct>
+
+    <struct name="LogEntry" behavior="state">
+      <doc>
+        This topic represents individual log entries.
+        It is up to the discretion of the session log implementer to decide on how many log entries are to be kept in the log. 
+        When the log is full and a new entry needs to be added, the oldest one should be removed.
+      </doc>
+      <member name="id" type="int32" key="true">
+        <doc>
+          A unique id for the log entry.  In theory, this field on its own should be the key.
+          But, we want one particular log entry (uniquely defined by this id) to be only available on
+          one particular Log at a time.  Hence, we combine both "id" and "logId" fields as a key.
+        </doc>
+      </member>
+      <member name="logId" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>
+          The id of the Log that contains this entry.
+        </doc>
+      </member>
+      <member name="signalingDirection" type="int32">
+        <doc>
+          1=Incoming; 2=Outgoing
+          Incoming = Session terminated by the device logging the entry
+          Outgoing = Session started by the device logging the entry
+        </doc>
+      </member>
+      <member name="initiator" type="string">
+        <doc>
+          This is the Signalling System and address of the calling party,
+          format according to the appropriate signalling system
+          eg POTS tel. no = POTS:+3234436411;
+          eg SIP From-address = SIP:bob@biloxi.example.com
+          Initiator='Private' means that the Initiator has made an anonymous
+          call (e.g. hidden caller number on a cell phone).
+        </doc>
+      </member>
+      <member name="responder" type="string">
+        <doc>
+          This is the address of the called party, format according to the
+          appropriate signalling system (see "initiator").
+        </doc>
+      </member>
+      <member name="state" type="int32">
+        <doc>
+          1=IDLE
+          2=SESSION DELIVERED
+          3=CONNECTED
+          4=DISCONNECTED
+          5=ALERTING
+          6=DIALING
+        </doc>
+      </member>
+      <member name="terminationReason" type="int32">
+        <doc>
+          1=NONE  Call ongoing
+          2=UNKNOWN Call release reason not known
+          3=NO_EXTENSIONS_MAPPED No incoming mapping found
+          4=NO_EXTENSIONS_AVAILABLE The sess was not able to be initiated due to no device that had an incoming session mapping was available
+          5=ANONYMOUS_session_REJECTION Anonymous session rejected (Initiator = Private)
+          6=SESSION_WAITING_REJECTED  The session is rejected by the application because of session waiting reject persistency
+          7=SESSION_FORWARDING_UNCONDITIONAL The session is forwarded unconditional
+          8=SESSION_FORWARDING_BUSY  The session is forwarded due to busy subscriber
+          9=SESSION_FORWARDING_NO_REPLY  The session is forwarded because the CF no reply timer expired
+          10=LOCAL_INTERNAL_DISCONNECT  The application disconnected the session before network signalling could take place
+          11=LOCAL_DISCONNECT  The local device ended the session
+          12=LOCAL_FORBIDDEN  CAC does not allow the session
+          13=LOCAL_TIMEOUT  A timeout in the local device decided to end the session
+          14=LOCAL_MEDIA_ERROR Local Media error occured
+          15=LOCAL_PRIORITY  The session is overruled by a higher priority session
+          16=LOCAL_REJECT  The local user rejects the session
+          17=LOCAL_TRANSFER  Call disconnected due to user-triggered session transfer
+          18=LOCAL_INTERNAL_ERROR  An internal error occured
+          19=REMOTE_DISCONNECT  The remote side disconnects the session
+          20=REMOTE_BAD_REQUEST  The remote side cannot handle your request
+          21=REMOTE_FORBIDDEN  The network forbids to make the session
+          22=REMOTE_NOT_FOUND  The requested party is not found
+          23=REMOTE_REJECT  The remote party rejected the session
+          24=REMOTE_NOT_ALLOWED  The network does not allow to end a session to the responder
+          25=REMOTE_NOT_ACCEPTABLE  The network does not accept your request to the responder
+          26=REMOTE_TIMEOUT A network timeout occured
+          27=REMOTE_UNAVAILABLE  The responder is temporary unavailable
+          28=REMOTE_BUSY  The responder party is busy
+          29=REMOTE_NOT_SUPPORTED  The requested media is not supported
+          30=REMOTE_SESSION_FAILURE  A general session failure occured
+          31=REMOTE_NETWORK_FAILURE  A network failure occured
+        </doc>
+      </member>
+      <member name="startTime" type="int64">
+        <doc>UTC coordinate, seconds since Jan 1, 1970</doc>
+      </member>
+      <member name="endTime" type="int64">
+        <doc>UTC coordinate, seconds since Jan 1, 1970</doc>
+      </member>
+      <member name="read" type="boolean">
+        <doc>
+          This flag indicates whether this log entry is "new" or has been
+          displayed to the end user already.
+          The log publisher must set this value according to the latest
+          LogEntryRequest it has received for this LogEntry.
+          The initial value is, obviously, false.
+        </doc>
+      </member>
+    </struct>
+
+    <struct name="LogEntryRequest" behavior="event">
+      <doc>
+        This topic is used to set the "read" flag of a LogEntry.
+        It is published by the UI applications that display the log entries to end users.
+      </doc>
+      <member name="logEntryId" type="int32">
+        <doc>
+          The sequence number of the entry in the log.
+          Refers to LogEntry.id.
+          Together with logId, this uniquely identifies a single LogEntry.
+        </doc>
+      </member>
+      <member name="logId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>
+          The id of the Log this request is addressed at.
+        </doc>
+      </member>
+      <member name="read" type="boolean">
+        <doc>
+          The requested value of the LogEntry.read flag.
+        </doc>
+      </member>
+    </struct>
+  </module>
+</types>
+

@@ -1,0 +1,122 @@
+
+project.ext.artifactoryPomPackaging = "zip"
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactDownloader.gradle'
+
+buildscript {
+    repositories {
+        maven {
+            url rootProject.artifactoryResolveRepo
+        }
+    }
+    dependencies {
+        classpath 'com.eriwen:gradle-js-plugin:1.12.+'
+    }
+}
+
+
+// Invoke the plugin
+apply plugin: 'js'
+
+//js plugin adds a lot of tasks. Remove ones we don't need
+project.tasks.remove(tasks.gzipJs)
+project.tasks.remove(tasks.props2js)
+project.tasks.remove(tasks.requireJs)
+project.tasks.remove(tasks.minifyJs)
+
+
+// Declare your sources
+javascript.source {
+    main {
+        js {
+            srcDir file("src/main/js")
+            include "*.js"
+        }
+    }
+}
+
+combineJs {
+	//combine possible multiple js files from the main folder
+    source = javascript.source.main.js.files
+    dest = file("${buildDir}/lib/qeo-nodeps.js")
+}
+
+def mergeDeps = ["SMOKESIGNALS" : "src/import/js/smokesignals.js", "PROMISE": "src/import/js/promise-3.2.0.js"]
+
+task mergeDependencies() {
+	dependsOn combineJs
+	ext.dest = file("${buildDir}/lib/qeo.js")
+	doLast {
+		def content = combineJs.dest.text
+		for (dep in mergeDeps) {
+			File f = file(dep.value)
+			logger.info("Merging " + dep.key + " dependency (" + dep.value + ")");
+			content = content.replaceAll("/\\* " + dep.key + "-INSERT \\*/", f.text)
+		}
+		dest.text = content
+	}
+}
+
+
+//NOTE: does not work, it puts all the licenses on top.
+//minifyJs {
+//	dependsOn mergeDependencies
+//    source = file("${buildDir}/lib/qeo.js")
+//    dest = file("${buildDir}/lib/qeo-min.js")
+//}
+tasks.jshint {
+    source = javascript.source.main.js.files
+    dest = file("${buildDir}/jshint.out")
+}
+
+artifactDownload {
+    unzip = true
+}
+
+task patchTemplate (type: Exec) {
+    dependsOn artifactDownload
+    workingDir "${artifactDownload.outputDir}/jsdoc-3.2.0/"
+    commandLine = ["patch", "-Np0", "-i", "${projectDir}/template.patch"]
+}
+
+
+task jsdoc3 (type: Exec) {
+    dependsOn patchTemplate
+    description "Generate jsdoc3 documentation"
+    workingDir projectDir
+    inputs.dir "${artifactDownload.outputDir}/jsdoc-3.2.0"
+    outputs.dir "${buildDir}/jsdoc"
+    commandLine = ["${artifactDownload.outputDir}/jsdoc-3.2.0/jsdoc", "--configure", "jsdoc.json", "-d", "${buildDir}/jsdoc", "--verbose"]
+    javascript.source.main.js.srcDirs.each {
+        commandLine += it
+        inputs.dir it
+    }
+}
+
+task generateZip(type: Zip) {
+    dependsOn mergeDependencies
+    from mergeDependencies.dest
+//    from minifyJs //for now don't use the minified js
+}
+
+task generateZipJsdoc(type: Zip) {
+    dependsOn jsdoc3
+    from "${buildDir}/jsdoc"
+    classifier "jsdoc"
+}
+
+task check() {
+    dependsOn tasks.jshint
+}
+
+tasks.assemble.dependsOn(generateZip)
+
+dependencies {
+    download "org.usejsdoc:jsdoc:3.2.0"
+}
+
+artifacts {
+    archives generateZip
+    archives generateZipJsdoc
+}
+

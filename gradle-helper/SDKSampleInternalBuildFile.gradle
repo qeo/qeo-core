@@ -1,5 +1,6 @@
-apply from: (System.properties['qeoGradleHelper'] ? System.properties['qeoGradleHelper'] : '') + '/artifactory.gradle'
-apply from: (System.properties['qeoGradleHelper'] ? System.properties['qeoGradleHelper'] : '') + '/android.gradle'
 
+apply from: (System.properties['qeoGradleHelper'] ? System.properties['qeoGradleHelper'] : '') + '/artifactory.gradle'
 group = "${qeoGroup}.demo"
 version = qeoVersion
+apply from: (System.properties['qeoGradleHelper'] ? System.properties['qeoGradleHelper'] : '') + '/android.gradle'
+

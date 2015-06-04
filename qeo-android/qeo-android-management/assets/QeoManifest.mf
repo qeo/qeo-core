@@ -1,0 +1,7 @@
+
+[meta]
+appname = "QeoManagement"
+version = 1
+
+[application]
+

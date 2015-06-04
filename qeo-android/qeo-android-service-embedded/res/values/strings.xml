@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">Qeo Settings</string>
+    <string name="info">Please provide Server URL and One Time Code</string>
+    <string name="otc">One Time Code:</string>
+    <string name="otc_hint">OTC offered by your Qeo Security Server</string>
+    <string name="url">Server URL:</string>
+    <string name="url_hint">URL of your Qeo Security Server</string>
+    <string name="authenticate">Authenticate</string>
+    <string name="scan_qr">ScanQR</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="qrDownloadDialogTitle">Install QR Scanner</string>
+    <string name="qrDownloadDialogText">A QR Scanner was not found. Do you wish to install it from the Android Market?</string>
+    <string name="otcIncorrect">OTC is incorrect. Make sure you enter the correct value.</string>
+    <string name="otcDialogTitle">Qeo Security Setup</string>
+    <string name="accept">Accept</string>
+    <string name="reject">Reject</string>
+    <string name="notification_device_registered">Device registered to Qeo</string>
+    <string name="otc_login">OTC Login</string>
+    <string name="about">About</string>
+    <string name="leaveRealm">Leave realm</string>
+    <string name="about_version">Build version</string>
+    <string name="title_opensource_licenses">Open source licenses</string>
+    <string name="subtitle_opensource_licenses">License details for open source software</string>
+    <string name="title_eula">EULA</string>
+    <string name="subtitle_eula">End User License Agreement</string>
+    <string name="unregistered_device_notification_title">Found unregistered Qeo device</string>
+    <string name="unregistered_device_notification_subtitle">Click to add to Qeo</string>
+    <string name="app_prefs">QeoPrefs</string>
+    <string name="qr_scan_code">QRCodeStatus</string>
+    <string name="notYetRegistered">This device is not yet registered to Qeo</string>
+    <string name="leaveRealmConfirmation">Are you sure you want to exit the current realm? You won\'t be able to communicate with other Qeo enabled devices until you register the device again.</string>
+
+    <!-- Strings below used by the Device Registration app -->
+    <string name="action_refresh">Refresh</string>
+    <string name="action_add_user">Create user</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_manage_realm">Manage realm</string>
+    <string name="ok_btn">OK</string>
+    <string name="cancel_btn">Cancel</string>
+    <string name="title_info_activity">Qeo info</string>
+    <string name="not_admin_user">This device is registered to Qeo but you\'re not an administrator. If you want to manage the Qeo realm you\'ll need to enter the administrator credentials.</string>
+    <string name="managing_different_realm">WARNING: This device is registered to another realm as the one you\'re currently managing</string>
+
+    <!-- Settings screen -->
+    <string name="select_realm_hint">Select Realm to manage:</string>
+    <string name="add_realm_item">Add Realm</string>
+    <string name="select_realm_item">Select any Realm</string>
+    <string name="add_realm_hint">NewRealm</string>
+    <!-- <string name="realm_refresh_broadcast">RefreshRealmSpinner</string> -->
+    <string name="add_realm_status_intent">Add Realm Status</string>
+    <string name="add_realm_cancel_status_intent">Add Realm cancelled</string>
+    <string name="add_url_hint">Server URL:</string>
+    <string name="remote_registration_done_title">Remote registered to Qeo</string>
+    <string name="remote_registration_done_msg">Somebody wants to add you to the Qeo realm %1$s.\nDo you want to accept this?</string>
+    <string name="registration_note">NOTE: The device will be registered to this realm</string>
+    
+    <!-- Error data -->
+    <string name="oauth_error_msg">OAuth login error</string>
+    <string name="invalid_realm_error">Invalid Realm Name!!!.</string>
+    <string name="general_error_msg">Error occurred.!!!.</string>
+    <string name="qeo_service_error_msg">Internal Qeo error.</string>
+    <string name="title_error_msg">Error</string>
+    <string name="version_mismatch_error_msg">Remote device version mismatch.!!.</string>
+    <string name="get_resource_error_msg">Failed to fetch resource data.</string>
+    <string name="certificate_error">The SSL certificate is invalid, can\'t establish a secure connection.</string>
+
+    <!-- Devices data -->
+    <string name="device_state">current device status</string>
+    <string name="registered_device_title">registered devices</string>
+    <string name="unregistered_device_title">unregistered devices</string>
+    <string name="select_user_title">Select user</string>
+    <string name="spinner">spinner</string>
+    <string name="username">username</string>
+    <string name="notification">Always run notification service:</string>
+    <string name="notification_description">Otherwise it will only run when a Qeo app is running</string>
+    
+    <string name="no_realm_selected_title">Setup required</string>
+    <string name="no_realm_selected">You have not selected a realm you want to manage. Do you want to configure it?</string>
+    <string name="oauth_login_error_relogin">Login error. Please re-login.</string>
+    
+    <string name="button_other_auth">Other authentication method</string>
+    <string name="account_info">Account info</string>
+    <string name="sign_out">Sign out</string>
+    <string name="google_play_service_not_supported">Google play services are not supported on this device.</string>
+    <string name="loginScreenInfo">In order to securely communicate with Qeo, please login</string>
+    <string name="accountDetails">Account details</string>
+    <string name="accountDetailsMsg">You\'re currently signed in as %1$s to manage the Qeo realm.</string>
+    <string name="close">Close</string>
+    <string name="unknown">unknown</string>
+    <string name="google_plus_sign_in_button">Google+ sign in button</string>
+
+</resources>

@@ -1,0 +1,146 @@
+
+//For generating findbugs HTML report execute with "gradle -PfindbugsHtml=true"
+ext.enableUITests = true
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidInstallerTools.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/findbugs.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactDownloader.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryVersion.gradle'
+
+//creation of the apk artifacts
+def qeoAndroidServiceDebug = file('build/outputs/apk/qeo-android-service-debug-unaligned.apk')
+def qeoAndroidServiceRelease = file('build/outputs/apk/qeo-android-service-release.apk')
+def qeoAndroidServiceUnittest = file('build/outputs/apk/qeo-android-service-unittest.apk')
+
+android {
+    buildTypes {
+        unittest {
+            //build for running unit tests. Proguard enabled.
+            debuggable true //make unittest flavor debuggable. This as it's almost the same as the release version and avoids an extra flavor.
+            minifyEnabled true
+            shrinkResources true
+            proguardFile getDefaultProguardFile('proguard-android-optimize.txt')
+            signingConfig = android.signingConfigs.debug //unittest build is also signed with debug keys
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFile getDefaultProguardFile('proguard-android-optimize.txt')
+            proguardFile 'proguard-project-release.txt' //apply some extra rules for release (exclude security holes)
+        }
+        debug {
+            minifyEnabled false //no proguard in debug
+        }
+
+        //note: this is probably better done by using the productFlavors. However I could not make it work to bundle the proper so files in the correct apk. so using buildTypes for now
+        //disabled forwarder service for now. To be re-enabled if it's going to be used.
+        /*forwarderDebug {
+            runProguard false //no proguard in debug
+            signingConfig = android.signingConfigs.debug //unittest build is also signed with debug keys
+        }*/
+    }
+    defaultConfig {
+        versionName project.displayVersion
+    }
+}
+
+task proguardMapping(type: Zip) {
+    dependsOn "assembleRelease", "assembleDebug"
+    android.applicationVariants.all { variant ->
+        def mappingFile = variant.mappingFile
+        if (mappingFile != null) {
+            into (variant.name) {
+                from mappingFile
+            }
+        }
+    }
+    destinationDir file("${buildDir}/outputs/")
+    classifier "proguard-mapping"
+}
+
+// Add extra permissions to the debug build.
+android.sourceSets.debug.manifest.srcFile 'AndroidManifestDebug.xml'
+
+afterEvaluate {
+    tasks.assembleRelease.dependsOn(artifactDownloadUnzip)
+    tasks.assembleDebug.dependsOn(artifactDownloadUnzip)
+    tasks.connectedAndroidTest.dependsOn(artifactDownloadUnzip)
+}
+
+
+artifactDownloadUnzip {
+    appendName = true
+    appendClassifier = true
+}
+
+installDebugAll {
+    apk = qeoAndroidServiceDebug
+}
+
+android {
+    lintOptions {
+        ignoreWarnings false
+        disable "RtlHardcoded" //we don't support any other languages anyway
+        disable "GradleOverrides" //warnings about overridden fields in manifest. Eclipse needs them.
+        disable "UnusedIds" //unused id's are really not a big deal and are required for relativelayouts
+        disable "UnusedAttribute" //Attributes not supported on newer apis are normal
+        disable "ExportedService"
+    }
+}
+
+connectedUITest {
+    clearPackages = ["org.qeo.android.service"]
+    tests = ["org.qeo.uitest.service.Scenario1", "org.qeo.uitest.service.Scenario2"]
+    if (project.hasProperty("noWipe") && project.noWipe) {
+        params += ["noWipe":"1"]
+    }
+    doFirst {
+        logger.warn("Be sure to run UITest on androvm with bridged ethernet")
+    }
+    if (project.hasProperty("serviceClassifier")) {
+        if (project.serviceClassifier == "debug") {
+            dependsOnFlavor = "Debug"
+        }
+        else {
+            //default
+            dependsOnFlavor = "Unittest"
+        }
+    }
+    else {
+       //default
+       dependsOnFlavor = "Unittest"
+    }
+}
+
+
+dependencies {
+
+    releaseCompile  project(path:':qeo-android-service-embedded')
+    debugCompile    project(path:':qeo-android-service-embedded', configuration: "debug")
+    unittestCompile project(path:':qeo-android-service-embedded')
+
+    androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'jnitests', ext: "jar"
+    androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'testlib', ext: "jar"
+
+    downloadUnzip group: project.javaGroup, name: 'qeo-java',         version: project.javaVersion, classifier: 'native-android-symbols', ext: "jar"
+    downloadUnzip group: project.javaGroup, name: 'qeo-java',         version: project.javaVersion, classifier: 'native-android-gdb', ext: "jar"
+    downloadUnzip group: project.javaGroup, name: 'qeo-java',         version: project.javaVersion, classifier: 'native-android-debug', ext: "jar"
+    debugApk      group: project.javaGroup, name: 'qeo-java',         version: project.javaVersion, classifier: 'native-android-gdb'
+
+}
+
+// publish the apk to artifactory
+artifacts {
+    android.applicationVariants.all { var ->
+        if (var.name != "release") {
+            //relase variant is already published by the plugin
+            var.outputs.each {
+                archives file: it.packageApplication.outputFile, name: project.name, classifier: var.name, builtBy: it.packageApplication
+            }
+        }
+    }
+    archives proguardMapping
+}
+

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -232,21 +232,22 @@ int rtps_local_node (Participant_t *pp, Locator_t *src);
 /* Returns a non-0 value if the Participant is directly reachable, i.e. without
    passing thru a relay node. */
 
-void rtps_log_message (unsigned id,
-		       unsigned level,
-		       RMBUF    *mp,
-		       char     dir,
-		       int      data);
+void rtps_log_message (unsigned    id,
+		       unsigned    level,
+		       const RMBUF *mp,
+		       char        dir,
+		       int         data,
+		       const char  *extra);
 
 /* Log a single message.  The dir character should be either 'T', 'R' or 'F'
    to specify transmitted, received and forwarded data respectively.
    If data is set, message data will be dumped completely.*/
 
-void rtps_log_messages (unsigned id,
-		        unsigned level,
-		        RMBUF    *msgs,
-			char     dir,
-			int      data);
+void rtps_log_messages (unsigned    id,
+		        unsigned    level,
+		        const RMBUF *msgs,
+			char        dir,
+			int         data);
 
 /* Log a list of messages. */
 

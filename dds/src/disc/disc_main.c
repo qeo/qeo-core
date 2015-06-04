@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -70,6 +70,16 @@
 #include "disc_spdp.h"
 #ifdef DDS_QEO_TYPES
 #include "disc_policy_updater.h"
+#endif
+
+#ifdef PROFILE
+PUB_PROF_PID (disc_mr_sec)
+PUB_PROF_PID (disc_mw_sec)
+PUB_PROF_PID (disc_bir_sec)
+PUB_PROF_PID (disc_biw_sec)
+PUB_PROF_PID (disc_ctt_ptok)
+PUB_PROF_PID (disc_ctt_wtok)
+PUB_PROF_PID (disc_ctt_rtok)
 #endif
 
 int	disc_log;		/* General Discovery logging. */
@@ -195,6 +205,14 @@ Participant_t *disc_remote_participant_add (Domain_t                      *domai
 	pp->p_p_tokens = info->p_tokens;
 	info->id_tokens = NULL;
 	info->p_tokens = NULL;
+#ifdef DDS_NATIVE_SECURITY
+	pp->p_auth_state = (authorized) ? AS_OK : AS_FAILED;
+	pp->p_last_seqnr = 0;
+	pp->p_crypto = 0;
+	pp->p_uc_locs = NULL;
+	pp->p_uc_dreply = NULL;
+	pp->p_ir_locs = 0;
+#endif
 #endif
 	if (!authorized) {
 		pp->p_def_ucast = NULL;
@@ -241,6 +259,7 @@ Participant_t *disc_remote_participant_add (Domain_t                      *domai
 		info->proxy.meta_ucast = NULL;
 		pp->p_meta_mcast = info->proxy.meta_mcast;
 		info->proxy.meta_mcast = NULL;
+		rtps_update_kinds (pp);
 #ifdef DUMP_LOCATORS
 		dbg_printf ("DUC:");
 		locator_list_dump (pp->p_def_ucast);
@@ -276,10 +295,6 @@ Participant_t *disc_remote_participant_add (Domain_t                      *domai
 		pp->p_no_mcast = 1;
 #endif
 
-#ifdef DDS_FORWARD
-	rfwd_participant_new (pp, 0);
-#endif
-
 	/* Notify user of participant existence. */
 	if (pp->p_domain->builtin_readers [BT_Participant]) {
 		user_participant_notify (pp, 1);
@@ -296,7 +311,7 @@ Participant_t *disc_remote_participant_add (Domain_t                      *domai
 		foreach_locator (srcs, srp, snp) {
 			if (!pp->p_local &&
 			    (snp->locator.kind & LOCATOR_KINDS_UDP) != 0)
-				foreach_locator (pp->p_def_ucast, rp, np)
+				foreach_locator (pp->p_meta_ucast, rp, np)
 					if (locator_addr_equal (&np->locator, &snp->locator)) {
 						pp->p_local = sys_ticks_last;
 						break;
@@ -306,8 +321,16 @@ Participant_t *disc_remote_participant_add (Domain_t                      *domai
 			locator_list_copy_node (&pp->p_src_locators, snp);
 		}
 	}
+
+#ifdef DDS_NATIVE_SECURITY
+	rtps_participant_init_reply_locators (pp);
+#endif
+#ifdef DDS_FORWARD
+	rfwd_participant_new (pp, 0);
+#endif
 	return (pp);
 }
+
 /* disc_remote_reader_add -- Add a new discovered Reader as if it was discovered
 			     via a Discovery protocol.
 			     On entry/exit: no locks taken. */
@@ -980,6 +1003,14 @@ void disc_resume (void)
 
 int disc_init (void)
 {
+	PROF_INIT ("I:SecMRd", disc_mr_sec);
+	PROF_INIT ("I:SecMWr", disc_mw_sec);
+	PROF_INIT ("I:SecMDRd", disc_bir_sec);
+	PROF_INIT ("I:SecMDWr", disc_biw_sec);
+	PROF_INIT ("I:SecPTok", disc_ctt_ptok);
+	PROF_INIT ("I:SecWTok", disc_ctt_wtok);
+	PROF_INIT ("I:SecRTok", disc_ctt_rtok);
+
 #ifdef RTPS_USED
 #ifdef SIMPLE_DISCOVERY
 	if (!rtps_used)

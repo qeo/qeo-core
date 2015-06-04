@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE concept PUBLIC "-//OASIS//DTD DITA Concept//EN" "concept.dtd">
+<concept id="concept_gsw_kkm_fq">
+ <title>Controlling DDS activities</title>
+ <shortdesc></shortdesc>
+ <conbody>
+  <p>The suspend/resume functionality is based on fine-grained control of internal DDS
+   activities.</p>
+  <p>Following activities are defined (see <filepath>/dds/dds_aux.h</filepath> for the exact data
+   definitions):</p>
+  <p>
+      <table frame="all" id="table_fxv_qhn_fq">
+       <title>DDS activities</title>
+       <tgroup cols="2">
+        <colspec colname="c1" colnum="1" colwidth="1*"/>
+        <colspec colname="c2" colnum="2" colwidth="3.26*"/>
+        <thead>
+         <row>
+          <entry>Activity</entry>
+          <entry>Description</entry>
+         </row>
+        </thead>
+        <tbody>
+         <row>
+          <entry><parmname>DDS_TIMER_ACTIVITY</parmname></entry>
+          <entry>Controls whether internal timers are running.</entry>
+         </row>
+         <row>
+          <entry><parmname>DDS_UDP_ACTIVITY</parmname></entry>
+          <entry>Whether the UDP/IP and UDP/IPv6 transport subsystems are active (sockets are
+           present).</entry>
+         </row>
+         <row>
+          <entry><parmname>DDS_TCP_ACTIVITY</parmname></entry>
+          <entry>Whether the TCP/IP and TCP/IPv6 transport subsystems are active (sockets are
+           present).</entry>
+         </row>
+         <row>
+          <entry><parmname>DDS_DEBUG_ACTIVITY</parmname></entry>
+          <entry>Whether the internal DDS debug shell stays active.</entry>
+         </row>
+        </tbody>
+       </tgroup>
+      </table>
+  </p>
+  <p>
+  <note>An additional definition exists to specify all activities at once:
+     <parmname>DDS_ALL_ACTIVITY</parmname></note></p>
+  <p>Following functions are present to control these activities from within application
+   programs:</p>
+  <codeblock> void DDS_Activities_suspend (DDS_Activity activities);
+
+ void DDS_Activities_resume (DDS_Activity activities);</codeblock>
+  <p>When an application needs to go to a deep sleep, it should call
+    <parmname>DDS_Activities_suspend (DDS_ALL_ACTIVITY)</parmname> to force DDS into a frozen
+   operating state.  In this state, all DDS entities still exist, even the discovered participants
+   are still present, but the low-level protocol sockets are closed, all timers are frozen and the
+   debug shell is no longer working.  The net result is that all datacaches stay populated with data
+   and DDS can resume at any time.</p>
+  <p>When the application is ready to resume operation after waking up, it should call
+    <parmname>DDS_Activities_resume (DDS_ALL_ACTIVITY)</parmname>.</p>
+  <p>This will recreate all underlying sockets, and continue all active timers, adjusting them for
+   the amount of time that has actually passed. As a result of this, a number of possible things
+   might happen:</p>
+  <p>
+   <ul id="ul_kwr_pkn_fq">
+    <li>Either the participant hasn't timed out yet, and operation will seemlessly resume, or</li>
+    <li>The participant has timed out and all associations with it will be removed completely.</li>
+   </ul>
+  </p>
+  <p>Either way, operation of DDS resumes and other participants can now be discovered again.</p>
+  <p>The net result of DDS being frozen leads to this participant becoming timed out in the
+   participants it was talking to.  Of course, once it resumes operation, all peers will rapidly
+   become available again.</p>
+  <p>In practice, no UDP or TCP sockets stay open while frozen, so the application cannot be awoken
+   by other participants.  Unless the Background Notification service is used, as discussed in the
+   next topic.</p>
+ </conbody>
+</concept>

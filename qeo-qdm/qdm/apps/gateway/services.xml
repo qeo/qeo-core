@@ -1,0 +1,87 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <include file="qeo_types.xml"/>
+  <module name="org::qeo::services">
+    <doc>
+      This QDM offers a simple template for announcement of non-Qeo services.
+      Purely Qeo-based services are not announced via this QDM, as they
+      typically have their own particular discovery mechanism (e.g. the
+      org::qeo::networking::pinhole::Provider topic for pinhole providers).
+
+      Services can be announced in two ways:
+      - either the device running the service is itself Qeo-enabled, and it
+        publishes the service information itself. In this case, the information
+        provided about the service is considered authoritative.
+      - or a separate service discovery component running on some other device
+        is proxying discovery information from other service discovery
+        protocols (SSDP, Bonjour, ...) on Qeo. In this case, the information
+        provided is considered non-authoritative.
+
+      Qeo's contract for state topics stipulates that there can be only one
+      publisher for any given instance on a topic. If two publishers write
+      information about the same instance on a topic, one of the publishers
+      will randomly be chosen as the strongest, and the other publisher will be
+      ignored. We want to avoid a situation in which an authoritative source of
+      service information is overruled by a non-authoritative source because of
+      this rule.
+
+      Therefore, an "authoritative" flag is added to the data model, and is
+      made part of the key. This allows the authoritative and non-authoritative
+      information about a given service to coexist on the same topic.
+      Separating the authoritative and non-authoritative information for the
+      same service is further left up to the subscribing application.
+    </doc>
+    <struct name="ServiceInfo" behavior="state">
+      <member name="locationUri" type="string" key="true">
+        <doc>
+          URI representing service type and locator.
+          Should be standardized by Technicolor but can be based on existing
+          type definitions.  Existing URI schemes should adhere to the ones
+          registered at IANA
+          (http://www.iana.org/assignments/uri-schemes/uri-schemes.xhtml).
+          - Samba share (e.g. smb://192.168.1.100/photos)
+          - UPnP DDD URI
+          - FTP server (e.g. ftp://john:doe@10.1.0.1:2121)
+        </doc>
+      </member>
+      <member name="authoritative" type="boolean" key="true">
+        <doc>
+          False if this instance is published by someone other than the service
+          itself.
+        </doc>
+      </member>
+      <member name="name" type="string">
+        <doc>
+          Human-readable service name (e.g. "DLNA server on home gateway").
+        </doc>
+      </member>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId">
+        <doc>
+          Reference to a deviceInfo instance, could be 0 if it is unknown or it
+          is a service on another device.
+        </doc>
+      </member>
+      <member name="configUri" type="string">
+        <doc>
+          Link to out of band configuration.
+        </doc>
+      </member>
+      <member name="enabled" type="boolean">
+        <doc>
+          False if the service has been disabled.
+        </doc>
+      </member>
+      <member name="available" type="boolean">
+        <doc>
+          False if not available to service new requests.
+        </doc>
+      </member>
+      <member name="statusDescription" type="string">
+        <doc>
+          Optional human readable status, could be an error message cfr.  errno
+          and strerror.
+        </doc>
+      </member>
+    </struct>
+  </module>
+</types>

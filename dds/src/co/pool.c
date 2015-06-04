@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -73,7 +73,7 @@ void pool_post_final (void)
 
 	for (i = POOL_FCTS_OFS; i < ctrc_mds_offset; i++)
 		if (pool_fct_str [i])
-			free ((void *) pool_fct_str [i]);
+			Free ((void *) pool_fct_str [i]);
 		else
 			break;
 
@@ -186,7 +186,7 @@ void *xmalloc (size_t size)
 	unsigned	*wp;
 #endif
 
-	p = malloc (size + sizeof (MEMHDR));
+	p = Alloc (size + sizeof (MEMHDR));
 	ctrc_begind (POOL_ID, POOL_XMALLOC, &size, sizeof (size));
 	ctrc_contd (&p, sizeof (p));
 	ctrc_endd ();
@@ -232,7 +232,7 @@ void *xrealloc (void *ptr, size_t size)
 	if (size < prev_size)
 		return (++p);
 
-	p = realloc (p, size + sizeof (MEMHDR));
+	p = Realloc (p, size + sizeof (MEMHDR));
 
 	ctrc_begind (POOL_ID, POOL_XREALLOC, &ptr, sizeof (ptr));
 	ctrc_contd (&size, sizeof (size));
@@ -281,7 +281,7 @@ void xfree (void *ptr)
 	SUB_ULLONG (cur_alloced, p->size + sizeof (MEMHDR));
 	if (pstats_initialized)
 		lock_release (pstats_lock);
-	mm_fcts.free_ (p);
+	Free (p);
 }
 
 #endif
@@ -317,7 +317,7 @@ POOL pool_create_x (const char *name,
 	chunk = sizeof (POOL_ST) + ssize + blocks * bsize;
 	while (totalblocks < length) {
 		if (!pool) {
-			pool = (POOL) malloc (chunk);
+			pool = (POOL) Alloc (chunk);
 			if (!pool)
 				return (NULL);
 
@@ -325,7 +325,7 @@ POOL pool_create_x (const char *name,
 			pool->pool_end = NULL;
 		}
 		else {
-			pbp = (POOL_BLOCK) malloc (chunk);
+			pbp = (POOL_BLOCK) Alloc (chunk);
 			if (!pbp)
 				return (NULL);
 		}
@@ -749,7 +749,7 @@ size_t mds_alloc (MEM_DESC mds, const char **names, size_t length)
 
 	/* Pass 2: allocate required memory regions. */
 	if (size) {
-		addr = (unsigned char *) malloc (size);
+		addr = (unsigned char *) Alloc (size);
 		if (!addr) {
 			warn_printf ("mds_alloc (mds=%p, length=%lu) failed!",
 					(void *) mds, (unsigned long) length);
@@ -814,7 +814,7 @@ void mds_reset (MEM_DESC mds, size_t length)
 #ifndef FORCE_MALLOC
 		while ((xp = mdp->md_xpool) != NULL) {
 			mdp->md_xpool = MDS_NEXT (xp);
-			mm_fcts.free_ (xp);
+			Free (xp);
 		}
 		if (mdp->md_esize) {	/* Create pool of elements. */
 			mdp->md_count = mdp->md_mcount = mdp->md_size / mdp->md_esize;
@@ -868,14 +868,14 @@ void mds_free (MEM_DESC mds, size_t length)
 		while ((xp = mdp->md_xpool) != NULL) {
 			VG_DEFINED (xp, sizeof (void *));
 			mdp->md_xpool = MDS_NEXT (xp);
-			mm_fcts.free_ (xp);
+			Free (xp);
 #endif
 		}
 	}
 
 	/* Pass 2: release memory region. */
 	if (addr)
-		mm_fcts.free_ (addr);
+		Free (addr);
 
 	/* Clear descriptors. */
 	memset (mds, 0, sizeof (MEM_DESC_ST) * length);
@@ -954,7 +954,7 @@ void *mds_pool_alloc (MEM_DESC mp)
 		mp->md_xcount++;
 		if (mp->md_xcount > mp->md_mxcount)
 			mp->md_mxcount = mp->md_xcount;
-		p = malloc (mp->md_esize);
+		p = Alloc (mp->md_esize);
 		atrc_print1 ("M):%p;", p);
 		goto done;
 	}
@@ -1022,7 +1022,7 @@ void mds_pool_free (MEM_DESC mp, void *p)
 
 	/* Element was extra allocated? */
 	mp->md_xcount--;
-	mm_fcts.free_ (p);
+	Free (p);
 
 #ifndef FORCE_MALLOC
     done:

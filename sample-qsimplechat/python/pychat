@@ -1,0 +1,69 @@
+#!/bin/sh
+
+CHAT_ARGS=
+USE_VALGRIND=no
+
+APP="chat.py"
+
+for arg ; do
+	case $arg in
+		--valgrind)
+			USE_VALGRIND=yes
+			;;
+		--chat)
+			CHAT_ARGS=
+			APP="chat.py"
+			;;
+		--qchat)
+			CHAT_ARGS=
+			APP="qtchat.pyw"
+			;;
+		--listchat)
+			CHAT_ARGS=
+			APP="listchat.py"
+			;;
+		--*)
+			echo "invalid option $arg, ignored"
+			;;
+		*)
+			CHAT_ARGS="CHAT_ARGS $arg"
+			;;
+	esac
+done
+
+echo APP=$APP
+
+
+D=$(dirname $0)
+
+BASE=$(cd $D 2>/dev/null; cd .. 2>/dev/null; pwd)
+
+if [ "$USE_VALGRIND" = "yes" ]; then
+	VG="valgrind --leak-check=full --num-callers=50 --suppressions=$D/valgrind-python.supp"
+else
+	VG=
+fi
+
+
+if [ "$PYTHON" != "" ]; then
+	EXT="/$PYTHON"
+else
+	EXT=
+	PYTHON=python
+fi
+
+export PYTHONPATH=$BASE/python-dds/build$EXT:$BASE/python-qeo:
+
+if [ -z $TDDS_IP_ADDRESS ]; then
+	TDDS_IP_ADDRESS=127.0.0.1
+fi
+export TDDS_IP_ADDRESS
+
+if [ -z $TDDS_IP_MCAST_DEST ]; then
+	TDDS_IP_MCAST_DEST=$TDDS_IP_ADDRESS
+fi
+export TDDS_IP_MCAST_DEST
+
+
+$VG $PYTHON -B $D/$APP $CHAT_ARGS
+

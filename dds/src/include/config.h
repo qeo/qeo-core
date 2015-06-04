@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -36,10 +36,6 @@ typedef enum {
 	DC_Environment,		/* Environment type (N). */
 	DC_PurgeDelay,		/* Purge delay (N:ms). */
 	DC_SampleSize,		/* Maximum sample size (N). */
-#ifdef DDS_DEBUG
-	/* TODO: Remove this and all related code once dtls/tls are fully working */
-	DC_NoSecurity,		/* Security mode (N). */
-#endif
 	DC_Forward,		/* Forwarding mode (N). */
 	DC_LogDir,		/* Location of logging file (S). */
 
@@ -130,9 +126,17 @@ typedef enum {
 	DC_TCP_Mode,
 	DC_TCP_Port,
 	DC_TCP_Server,
+#ifdef DDS_IPV6
+	DC_TCP_Port6,
+	DC_TCP_Server6,
+#endif
 #ifdef DDS_SECURITY
 	DC_TCP_SecPort,
 	DC_TCP_SecServer,
+#ifdef DDS_IPV6
+	DC_TCP_SecPort6,
+	DC_TCP_SecServer6,
+#endif
 #endif
 	DC_TCP_Public,
 	DC_TCP_Private,
@@ -155,6 +159,24 @@ typedef enum {
 	DC_IPv6_MCastAddr,
 #endif
 
+#ifdef TCP_SUSPEND
+	/* Background notification parameters. */
+	DC_BGNS_Domain,
+	DC_BGNS_Port,
+	DC_BGNS_Server,
+#ifdef DDS_IPV6
+	DC_BGNS_Port6,
+	DC_BGNS_Server6,
+#endif
+#ifdef DDS_SECURITY
+	DC_BGNS_SecPort,
+	DC_BGNS_SecServer,
+#ifdef DDS_IPV6
+	DC_BGNS_SecPort6,
+	DC_BGNS_SecServer6,
+#endif
+#endif
+#endif
 	DC_END
 } Config_t;
 
@@ -234,6 +256,10 @@ int config_parameter_unset (const char *name);
 void config_dump (void);
 
 /* Dump all configured parameters. */
+
+void config_info (const char *arg);
+
+/* List configured parameters. */
 
 #endif /* !__config_h_ */
 

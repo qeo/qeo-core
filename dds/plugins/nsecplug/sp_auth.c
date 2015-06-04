@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -36,7 +36,7 @@ DDS_ReturnCode_t sp_validate_local_id (const char          *name,
 				       int                 *validation)
 {
 	DDS_ReturnCode_t ret;
-	unsigned char    *cert, *key;
+	unsigned char    *cert, *key = NULL;
 	size_t           cert_len, key_len;
 	IdentityHandle_t id;
 
@@ -47,6 +47,9 @@ DDS_ReturnCode_t sp_validate_local_id (const char          *name,
 	}
 	/* Add this credential to the database */
 	if ((ret = sp_extract_pem (credential, &cert, &cert_len, &key, &key_len))) {
+		if (key)
+			free (key);
+
 		validation = DDS_AA_REJECTED;
 		return (ret);
 	}

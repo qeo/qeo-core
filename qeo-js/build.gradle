@@ -1,0 +1,7 @@
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+
+subprojects {
+    group = project.qeoGroup
+    version = project.qeoVersion
+}
+

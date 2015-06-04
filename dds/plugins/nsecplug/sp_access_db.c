@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -88,8 +88,11 @@ static void *create_empty_topic (ListTypes type)
 	case LIST_DOMAIN:
 		if (!(dt = calloc (1, sizeof (MSTopic_t))))
 			return (NULL);
-		if (!(dt->name = malloc (strlen ("*") + 1)))
+
+		if (!(dt->name = malloc (strlen ("*") + 1))) {
+			free (dt);
 			return (NULL);
+		}
 		strcpy (dt->name, "*");
 		dt->mode = TA_ALL;
 		dt->controlled = 1;
@@ -103,9 +106,12 @@ static void *create_empty_topic (ListTypes type)
 	case LIST_PARTICIPANT:
 		if (!(pt = calloc (1, sizeof (MSUTopic_t))))
 			return (NULL);
+
 		pt->id = ~0; /* all domains */
-		if (!(pt->topic.name = malloc (strlen ("*") + 1)))
+		if (!(pt->topic.name = malloc (strlen ("*") + 1))) {
+			free (pt);
 			return (NULL);
+		}
 		strcpy (pt->topic.name, "*");
 		pt->topic.mode = TA_ALL;
 		pt->topic.controlled = 1;
@@ -1212,7 +1218,7 @@ static char *acc_s (unsigned access)
 
 static char *mode_s (unsigned mode)
 {
-	static char	buffer [6];
+	static char	buffer [8];
 	unsigned	i;
 
 	if (!mode)
@@ -1280,7 +1286,7 @@ static char *msg_encrypt_s (int message)
 static char *read_s (unsigned data [MAX_ID_HANDLES])
 {
 	int i;
-	static char buffer [129];
+	static char buffer [MAX_ID_HANDLES * 8 + 1];
 
 	for (i = 0; i < MAX_ID_HANDLES; i++)
 		if (data [i] != 0)

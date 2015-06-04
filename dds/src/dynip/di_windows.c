@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -22,6 +22,10 @@
 #include "error.h"
 #include "di_data.h"
 
+#ifndef DI_POLL_DELTA
+#define	DI_POLL_DELTA	(10 * TICKS_PER_SEC)
+#endif
+
 typedef struct ip_ctrl_st {
 	unsigned char	*ipa;
 	unsigned	*n;
@@ -35,6 +39,7 @@ static IP_CTRL	ipv4;
 #ifdef DDS_IPV6
 static IP_CTRL	ipv6;
 #endif
+static Timer_t	poll_timer;
 
 /* di_sys_init -- Initialize dynamic IP handling. */
 
@@ -44,13 +49,17 @@ int di_sys_init (void)
 #ifdef DDS_IPV6
 	ipv6.fct = NULL;
 #endif
+	tmr_init (&poll_timer, "DynIP.poll");
+
 	return (DDS_RETCODE_OK);
 }
 
 /* di_event -- Event handler for changes. */
 
-void di_event (void)
+static void di_event (intptr_t user)
 {
+	ARG_NOT_USED (user)
+
 	if (ipv4.fct) {
 		*ipv4.n = sys_own_ipv4_addr (ipv4.ipa, ipv4.max,
 					     ipv4.min_scope, ipv4.max_scope);
@@ -63,6 +72,7 @@ void di_event (void)
 		(*ipv6.fct)();
 	}
 #endif
+	tmr_start (&poll_timer, DI_POLL_DELTA, 0, di_event);
 }
 
 /* di_sys_attach -- Attach the event handler for the given family. */
@@ -96,6 +106,8 @@ int di_sys_attach (unsigned      family,
 	else
 		return (DDS_RETCODE_BAD_PARAMETER);
 
+	di_event (0);
+
 	return (DDS_RETCODE_OK);
 }
 
@@ -112,6 +124,13 @@ int di_sys_detach (unsigned family)
 	else
 		return (DDS_RETCODE_BAD_PARAMETER);
 
+	if (!ipv4_fct
+#ifdef DDS_IPV6
+	              && !ipv6.fct
+#endif
+	                          )
+		tmr_stop (&poll_timer);
+
 	return (DDS_RETCODE_OK);
 }
 
@@ -124,3 +143,9 @@ void di_sys_final (void)
 	ipv6.fct = NULL;
 #endif
 }
+
+void di_sys_check (void)
+{
+	di_event ();
+}
+

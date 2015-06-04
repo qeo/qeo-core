@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -183,7 +183,9 @@ int dcps_get_builtin_participant_data (DDS_ParticipantBuiltinTopicData *dp,
 {
 	int	error;
 
-	memcpy (dp->key.value, &pp->p_guid_prefix, sizeof (DDS_BuiltinTopicKey_t));
+	memcpy ((unsigned char *) dp->key.value, pp->p_guid_prefix.prefix, GUIDPREFIX_SIZE);
+	if (sizeof (dp->key) > GUIDPREFIX_SIZE)
+		dp->key.value [3] = 0;
 #if 0
 	error = get_builtin_key (pp->p_domain,
 				 dp->key.value,
@@ -359,14 +361,15 @@ int dcps_get_builtin_publication_data (DDS_PublicationBuiltinTopicData *dp,
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 
 	dp->topic_name = xp;
-	dp->key.value [0] = dwp->dw_participant->p_guid_prefix.w [0];
-	dp->key.value [1] = dwp->dw_participant->p_guid_prefix.w [1];
-	dp->key.value [2] = dwp->dw_entity_id.w;
+	endpoint_key_from_guid (&dwp->dw_participant->p_guid_prefix,
+				&dwp->dw_entity_id,
+				(KeyHash_t *) &dp->key);
 	memcpy (&dp->participant_key,
 		&dwp->dw_participant->p_guid_prefix,
-		sizeof (DDS_BuiltinTopicKey_t));
-	memcpy (xp, str_ptr (dwp->dw_topic->name),
-						str_len (dwp->dw_topic->name));
+		GUIDPREFIX_SIZE);
+	if (sizeof (DDS_BuiltinTopicKey_t) > GUIDPREFIX_SIZE)
+		dp->participant_key.value [3] = 0;
+	memcpy (xp, str_ptr (dwp->dw_topic->name), str_len (dwp->dw_topic->name));
 	xp += str_len (dwp->dw_topic->name);
 	dp->type_name = xp;
 	memcpy (xp, str_ptr (dwp->dw_topic->type->type_name),
@@ -445,14 +448,15 @@ int dcps_get_local_publication_data (DDS_PublicationBuiltinTopicData *dp,
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 
 	dp->topic_name = xp;
-	dp->key.value [0] = wp->w_publisher->domain->participant.p_guid_prefix.w [0];
-	dp->key.value [1] = wp->w_publisher->domain->participant.p_guid_prefix.w [1];
-	dp->key.value [2] = wp->w_entity_id.w;
+	endpoint_key_from_guid (&wp->w_publisher->domain->participant.p_guid_prefix,
+				&wp->w_entity_id,
+				(KeyHash_t *) &dp->key);
 	memcpy (&dp->participant_key,
 		&wp->w_publisher->domain->participant.p_guid_prefix,
-		sizeof (DDS_BuiltinTopicKey_t));
-	memcpy (xp, str_ptr (wp->w_topic->name),
-						str_len (wp->w_topic->name));
+		GUIDPREFIX_SIZE);
+	if (sizeof (DDS_BuiltinTopicKey_t) > GUIDPREFIX_SIZE)
+		dp->participant_key.value [3] = 0;
+	memcpy (xp, str_ptr (wp->w_topic->name), str_len (wp->w_topic->name));
 	xp += str_len (wp->w_topic->name);
 	dp->type_name = xp;
 	memcpy (xp, str_ptr (wp->w_topic->type->type_name),
@@ -531,12 +535,14 @@ int dcps_get_builtin_subscription_data (DDS_SubscriptionBuiltinTopicData *dp,
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 
 	dp->topic_name = xp;
-	dp->key.value [0] = drp->dr_participant->p_guid_prefix.w [0];
-	dp->key.value [1] = drp->dr_participant->p_guid_prefix.w [1];
-	dp->key.value [2] = drp->dr_entity_id.w;
+	endpoint_key_from_guid (&drp->dr_participant->p_guid_prefix,
+				&drp->dr_entity_id,
+				(KeyHash_t *) &dp->key);
 	memcpy (&dp->participant_key,
 		&drp->dr_participant->p_guid_prefix,
-		sizeof (DDS_BuiltinTopicKey_t));
+		GUIDPREFIX_SIZE);
+	if (sizeof (DDS_BuiltinTopicKey_t) > GUIDPREFIX_SIZE)
+		dp->participant_key.value [3] = 0;
 	memcpy (xp, str_ptr (drp->dr_topic->name),
 				str_len (drp->dr_topic->name));
 	xp += str_len (drp->dr_topic->name);
@@ -606,12 +612,14 @@ int dcps_get_local_subscription_data (DDS_SubscriptionBuiltinTopicData *dp,
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 
 	dp->topic_name = xp;
-	dp->key.value [0] = rp->r_subscriber->domain->participant.p_guid_prefix.w [0];
-	dp->key.value [1] = rp->r_subscriber->domain->participant.p_guid_prefix.w [1];
-	dp->key.value [2] = rp->r_entity_id.w;
+	endpoint_key_from_guid (&rp->r_subscriber->domain->participant.p_guid_prefix,
+				&rp->r_entity_id,
+				(KeyHash_t *) &dp->key);
 	memcpy (&dp->participant_key,
 		&rp->r_subscriber->domain->participant.p_guid_prefix,
-		sizeof (DDS_BuiltinTopicKey_t));
+		GUIDPREFIX_SIZE);
+	if (sizeof (DDS_BuiltinTopicKey_t) > GUIDPREFIX_SIZE)
+		dp->participant_key.value [3] = 0;
 	memcpy (xp, str_ptr (rp->r_topic->name),
 				str_len (rp->r_topic->name));
 	xp += str_len (rp->r_topic->name);
@@ -759,6 +767,7 @@ static void *read_builtin_subscription_data (Change_t *cp)
 	ep = entity_ptr (cp->c_writer);
 	if (!ep)
 		return (NULL);
+
 	if (ep->type != ET_READER ||
 	    (ep->flags & EF_REMOTE) == 0)
 		return (NULL);

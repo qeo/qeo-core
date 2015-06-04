@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -95,7 +95,7 @@ IpFilter_t ip_filter_add (IpFilter_t f, const char *s, unsigned flags)
 
 	ipp = (IPv4Filter_t *) f;
 	if (!ipp) {
-		ipp = mm_fcts.alloc_ (sizeof (IPv4Filter_t));
+		ipp = Alloc (sizeof (IPv4Filter_t));
 		if (!ipp)
 			return (NULL);
 
@@ -219,7 +219,7 @@ IpFilter_t ip_filter_add (IpFilter_t f, const char *s, unsigned flags)
 	}
 	if (*s) {
 		printf ("ip_filter_new: error at %s\r\n", s);
-		mm_fcts.free_ (ipp);
+		Free (ipp);
 		ipp = NULL;
 	}
 	return (ipp);
@@ -241,7 +241,7 @@ IpFilter_t ip_filter_new (const char *s, unsigned flags, int defmatch)
 
 void ip_filter_free (IpFilter_t fp)
 {
-	mm_fcts.free_ (fp);
+	Free (fp);
 }
 
 /* ip_filter_dump -- Dump a filter created with ip_filter_new(). */

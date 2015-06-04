@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -662,7 +662,7 @@ DDS_ReturnCode_t sp_validate_local_perm (DDS_DomainId_t   domain_id,
 		return (DDS_RETCODE_NOT_ALLOWED_BY_SEC);
 	}
 	pp = sp_access_get_participant (*handle);
-	if (allow_access (p, pp)) {
+	if (pp && allow_access (p, pp)) {
 		/* If the permissions were updated, use the updated permissions */
 		pp->permissions_handle = (pp->updated_perm_handle) ? 
 			pp->updated_perm_handle : pp->permissions_handle;
@@ -674,7 +674,9 @@ DDS_ReturnCode_t sp_validate_local_perm (DDS_DomainId_t   domain_id,
 	}
 	else {
 		*handle = 0;
-		pp->permissions = *handle;
+		if (pp)
+			pp->permissions = *handle;
+
 		log_printf (SEC_ID, 0, "denied.\r\n");
 		return (DDS_RETCODE_NOT_ALLOWED_BY_SEC);
 	}

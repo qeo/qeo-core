@@ -1,0 +1,2 @@
+include "qeo-qdm-c", "qeo-qdm-java", "qeo-qdm-js"
+rootProject.name = 'qeo-qdm'

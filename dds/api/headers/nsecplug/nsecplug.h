@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -23,7 +23,7 @@
 #define	MAX_DOMAIN_PARTITIONS	4	/* Max. # of domain partition rules. */
 #define	MAX_PARTICIPANT_NAME	128	/* Max. participant name length. */
 #define	MAX_KEY_LENGTH		128	/* Max. key length. */
-#define MAX_ID_HANDLES		64	/* Max. # of participants. */
+#define MAX_ID_HANDLES		256	/* Max. # of participants. */
 #define	MAX_USER_TOPICS		16	/* Max. # of user topic rules. */
 #define	MAX_USER_PARTITIONS	8	/* Max. # of user partition rules. */
 #define	MAX_PERM_HANDLES	256	/* Max. # of permissions records. */

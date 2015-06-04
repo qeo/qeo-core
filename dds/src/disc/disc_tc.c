@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -84,33 +84,12 @@ unsigned char *tc_unique (Topic_t       *tp,
 	VTC_Header_t	*hp;
 	unsigned char	*ntc, *xtc;
 	Endpoint_t	*xep;
-	int		same;
+	/*int		same;*/
 
 	ntc = NULL;
 	tcu_print2 ("tc_unique(@%p, %p):", ep, tc);
 	*incompatible = 0;
 	do {
-		if (tp->type->type_support) {
-			if (tp->type->type_support->ts_prefer >= MODE_V_TC) {
-				tcu_print2 ("{T:%p*%u}", tp->type->type_support->ts_vtc,
-						 tp->type->type_support->ts_vtc->nrefs_ext);
-				if (vtc_equal ((unsigned char *) tp->type->type_support->ts_vtc, tc)) {
-					ntc = (unsigned char *) tp->type->type_support->ts_vtc;
-					break;
-				}
-			}
-			else {
-				if (!vtc_compatible (tp->type->type_support,
-						     tc,
-						     &same))
-					*incompatible = 1;
-				else if (same) {
-					tcu_print (" use ~0!\r\n");
-					xfree (tc);
-					return (TC_IS_TS);
-				}
-			}
-		}
 		for (xep = tp->writers; xep; xep = xep->next) {
 			if (xep == ep || !entity_discovered (xep->entity.flags))
 				continue;
@@ -141,6 +120,30 @@ unsigned char *tc_unique (Topic_t       *tp,
 				ntc = xtc;
 				break;
 			}
+		}
+		if (ntc)
+			break;
+
+		if (tp->type->type_support) {
+			if (tp->type->type_support->ts_prefer >= MODE_V_TC) {
+				tcu_print2 ("{T:%p*%u}", tp->type->type_support->ts_vtc,
+						 tp->type->type_support->ts_vtc->nrefs_ext);
+				if (vtc_equal ((unsigned char *) tp->type->type_support->ts_vtc, tc)) {
+					ntc = (unsigned char *) tp->type->type_support->ts_vtc;
+					break;
+				}
+			}
+/*			else {
+				if (!vtc_compatible (tp->type->type_support,
+						     tc,
+						     &same))
+					*incompatible = 1;
+				else if (same) {
+					tcu_print (" use ~0!\r\n");
+					xfree (tc);
+					return (TC_IS_TS);
+				}
+			} */
 		}
 	}
 	while (0);

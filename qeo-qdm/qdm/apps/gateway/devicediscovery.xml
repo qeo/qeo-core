@@ -1,0 +1,155 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.3">
+  <include file="qeo_types.xml"/>
+  <module name="org::qeo::networking::devicediscovery">
+    <doc>
+      This data model aims to provide the following information:
+        - a list of discovered hosts in the network, with hostname,
+          IP and MAC address information. This is useful for a number of
+          machine-to-machine use cases (e.g. identifying devices for 
+          the creation of pinholes)
+        - very basic network topology information: which hosts are connected
+          via which physical (wired ethernet ports, MoCa, ...) or logical
+          (wifi SSIDs) ports to the local network. The main use case here is
+          being able to draw a "device map" like it is typically seen in a 
+          gateway's UI.
+    </doc>
+    <struct name="NetworkPort" behavior="state">
+      <doc>
+        This topic describes physical or logical network ports attached to a
+        device.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>Unique id for this network port.</doc>
+      </member>
+      <member name="name" type="string">
+        <doc>
+          Friendly name for the port.
+          For wifi, this is the SSID.
+          For wired ethernet, this is up to your discretion. Possibilities include:
+                - (switch with individually managed ports): eth0, eth1, ...
+                - (internal hub, ports are indistinguishable): eth
+          For all other technologies: up to your discretion.
+        </doc>
+      </member>
+      <member name="hwAddress" type="string">
+        <doc>
+          The port's MAC address (or the suitable equivalent for the port's
+          technology). There can be multiple ports with the same MAC address
+          (e.g. different physical ports on the same bridge or switch).
+        </doc>
+      </member>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId">
+        <doc>Device ID of the device hosting this port</doc>
+      </member>
+      <member name="technology" type="int32">
+        <doc>
+          Should really be an enum. Possible values:
+          0 - unknown
+          1 - wired ethernet
+          2 - wifi
+          3 - MoCa
+          4 - G.hn
+          5 - HomePNA
+          TODO: more technologies to be added?
+        </doc>
+      </member>
+    </struct>
+    <struct name="NetworkSegment" behavior="state">
+      <doc>
+        This topic describes a single network segment as seen by a gateway.
+        A network segment is defined as a set of hosts that can communicate
+        directly without intervening routers.
+        Typical network segments for a residential gateway are the local LAN
+        (wired + wireless clients), or a guest WiFi network.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>unique ID for this network segment</doc>
+      </member>
+      <member name="name" type="string">
+        <doc>friendly name for this network segment (e.g. LAN, Guestwifi, ...)</doc>
+      </member>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId">
+        <doc>Device ID of the router managing this network segment</doc>
+      </member>
+    </struct>
+    <struct name="Host" behavior="state">
+      <doc>
+        The Host key is a combination of MAC address (theoretically globally
+        unique) and network segment id. MAC address spoofing can compromise the
+        uniqueness of MAC addresses, but we assume that you won't put two
+        devices with the same MAC address in the same network segment.
+
+        Hosts that have two network interfaces will show up twice on the Host
+        topic.  This makes sense if the two interfaces are connected to two
+        different network segments, but may look weird if they connect to the
+        same network segment, as the host will show up twice in this network
+        segment.
+
+        The gateway device itself is also a host in the network segment, and it
+        may have multiple MAC addresses (one for wired ethernet, one per
+        configured SSID), so it will show up multiple times in the Host topic.
+      </doc>
+      <member name="hwAddress" type="string" key="true">
+        <doc>
+          The host's hardware address. For most interconnection technologies,
+          this is a MAC address, but we keep the term more general to account
+          for technologies that use a different terminology.
+        </doc>
+      </member>
+      <member name="networkSegmentId" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>Refers to NetworkSegment.id</doc>
+      </member>
+      <member name="hostname" type="string">
+        <doc>The host name.</doc>
+      </member>
+      <member name="friendlyname" type="string">
+        <doc>The friendly name for the host. Useful for displaying in network map UIs.</doc>
+      </member>
+      <member name="ipAddresses" type="string" sequenceMaxLength="-1">
+        <doc>
+          The host's known IP addresses.
+          This list includes both IPv4 and v6 addresses.
+          IPv4 addresses are specified in dotted-quad notation (all decimal, no
+          leading zeros).
+          IPv6 addresses are specified in canonical form (RFC 5952).
+        </doc>
+      </member>
+      <member name="active" type="boolean">
+        <doc>
+          true if the host is currently online (i.e. we see traffic from that
+          host), false otherwise
+        </doc>
+      </member>
+      <member name="lastActive" type="int64">
+        <doc>
+          Timestamp (seconds since Jan 1, 1970) when the host was last seen as
+          active. Mainly relevant when active == false.
+
+          Note: gateways are not required to keep a history list of inactive 
+          devices, and if they do, it's their call how long they remember an 
+          inactive host, or how many inactive hosts they remember.
+        </doc>
+      </member>
+      <member name="portId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>
+          The network port this host is connected to. Refers to NetworkPort.id.
+        </doc>
+      </member>
+    </struct>
+    <struct name="HostRequest" behavior="event">
+      <doc>Request event to set a host's friendly name.</doc>
+      <member name="hwAddress" type="string">
+        <doc>
+          The host's hardware address.
+        </doc>
+      </member>
+      <member name="networkSegmentId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>Refers to NetworkSegment.id</doc>
+      </member>
+      <member name="friendlyname" type="string">
+        <doc>The requested friendly name for the host.</doc>
+      </member>
+    </struct>
+  </module>
+</types>

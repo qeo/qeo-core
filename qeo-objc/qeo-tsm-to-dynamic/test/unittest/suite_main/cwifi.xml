@@ -1,0 +1,124 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model">
+  <include file="qeo_types.xml"/>
+  <!-- version 0.4 -->
+  <module name="org::qeo::wifi">
+  <doc>Wi-Fi Dr PoC version dd. 28/6/2013.</doc>
+    <struct name="Radio" behavior="state">
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>ID of the wifi radio.</doc>
+      </member>
+      <member name="device" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId">
+        <doc>
+			Qeo Device ID of the device this radio belongs to.
+			Useful in the case of multiple devices that play the Access Point role within one realm.
+			Qeo provides a built-in function to retrieve this DeviceID.
+	    </doc>
+      </member>
+      <member name="channel" type="int32">
+        <doc>
+			enumeration, possible values: 1-14 (2.4GHz channels) and 
+			36,40,44,48,52,56,60,64,100,104,108,112,116,120,124,128,132,136,140,149,153,157,161 (5GHz channels).
+		</doc>
+      </member>
+      <member name="capabilities" type="string">
+        <doc>
+			802.11standard, MIMOconfiguration TX x RX:SS, SignalBandwidth (MHz), Supported Bands, SGIcapable (y or no).
+			E.g. "a/b/g/n,2x3:2,20/40,2/5,y". 
+		</doc>
+      </member>
+    </struct>
+    <struct name="Interface" behavior="state">
+      <member name="MACAddress" type="string" key="true">
+        <doc>
+          MAC address associated with the interface.
+          If the interface is of type "access point", this is the BSSID.
+          If the interface is of type "client", this is the client's MAC address.
+        </doc>
+      </member>
+      <member name="radio" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>
+          Reference to the Radio object his Interface is attached to.
+        </doc>
+      </member>
+      <member name="SSID" type="string">
+        <doc>
+          For access points, their network name.
+          For clients, the network they are attached to.
+        </doc>
+      </member>
+      <member name="type" type="int32">
+        <doc>enum. Values are
+            0 = access point
+            1 = client (station)
+        </doc>
+      </member>
+      <member name="enabled" type="boolean">
+        <doc>
+			Is this interface currently enabled?
+        </doc>
+      </member>
+    </struct>
+    <struct name="AssociatedStation" behavior="state">
+	 <doc>Note: seperate topic to allow for specific eventing (new STA associated).</doc>
+      <member name="MACAddress" type="string" key="true">
+        <doc>the station's MAC address</doc>
+      </member>
+      <member name="BSSID" type="string" key="true">
+        <doc>
+			BSSID the station is associated with. Refers to Interface.MACAddress.
+			Note: key, since STA can connect (at different time) to different BSSIDs.</doc>
+      </member>
+      <member name="capabilities" type="string">
+        <doc>
+			802.11standard, MIMOconfiguration TX x RX:SS, SignalBandwidth, Supported Bands, SGIcapable.
+			E.g. "a/b/g/n,2x3:2,20/40,2/5,y".</doc>
+      </member>
+      <member name="associated" type="boolean">
+        <doc>is this station currently associated?</doc>
+      </member>
+      <member name="lastSeen" type="int64">
+        <doc>timestamp (seconds since 1970) when the station was last seen as associated</doc>
+      </member>
+      <member name="maxNegotiatedPhyRate" type="int32">
+        <doc>in kbps</doc>
+      </member>
+    </struct>
+    <struct name="ScanListEntry">
+      <member name="BSSID" type="string"/>
+      <member name="SSID" type="string"/>
+      <member name="channel" type="int32">
+        <doc>enum. Same values as Radio.channel</doc>
+      </member>
+      <member name="RSSI" type="int32">
+        <doc>in dBm</doc>
+      </member>
+    </struct>
+    <struct name="ScanList" behavior="state">
+	<doc>
+		To be published at start-up, periodically(period left free; 
+		for AP after period scans as defined in ACS config), on request.
+	</doc>
+      <member name="radio" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>the radio that published this scan list (can be either AP or STA)</doc>
+      </member>
+      <member name="list" type="nonBasic" nonBasicTypeName="ScanListEntry" sequenceMaxLength="-1">
+        <doc>the scan list entries</doc>
+      </member>
+      <member name="timestamp" type="int64">
+        <doc>seconds since Jan 1, 1970</doc>
+      </member>
+    </struct>
+    <struct name="ScanRequest" behavior="event">
+      <doc>
+		Trigger a new scan and publication of the new scan list.
+        ScanList entries from a previous scan for this radio will be removed as 
+        the new list is published.
+		Important to note that a scan on AP side interrupts service (for a few seconds).
+		Please forget about the previous remark that a scan triggers a new AutoChannelSelection: 
+		it is possible to scan without triggering AutoChannelSelection.
+      </doc>
+      <member name="radio" type="nonBasic" nonBasicTypeName="org::qeo::UUID"/>
+    </struct>
+  </module>
+</types>

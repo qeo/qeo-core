@@ -1,0 +1,8 @@
+/* Entries added here will be added to generic ldver file by gradle */
+	qeo_logger;
+    qeocore_factory_get_realm_id;
+	qeocore_fwdfactory_set_public_locator;
+	qeocore_fwdfactory_new;
+	qeocore_fwdfactory_close;
+	qeocore_parameter_set;
+	qeo_factory_close;

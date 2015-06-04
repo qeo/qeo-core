@@ -1,0 +1,21 @@
+//The artifactory.gradle file will be used as a helper function in order to use the functionality of artifactory.
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidSDKSample.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+
+generateTypes {
+	ext.qdms = ["samples/QSimpleChat_ChatMessage.xml", "samples/QSimpleChat_ChatParticipant.xml"]
+	ext.language = "java"
+}
+
+dependencies {
+	compile project.latestSupportV4
+	if (System.properties['qeo.src.qeo-android'] == null) {
+		compile group: 'org.qeo', name: 'qeo-android', version: version
+	}
+	else {
+		compile project(':qeo-android')
+	}
+    //qdms for codegen
+    generated "org.qeo:qeo-qdm:${project.qeoVersion}:samples@zip"
+}
+

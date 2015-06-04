@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <module name="org::qeo::psademo">
+    <struct behavior="state" name="Location">
+      <member name="subject" type="string" key="true">
+        <doc>User friendly name of the subject that is associated with the location. Can be a person, e.g. Albert, or a place, e.g. Home, or ...</doc>
+      </member>
+      <member name="latitude" type="float32">
+        <doc>The longitude of the subject's location using the "signed decimal degrees" standard.</doc>
+      </member>
+      <member name="longitude" type="float32">
+        <doc>The longitude of the subject's location using the "signed decimal degrees" standard.</doc>
+      </member>
+     </struct>
+  </module>
+</types>

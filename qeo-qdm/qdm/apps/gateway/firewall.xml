@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <include file="qeo_types.xml"/>
+  <module name="org::qeo::networking::firewall">
+    <doc>
+      This QDM provides a minimal model of a networking device's firewall.
+      It does not model individual firewall rules, or rule chains. Rather, it
+      represents the firewall's existence and high-level feature set, and it
+      offers a way to easily create, query and monitor blacklist rules for 
+      hosts (both inside and outside of the LAN).
+    </doc>
+    <struct name="Firewall" behavior="state">
+      <doc>This topic represents firewalls, and their high-level features.</doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>Unique ID for this firewall.</doc>
+      </member>
+      <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId">
+        <doc>Device ID of the device the firewall is running on.</doc>
+      </member>
+      <member name="name" type="string">
+        <doc>A friendly name for the firewall. E.g. "home gateway firewall"</doc>
+      </member>
+      <member name="stateful" type="boolean">
+        <doc>Specifies whether the firewall supports stateful filtering.</doc>
+      </member>
+      <member name="ipv4" type="boolean">
+        <doc>Specifies whether the firewall supports IPv4.</doc>
+      </member>
+      <member name="ipv6" type="boolean">
+        <doc>Specifies whether the firewall supports IPv6.</doc>
+      </member>
+      <member name="enabled" type="boolean">
+        <doc>Specifies whether the firewall is currently enabled.</doc>
+      </member>
+    </struct>
+    <struct name="BlacklistEntry" behavior="state">
+      <doc>
+        This topic represents blacklist rules that are currently enforced by a
+        firewall.
+        This topic also includes the drop count statistic. This drop count can be
+        updated periodically if interested parties request this through a 
+        BlacklistStatisticsRequest.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>
+          Globally unique id for this blacklist rule.
+          This is taken over from the BlacklistRequest that caused creation of this
+          rule in the first place.
+        </doc>
+      </member>
+      <member name="firewallId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>The firewall that is enforcing this blacklist rule.</doc>
+      </member>
+      <member name="ipAddress" type="string">
+        <doc>
+          IP address (v4 or v6) of the host that is blacklisted.
+          IPv4 addresses are in dotted-quad notation (all decimal, no leading zeros).
+          IPv6 addresses are in canonical form (RFC 5952).
+        </doc>
+      </member>
+      <member name="endTime" type="int64">
+        <doc>
+          Expiry time of the blacklist rule in seconds since epoch.
+          A value of 0 indicates a blacklist rule that never expires.
+          Upon expiry, the BlacklistEntry instance must be removed.
+        </doc>
+      </member>
+      <member name="dropCount" type="int32">
+        <doc>Specifies the number of packets the blacklist rule has dropped.</doc>
+      </member>
+    </struct>
+    <struct name="BlacklistRequest" behavior="event">
+      <doc>
+        BlacklistRequests are used to create, update or delete blacklist rules
+        on a firewall.
+        They are modelled as events so that the publisher does not need to
+        manage the lifecycle of each request (it's basically fire-and-forget).
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>
+          The unique id of the blacklist rule in question.
+          Semantics:
+          - if this is a new UUID (i.e. there is currently no blacklist
+            rule with the same UUID for the addressed firewall), the intention
+            is to create a new blacklist rule.
+          - if this is an existing UUID (i.e. the addressed firewall has a
+            rule with this id), the request is meant as an update request.
+          If a firewall has a rule with this UUID, but it is not the addressed
+          firewall (i.e. firewallId != Firewall.id), this request is to be 
+          interpreted as a request ot delete the rule in question.
+          Note: for rule deletions, the recommended practice is to leave the
+          firewallId as all-zeroes, but implementations should act on other 
+          values as well.
+        </doc>
+      </member>
+      <member name="firewallId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>
+          This is the firewall provider the request is directed to.
+          Use 0 to request deletion of an existing rule.
+        </doc>
+      </member>
+      <member name="ipAddress" type="string">
+        <doc>This is the IPv4 or IPv6 address that is blacklisted.</doc>
+      </member>
+      <member name="endTime" type="int64">
+        <doc>
+          Expiry time of the blacklist rule in seconds since epoch.
+          A value of 0 indicates a blacklist rule that never expires.
+          Upon expiry, the corresponding BlacklistEntry instance will be removed.
+        </doc>
+      </member>
+    </struct>
+    <struct name="BlacklistStatisticsRequest" behavior="state">
+      <doc>
+        This topic allows a client to express interest in the statistics for a
+        given blacklist rule.
+        As long as the request instance lives, the firewall will periodically
+        (ideally at the requested sample rate) publish drop count statistics
+        for the indicated blacklist rule.
+        When the request instance is removed, the firewall may or may not
+        continue publishing drop count statistics.
+      </doc>
+      <member name="id" type="nonBasic" nonBasicTypeName="org::qeo::UUID" key="true">
+        <doc>A randomly-generated UUID to make this request uniquely identifiable.</doc>
+      </member>
+      <member name="blacklistEntryId" type="nonBasic" nonBasicTypeName="org::qeo::UUID">
+        <doc>The id of the BlacklistEntry we're interested in.</doc>
+      </member>
+      <member name="sampleInterval" type="int32">
+        <doc>
+          This is the sample interval in seconds the blacklist entry statistics
+          will be published. If sampleInterval equals 0 then this is a request
+          for a single statistics sample.
+        </doc>
+      </member>
+    </struct>
+  </module>
+</types>

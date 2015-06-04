@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -68,11 +68,12 @@ DDS_ReturnCode_t disc_get_data (Reader_t *rp, ChangeData_t *c)
 	if (!nchanges)
 		return (DDS_RETCODE_NO_DATA);
 
-	c->kind   = cp->c_kind;
-	c->is_new = cp->c_vstate == NEW;
-	c->h      = cp->c_handle;
-	c->writer = cp->c_writer;
-	c->time   = cp->c_time;
+	c->kind     = cp->c_kind;
+	c->is_new   = cp->c_vstate == NEW;
+	c->indirect = cp->c_indirect;
+	c->h        = cp->c_handle;
+	c->writer   = cp->c_writer;
+	c->time     = cp->c_time;
 	if (cp->c_kind == ALIVE) {
 		c->data = dcps_get_cdata (NULL, cp,
 					  rp->r_topic->type->type_support, 0,
@@ -835,6 +836,9 @@ static void connect_builtin_writer (Writer_t *wp, DiscoveredReader_t *peer_rp)
 	rtps_matched_reader_add (wp, peer_rp);
 #if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
 	if (NATIVE_SECURITY (dp) && (wp->w_submsg_prot || wp->w_payload_prot)) {
+
+		prof_start (disc_biw_sec);
+
 		crypto = sec_register_remote_datareader (
 					wp->w_crypto,
 					peer_rp->dr_participant->p_crypto,
@@ -857,6 +861,8 @@ static void connect_builtin_writer (Writer_t *wp, DiscoveredReader_t *peer_rp)
 		msg.message_class_id = GMCLASSID_SECURITY_DATAWRITER_CRYPTO_TOKENS;
 		ctt_send (dp, peer_rp->dr_participant, &wp->w_ep, &peer_rp->dr_ep, &msg);
 		sec_release_tokens (&msg.message_data);
+
+		prof_stop (disc_biw_sec, 1);
 	}
 #endif
 #ifndef RW_TOPIC_LOCK
@@ -882,6 +888,9 @@ static void connect_builtin_reader (Reader_t *rp, DiscoveredWriter_t *peer_wp)
 	rtps_matched_writer_add (rp, peer_wp);
 #if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
 	if (NATIVE_SECURITY (dp) && (rp->r_submsg_prot || rp->r_payload_prot)) {
+		
+		prof_start (disc_bir_sec);
+
 		crypto = sec_register_remote_datawriter (
 					rp->r_crypto,
 					peer_wp->dw_participant->p_crypto,
@@ -903,6 +912,8 @@ static void connect_builtin_reader (Reader_t *rp, DiscoveredWriter_t *peer_wp)
 		msg.message_class_id = GMCLASSID_SECURITY_DATAREADER_CRYPTO_TOKENS;
 		ctt_send (dp, peer_wp->dw_participant, &rp->r_ep, &peer_wp->dw_ep, &msg);
 		sec_release_tokens (&msg.message_data);
+
+		prof_stop (disc_bir_sec, 1);
 	}
 #endif
 #ifndef RW_TOPIC_LOCK

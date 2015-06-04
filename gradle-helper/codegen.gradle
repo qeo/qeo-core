@@ -53,6 +53,7 @@ task generateTypes(type: JavaExec) {
     main = "com.technicolor.qeo.codegen.Main"
     ext.typesDir = null
 
+    logging.captureStandardOutput LogLevel.INFO 
 
             //TODO: fixme, but changed in 0.11, can't be added in afterevaluate anymore :-(
             if (project.hasProperty('android')) {
@@ -186,18 +187,26 @@ task generateTypes(type: JavaExec) {
 }
 
 task generateTestTypes(type: JavaExec) {
+
+    //external properties
+    ext.language = null
+    ext.qdms = null
+    ext.outputDir = null;
+
     dependsOn getCodeGen
     description "Execute codegenerator for tests"
     main = "com.technicolor.qeo.codegen.Main"
     def typesDir
+    
+    logging.captureStandardOutput LogLevel.INFO 
 
     afterEvaluate {
-        if (!ext.has("language")) {
+        if (language == null) {
             logger.info("generateTestTypes is disabled as the \"language\" property is not set")
             enabled = false
             return
         }
-        typesDir = ext.has("outputDir") ? ext.outputDir : null
+        typesDir = outputDir
         if ((project.hasProperty("cSdkSample") && cSdkSample == true) || (language == "c")) {
             typesDir = typesDir ?: "src"
         }

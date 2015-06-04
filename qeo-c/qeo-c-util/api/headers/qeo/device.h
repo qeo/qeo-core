@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -37,14 +37,14 @@ typedef struct
 typedef struct
 {
     qeo_platform_device_id qeoDeviceId; /**< DeviceID is a UUID of 128 bit */
-    const char *manufacturer; /**< The device manufacturer, e.g., Dell Inc. */
-    const char *modelName; /**< Model name of the device (human readable string) */
-    const char *productClass; /**< Identifier of the class of product for which the serial number applies */
-    const char *serialNumber; /**< Identifier of the particular device that is unique for the indicated class of product and manufacturer. */
-    const char *hardwareVersion; /**< A string identifying the particular CPE model and version */
-    const char *softwareVersion; /**< A string identifying the software version currently installed in the device */
-    const char *userFriendlyName; /**< Descriptive name of the device */
-    const char *configURL; /**< URL for configuration page that allows to view and/or configure  device settings */
+    char *manufacturer; /**< The device manufacturer, e.g., Dell Inc. */
+    char *modelName; /**< Model name of the device (human readable string) */
+    char *productClass; /**< Identifier of the class of product for which the serial number applies */
+    char *serialNumber; /**< Identifier of the particular device that is unique for the indicated class of product and manufacturer. */
+    char *hardwareVersion; /**< A string identifying the particular CPE model and version */
+    char *softwareVersion; /**< A string identifying the software version currently installed in the device */
+    char *userFriendlyName; /**< Descriptive name of the device */
+    char *configURL; /**< URL for configuration page that allows to view and/or configure  device settings */
 
 } qeo_platform_device_info;
 

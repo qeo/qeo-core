@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -21,8 +21,12 @@
 #include <qeo/factory.h>
 #include <qeocore/api.h>
 #include "forwarder.h"
+#include "core_util.h"
+#include "config.h"
 
 static void on_qeocore_on_factory_init_done(qeo_factory_t *factory, bool success);
+static void bgns_on_wakeup(const char *topic_name, const char *type_name, unsigned char id [12]);
+static void bgns_on_connected(int fd, int connected);
 
 typedef struct {
     pthread_cond_t cond;
@@ -36,7 +40,8 @@ static qeocore_factory_listener_t _listener = {
     .on_factory_init_done = on_qeocore_on_factory_init_done
 };
 
-static qeo_factory_t* _factory = NULL;
+static bool _factory_closed_init = false;
+static bool _factory_open_init = false;
 
 static void on_qeocore_on_factory_init_done(qeo_factory_t *factory, bool success){
 
@@ -55,7 +60,8 @@ static void on_qeocore_on_factory_init_done(qeo_factory_t *factory, bool success
 
 static qeo_factory_t *factory_create(const qeo_identity_t *id,
                                      qeocore_on_fwdfactory_get_public_locator cb,
-                                     const char *local_port)
+                                     const char *local_port,
+                                     bool bgns)
 {
     qeo_factory_t *factory = NULL;
     qeo_retcode_t ret = QEO_EFAIL;
@@ -65,16 +71,19 @@ static qeo_factory_t *factory_create(const qeo_identity_t *id,
         .finished = false,
         .success = false
     };
+    DDS_Activities_register(bgns_on_wakeup, bgns_on_connected);
 
-    if (_factory == NULL) {
+
+    if (!((id == QEO_IDENTITY_DEFAULT && _factory_closed_init)
+        || (id == QEO_IDENTITY_OPEN && _factory_open_init))) {
         do {
-            if (NULL != local_port) {
-                _listener.on_fwdfactory_get_public_locator = cb;
-                if (QEO_OK != (ret = qeocore_factory_set_local_tcp_port(NULL, local_port))) {
-                    qeo_log_e("Factory set local TCP port failed");
-                    break;
-                }
+            if (id == QEO_IDENTITY_DEFAULT) {
+                _factory_closed_init = true;
             }
+            else if (id == QEO_IDENTITY_OPEN) {
+                _factory_open_init = true;
+            }
+
             factory = qeocore_factory_new(id);
             if (factory == NULL) {
                 ret = QEO_ENOMEM;
@@ -82,6 +91,12 @@ static qeo_factory_t *factory_create(const qeo_identity_t *id,
                 break;
             }
 
+            /* Forwarder specific checks */
+            if (NULL != local_port) {
+                factory->local_port = strdup(local_port);
+            }
+            factory->flags.is_server = (NULL != cb ? 1 : 0);
+            _listener.on_fwdfactory_get_public_locator = cb;
 
             if ((ret = qeocore_factory_set_user_data(factory, (uintptr_t)&userdata)) != QEO_OK){
                 qeo_log_e("Factory set user data failed");
@@ -111,9 +126,13 @@ static qeo_factory_t *factory_create(const qeo_identity_t *id,
         if (ret != QEO_OK || userdata.success == false){
             qeocore_factory_close(factory);
             factory = NULL;
+            if (id == QEO_IDENTITY_DEFAULT) {
+                _factory_closed_init = false;
+            }
+            else if (id == QEO_IDENTITY_OPEN) {
+                _factory_open_init = false;
+            }
         }
-
-        _factory = factory;
     }
     else {
         qeo_log_e("Factory can only be created once");
@@ -131,15 +150,20 @@ qeo_factory_t *qeo_factory_create()
 
 qeo_factory_t *qeo_factory_create_by_id(const qeo_identity_t *id)
 {
-    return factory_create(id, NULL, NULL);
+    return factory_create(id, NULL, NULL, false);
 }
 
 
 void qeo_factory_close(qeo_factory_t *factory)
 {
-    if ((_factory != NULL) && (_factory == factory)) {
+    if (factory != NULL) {
+        if (factory->domain_id == core_get_domain_id_open()) {
+            _factory_open_init = false;
+        }
+        else if (factory->domain_id == core_get_domain_id_closed()) {
+            _factory_closed_init = false;
+        }
         qeocore_factory_close(factory);
-        _factory = NULL;
     }
     else {
         qeo_log_e("Trying to close an invalid factory");
@@ -147,12 +171,13 @@ void qeo_factory_close(qeo_factory_t *factory)
 }
 
 qeo_factory_t *qeocore_fwdfactory_new(qeocore_on_fwdfactory_get_public_locator cb,
-                                      const char *local_port)
+                                      const char *local_port,
+                                      bool bgns)
 {
     qeo_factory_t *factory = NULL;
 
     if ((NULL != cb) && (NULL != local_port)) {
-        factory = factory_create(QEO_IDENTITY_DEFAULT, cb, local_port);
+        factory = factory_create(QEO_IDENTITY_DEFAULT, cb, local_port, bgns);
     }
     return factory;
 }
@@ -176,4 +201,72 @@ const char *qeo_version_string(void)
 #else
     return "x.x.x-UNKNOWN";
 #endif
+}
+
+/* ===[ background notification service ]==================================== */
+
+static qeo_bgns_listener_t _bgns_listener = {};
+static uintptr_t _bgns_userdata = 0;
+static bool _bgns_connected = false;
+
+static void bgns_on_wakeup(const char *topic_name,
+                           const char *type_name,
+                           unsigned char id [12])
+{
+    qeo_log_d("bgns_on_wakeup: %s - %s", topic_name, type_name);
+    if (NULL != _bgns_listener.on_wakeup) {
+        _bgns_listener.on_wakeup(_bgns_userdata, type_name);
+    }
+}
+
+static void bgns_on_connected(int fd,
+                              int connected)
+{
+    qeo_log_d("bgns_on_connected: %i - %i", fd, connected);
+    _bgns_connected = (connected == 1 ? true: false);
+    if (NULL != _bgns_listener.on_connect) {
+        _bgns_listener.on_connect(_bgns_userdata, fd, connected ? true : false);
+    }
+}
+
+void qeo_bgns_register(const qeo_bgns_listener_t *listener,
+                       uintptr_t userdata)
+{
+    if (NULL == listener) {
+        memset(&_bgns_listener, 0, sizeof(_bgns_listener));
+    }
+    else {
+        _bgns_listener = *listener;
+    }
+    _bgns_userdata = userdata;
+    DDS_Activities_register(bgns_on_wakeup, bgns_on_connected);
+}
+
+#ifndef NDEBUG
+#define SUSPEND_ACTIVITIES (DDS_ALL_ACTIVITY & ~DDS_DEBUG_ACTIVITY)
+#else
+#define SUSPEND_ACTIVITIES DDS_ALL_ACTIVITY
+#endif
+
+void qeo_bgns_suspend(void)
+{
+    qeo_log_i("Suspend Qeo");
+    if (qeocore_get_num_factories() == 0) {
+        qeo_log_w("No open factories, ignoring suspend call");
+        return;
+    }
+    if (!_bgns_connected) {
+        qeo_log_w("Suspend call while not connected to bgns");
+    }
+    DDS_Activities_suspend(SUSPEND_ACTIVITIES);
+}
+
+void qeo_bgns_resume(void)
+{
+    qeo_log_i("Resume Qeo");
+    if (qeocore_get_num_factories() == 0) {
+        qeo_log_w("No open factories, ignoring resume call");
+        return;
+    }
+    DDS_Activities_resume(SUSPEND_ACTIVITIES);
 }

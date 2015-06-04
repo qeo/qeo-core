@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -69,6 +69,7 @@ typedef struct receiver_st {
 	VendorId_t		src_vendor;
 	GuidPrefix_t		src_guid_prefix;
 	GuidPrefix_t		dst_guid_prefix;
+	int			indirect_src;
 	int			have_prefix;
 	int			have_timestamp;
 	FTime_t			timestamp;
@@ -197,8 +198,16 @@ struct ccref_st {
 	CCREF		*prev;		/* Previous in list of changes. */
 	unsigned	state:8;	/* Current state in stateful mode. */
 	unsigned	relevant:1;	/* Change is relevant for transmit. */
-	unsigned	mcdata:1;	/* Multicasted destination. */
 	unsigned	ack_req:1;	/* Ack requested from cache. */
+	unsigned	override:1;	/* Override normal destination. */
+	unsigned	mcdata:1;	/* Multicasted destination. */
+	unsigned	bcdata:1;	/* Broadcasted destination. */
+#if WORDSIZE == 64 || defined (BIGDATA)
+	unsigned	dphandle;	/* Destination participant handle. */
+#else
+	unsigned	_pad:3;
+	unsigned	dphandle:16;	/* Destination participant handle. */
+#endif
 #ifdef RTPS_FRAGMENTS
 	FragInfo_t	*fragments;	/* Fragment status information. */
 #endif
@@ -240,7 +249,7 @@ struct proxy_st {
 	unsigned	heartbeats:1;
 	unsigned	marshall:1;
 	unsigned	blocked:1;
-	unsigned	msg_time:1;
+	unsigned	msg_complete:1;
 	unsigned	no_mcast:1;
 	unsigned	id_prefix:1;
 	unsigned	ir_locs:1;
@@ -248,6 +257,7 @@ struct proxy_st {
 	unsigned	tunnel:1;
 #endif
 	unsigned	unacked:13;
+	unsigned	dest_handle;
 	CCLIST		changes;
 	Endpoint_t	*endpoint;
 	Proxy_t		*next_guid;
@@ -605,9 +615,17 @@ struct rtps_reader_st {
 #endif
 };
 
+void rtps_direct_reply_set (LocatorNode_t       **reply,
+			    const LocatorList_t list,
+			    const Locator_t     *lp);
+
 void participant_add_prefix (unsigned char *key, unsigned size);
 
 /* Update or cache participant locator information. */
+
+void participant_update_reply_locators (Participant_t *p, RECEIVER *rxp);
+
+void participant_reset_reply_locators (Participant_t *p);
 
 void proxy_activate (Proxy_t *pp);
 

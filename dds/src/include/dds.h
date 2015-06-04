@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -41,6 +41,7 @@ extern char **dds_args;
 extern const char *dds_entity_name;
 extern unsigned dds_ev_pending;
 extern size_t dds_max_sample_size;		/* Maximum sample size. */
+extern int dds_tmr_suspend;
 extern unsigned dds_dtrace;
 #ifdef THREADS_USED
 extern thread_t dds_core_thread;

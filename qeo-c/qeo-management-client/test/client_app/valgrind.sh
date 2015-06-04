@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2014 - Qeo LLC
+# Copyright (c) 2015 - Qeo LLC
 #
 # The source code form of this Qeo Open Source Project component is subject
 # to the terms of the Clear BSD license.

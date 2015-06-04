@@ -1,0 +1,28 @@
+ext.artifactoryPomPackaging = "zip"
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+
+version = project.qeoVersion
+
+generateTypes {
+    ext.language = 'js'
+    ext.outputDir = "${buildDir}/gen-src/js"
+    ext.qdms = [
+        file("${project.rootDir}/qdm/catalog/qeo_types.xml"),
+        file("${project.rootDir}/qdm/catalog/qeo_DeviceInfo.xml"),
+    ]
+}
+
+task zipGeneratedCode(type: Zip, description: 'Archive generated code for public Qeo types') {
+    dependsOn generateTypes
+    from("${buildDir}/gen-src/js") {
+        into('qdm/js')
+        include('**')
+    }
+}
+
+artifacts {
+    archives zipGeneratedCode
+}

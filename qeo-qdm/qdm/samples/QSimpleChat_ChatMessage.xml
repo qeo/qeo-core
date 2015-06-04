@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+    <module name="org::qeo::sample::simplechat">
+  	<struct name="ChatMessage" behavior="event">
+            <doc>A simple chat message.</doc>  
+    	  	<member name="from" type="string"> 
+    		    <doc>The user sending the message.</doc>
+    		</member>
+    		<member name="message" type="string"> 
+    		    <doc>The message.</doc>
+    		</member>               
+        </struct>    
+    </module>
+</types> 

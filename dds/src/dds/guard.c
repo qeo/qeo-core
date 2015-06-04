@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -541,7 +541,7 @@ static void wl_manual_timeout (uintptr_t p)
 	Guard_t		*gp = (Guard_t *) p, *next_gp;
 	Writer_t	*wp;
 	Domain_t	*dp;
-	FTime_t		ntime, now, ptime;
+	FTime_t		ntime, now;
 	Ticks_t		delta;
 	unsigned	nalive;
 	unsigned	period;
@@ -579,8 +579,7 @@ static void wl_manual_timeout (uintptr_t p)
 		lock_take (wp->w_lock);
 		ntime = ((LocalEndpoint_t *) gp->wep)->guard->time;
 		period = (gp->period * 7) >> 3;
-		FTIME_SETT (ptime, period);
-		FTIME_ADD (ntime, ptime);
+		ftime_add_ticks (&ntime, period);
 		lock_release (wp->w_lock);
 		sys_getftime (&now);
 		if (FTIME_GT (ntime, now)) {
@@ -782,7 +781,7 @@ static void wl_topic_timeout (uintptr_t p)
 {
 	Guard_t		*gp = (Guard_t *) p;
 	Writer_t	*wp;
-	FTime_t		ntime, ptime, now;
+	FTime_t		ntime, now;
 	Ticks_t		delta;
 
 	wp = (Writer_t *) gp->wep;
@@ -793,8 +792,7 @@ static void wl_topic_timeout (uintptr_t p)
 		wp->w_flags &= ~EF_ALIVE;
 
 		ntime = wp->w_guard->time;
-		FTIME_SETT (ptime, gp->period);
-		FTIME_ADD (ntime, ptime);
+		ftime_add_ticks (&ntime, gp->period);
 		sys_getftime (&now);
 		if (FTIME_GT (ntime, now)) {
 			FTIME_SUB (ntime, now);
@@ -870,7 +868,7 @@ static void rl_topic_timeout (uintptr_t p)
 {
 	Guard_t		*gp = (Guard_t *) p;
 	Reader_t	*rp;
-	FTime_t		ntime, now, ptime;
+	FTime_t		ntime, now;
 	Ticks_t		delta;
 
 	rp = (Reader_t *) gp->rep;
@@ -881,8 +879,7 @@ static void rl_topic_timeout (uintptr_t p)
 		rp->r_flags &= ~EF_ALIVE;
 
 		ntime = rp->r_guard->time;
-		FTIME_SETT (ptime, gp->period);
-		FTIME_ADD (ntime, ptime);
+		ftime_add_ticks (&ntime, gp->period);
 		sys_getftime (&now);
 		if (FTIME_GT (ntime, now)) {
 			FTIME_SUB (ntime, now);

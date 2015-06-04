@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -145,7 +145,7 @@ String_t *qos_octets2str (const DDS_OctetSeq *sp);
 
 /* Copy an Octet sequence to a String. */
 
-void qos_str2octets (const String_t *s, DDS_OctetSeq *sp);
+int qos_str2octets (const String_t *s, DDS_OctetSeq *sp);
 
 /* Copy a String to an Octet sequence. */
 

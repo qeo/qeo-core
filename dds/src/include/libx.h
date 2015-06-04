@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -54,6 +54,10 @@ int slist_match (const char *list, const char *name, char sep);
 
 /* Check if a string is present in a list of strings, separated by the given
    separator character. */
+
+int is_dns_name (const char *s);
+
+/* Return a non-0 result if the string contains a DNS name. */
 
 #endif /* !__libx_ */
 

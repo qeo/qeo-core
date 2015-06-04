@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -17,9 +17,10 @@
 #ifndef __dds_aux_h_
 #define __dds_aux_h_
 
+#include <stdio.h>
 #include <stdint.h>
 
-#include "dds/dds_error.h"
+#include "dds/dds_dcps.h"
 
 #ifdef  __cplusplus
 extern "C" {
@@ -28,7 +29,7 @@ extern "C" {
 /* === Version Info ========================================================= */
 
 #define	TDDS_VERSION_MAJOR	4	/* Major version -> major API change. */
-#define	TDDS_VERSION_MINOR	0	/* Minor version -> minor API change. */
+#define	TDDS_VERSION_MINOR	5	/* Minor version -> minor API change. */
 #define	TDDS_VERSION_REVISION	0	/* Revision -> updated when released. */
 
 #define	TDDS_VERSION	((TDDS_VERSION_MAJOR << 24) | \
@@ -320,6 +321,141 @@ DDS_EXPORT void DDS_Activities_suspend (
 
 DDS_EXPORT void DDS_Activities_resume (
 	DDS_Activity activities
+);
+
+DDS_EXPORT DDS_ReturnCode_t DDS_Activities_notify (
+	DDS_DomainId_t domain_id,
+	const char *topic_match,
+	const char *type_match
+);
+
+DDS_EXPORT void DDS_Activities_unnotify (
+	DDS_DomainId_t domain_id,
+	const char *topic_match,
+	const char *type_match
+);
+
+typedef void (*DDS_Activities_on_wakeup) (
+	const char *topic_name,
+	const char *type_name,
+	unsigned char id [12]
+);
+
+typedef void (*DDS_Activities_on_connected) (
+	int fd,
+	int connected
+);
+
+DDS_EXPORT void DDS_Activities_register (
+	DDS_Activities_on_wakeup wakeup_fct,
+	DDS_Activities_on_connected connect_fct
+);
+
+typedef enum {
+	DDS_ACTIVITIES_CLIENT_ACTIVE,
+	DDS_ACTIVITIES_CLIENT_SLEEPING,
+	DDS_ACTIVITIES_CLIENT_DIED
+} DDS_ActivitiesClientState;
+
+typedef void (*DDS_Activities_on_client_change) (
+	DDS_DomainId_t domain_id,
+	DDS_BuiltinTopicKey_t *client_key,
+	DDS_ActivitiesClientState state
+);
+
+DDS_EXPORT void DDS_Activities_client_info (
+	DDS_Activities_on_client_change client_fct
+);
+
+
+/* === DDS discovery notifications ===========================================*/
+
+/* Notification types: */
+
+/* Masks for creation/logging: */
+#define	DDS_NOTIFY_PARTICIPANT	1
+#define	DDS_NOTIFY_TOPIC	2
+#define	DDS_NOTIFY_PUBLICATION	4
+#define	DDS_NOTIFY_SUBSCRIPTION	8
+
+#define	DDS_NOTIFY_LOCAL(m)	((m) << 4)
+#define	DDS_NOTIFY_REMOTE(m)	(m)
+
+#define	DDS_NOTIFY_ALL_LOCAL	(0xf0)
+#define	DDS_NOTIFY_ALL_REMOTE	(0x0f)
+#define	DDS_NOTIFY_ALL		(0xff)
+
+/* Participant changes notification callback function: */
+typedef void (* DDS_Participant_notify)  (
+	DDS_BuiltinTopicKey_t *key,
+	DDS_ParticipantBuiltinTopicData *data,
+	DDS_SampleInfo *info,
+	uintptr_t user
+);
+
+/* Topic changes notification callback function: */
+typedef void (* DDS_Topic_notify) (
+	DDS_BuiltinTopicKey_t *key,
+	DDS_TopicBuiltinTopicData *data,
+	DDS_SampleInfo *info,
+	uintptr_t user
+);
+
+/* Publication changes notification callback function. */
+typedef void (* DDS_Publication_notify) (
+	DDS_BuiltinTopicKey_t *key,
+	DDS_PublicationBuiltinTopicData *data,
+	DDS_SampleInfo *info,
+	uintptr_t user
+);
+
+/* Subscription changes notification callback function. */
+typedef void (* DDS_Subscription_notify) (
+	DDS_BuiltinTopicKey_t *key,
+	DDS_SubscriptionBuiltinTopicData *data,
+	DDS_SampleInfo *info,
+	uintptr_t user
+);
+
+/* Domain close notification callback function. */
+typedef void (* DDS_Domain_close_notify) (
+	uintptr_t user
+);
+
+/* Attach the builtin topic readers (mask) of the given participant (p) such
+   that all activated readers will immediately start calling the given functions
+   (if non-NULL) with the given user parameter (user).
+   If successful, a non-0 handle is returned that should be used in
+   DDS_Notification_detach () later in order cleanup properly.
+   Contrary to the normal (builtin) DDS Discovery readers, this function may be
+   called repeatedly so that every registered entity can get its own requested
+   info. Also, both local and remote entities can be specified. */
+DDS_EXPORT unsigned DDS_Notification_attach (
+	DDS_DomainParticipant p,
+	unsigned mask,
+	DDS_Participant_notify pnf,
+	DDS_Topic_notify tnf,
+	DDS_Publication_notify wnf,
+	DDS_Subscription_notify rnf,
+	DDS_Domain_close_notify cnf,
+	uintptr_t user,
+	DDS_ReturnCode_t *ret
+);
+
+/* Detach a client from the builtin topic readers: */
+DDS_EXPORT void DDS_Notification_detach (
+	unsigned handle
+);
+
+/* Specification of the logging parameters.  Received discovery information
+   will be logged to the given file for the indicated readers in the mask.
+   If p == NULL, all new participants (existing as well as new ones) will get
+   the logging parameters, otherwise only the given participant, if it exists,
+   will get them. */
+DDS_EXPORT void DDS_Notification_log (
+	DDS_DomainParticipant p,
+	FILE *f,
+	unsigned mask
 );
 
 #ifdef  __cplusplus

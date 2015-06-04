@@ -1,0 +1,73 @@
+
+// project.ext.serviceClassifier = "debug" //uncomment this to use debug service in junit tests
+ext.androidLibrary = true
+ext.androidPublishJar = true
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/findbugs.gradle'
+apply from: project(":qeo-android-tests").file("serviceInstaller.gradle")
+
+
+//Add an extra configuration on order to be able to download generator dependencies
+configurations {
+    testAssets {
+        description = "Download and extract assets"
+    }
+}
+
+jarAndroidClasses {
+    //don't include test files that are acutally in the main package
+    exclude "org/qeo/android/webview/test**"
+}
+
+javadoc {
+    exclude 'org/qeo/android/webview/internal/**'
+    exclude "org/qeo/android/webview/test**"
+}
+
+task getAssets() {
+    description "Download and extract extra test assets"
+    outputs.dir files("${buildDir}/generated-src/testAssets")
+    def filesToExtract = []
+    afterEvaluate {
+        android.sourceSets.androidTest.assets.srcDir "${buildDir}/generated-src/testAssets"
+        project.configurations.getByName("testAssets").resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            inputs.file artifact.file
+            filesToExtract += artifact.file
+        }
+    }
+    doLast {
+        filesToExtract.each { f ->
+            copy {
+                from zipTree(f)
+                into file("${buildDir}/generated-src/testAssets")
+            }
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.mergeDebugAssets.dependsOn(getAssets)
+    tasks.assembleDebugTest.dependsOn(getAssets)
+    tasks.compileDebugTestJava.dependsOn(getAssets)
+}
+
+dependencies {
+    compile project(':qeo-android')
+
+    if (System.properties['qeo.src.qeo-java'] == null) {
+        //normal approach
+        compile (group: project.javaGroup, name: 'qeo-java-json', version: project.javaVersion) {
+            exclude (group: 'org.json') //provided by android itself
+        }
+        androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'testlib'
+    }
+    else {
+        //compile dependency from source
+        compile project(':qeo-java-json')
+    }
+    testAssets (group: project.jsGroup, name: 'qeo-js', version: jsVersion, ext: "zip" )
+    testAssets (group: project.jsGroup, name: 'qeo-js-tests', version: jsVersion, ext: "zip" )
+}
+

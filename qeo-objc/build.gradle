@@ -1,0 +1,95 @@
+ 
+// Specify tarball as delivery for upload to artifactory
+ext.artifactoryPomPackaging = "tgz"
+
+// Enable upload to artifactory
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+
+// Set group and version 
+group = project.qeoGroup
+version = project.qeoVersion
+
+//=============================================
+//  Clean directories
+//=============================================
+
+task cleanNative (type: Delete) {	
+	// clean qeo-c
+	delete files("../qeo-c/output")
+}
+
+task cleanObjc (type: Delete) {	
+	// clean qeo-objc
+	delete files("Products")
+}
+
+task cleanall(type: Delete) {
+	dependsOn cleanNative,cleanObjc
+}
+
+tasks.clean.dependsOn(cleanall)
+
+//=============================================
+//  Release builds
+//=============================================
+
+// Tarball contains: framework + bundle + doc + codegen + qsimple-chat + qgauge
+task tarballRelease(type:Exec) {
+	description "Build $project.name for production and package it."
+	workingDir projectDir
+	environment << ["QEO_VERSION":version]
+	commandLine = ["xcodebuild", "-project", "Qeo.xcodeproj", "-configuration", "Release", "-target", "Tarball"]
+}
+
+// Only build the documentation
+task assembleDocRelease(type:Exec) {
+	description "Build $project.name documentation"
+	workingDir projectDir
+	commandLine = ["xcodebuild", "-project", "Qeo.xcodeproj", "-configuration", "Release", "-target", "Documentation"]
+}
+
+// Only build the Qeo.framework + Qeo.bundle
+task assembleRelease(type:Exec) {
+	description "Build $project.name framework and bundle"
+	workingDir projectDir
+	commandLine = ["xcodebuild", "-project", "Qeo.xcodeproj", "-configuration", "Release", "-target", "Qeo.framework"]
+}
+
+//=============================================
+//  Debug builds
+//=============================================
+
+// Tarball contains: framework + bundle + doc + codegen + qsimple-chat + qgauge
+task tarballDebug(type:Exec) {
+	description "Build $project.name for production and package it."
+	workingDir projectDir
+	environment << ["QEO_VERSION":version]
+	commandLine = ["xcodebuild", "-project", "Qeo.xcodeproj", "-configuration", "Debug", "-target", "Tarball"]
+}
+
+// Only build the documentation
+task assembleDocDebug(type:Exec) {
+	description "Build $project.name documentation"
+	workingDir projectDir
+	commandLine = ["xcodebuild", "-project", "Qeo.xcodeproj", "-configuration", "Debug", "-target", "Documentation"]
+}
+
+// Only build the Qeo.framework + Qeo.bundle
+task assembleDebug(type:Exec) {
+	description "Build $project.name framework and bundle"
+	workingDir projectDir
+	commandLine = ["xcodebuild", "-project", "Qeo.xcodeproj", "-configuration", "Debug", "-target", "Qeo.framework"]
+}
+
+//=============================================
+//  SDK
+//=============================================
+
+artifacts {
+    //use HOSTLINUX headers as general headers file. They're common for every target.
+    //archives (file: file("Products/Release/${project.name}.tgz"), name: project.name, builtBy: assembleRelease)
+    //archives (file: file("Products/Debug/${project.name}-debug.tgz"), name: project.name, classifier: 'debug', builtBy: assembleDebug)
+    archives (file: file("Products/Release/${project.name}.tgz"), name: project.name, builtBy: tarballRelease)
+    archives (file: file("Products/Debug/${project.name}-debug.tgz"), name: project.name, classifier: 'debug', builtBy: tarballDebug)
+}

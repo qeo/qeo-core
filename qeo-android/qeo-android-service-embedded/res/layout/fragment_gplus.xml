@@ -1,0 +1,44 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools"
+              android:layout_width="fill_parent"
+              android:layout_height="fill_parent"
+              android:orientation="vertical">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/loginScreenInfo"
+        android:padding="10dp"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:textIsSelectable="true"
+        />
+
+    <Button
+        android:id="@+id/fragmentGplus_Button_signIn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/common_signin_button_text_long"
+        android:contentDescription="@string/google_plus_sign_in_button"
+        android:layout_gravity="center_horizontal"
+        android:background="@drawable/common_signin_btn_text_normal_dark"/>
+    <TextView
+        android:id="@+id/fragmentGplus_TextView_Status"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="top|center_horizontal"
+        android:textIsSelectable="true"
+        tools:text="STATUS"
+        android:layout_weight="1"/>
+
+    <Button
+        android:id="@+id/fragmentGplus_Button_other"
+        style="?android:attr/buttonStyleSmall"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="30dip"
+        android:layout_gravity="right"
+        android:text="@string/button_other_auth"
+        android:layout_weight="0"/>
+
+
+</LinearLayout>

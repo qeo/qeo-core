@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">QGaugeWriter</string>
+    <string name="hello_world">This application is working as Qeo Android Writer.\nClick on the \"Start writing\" button to start writing Qeo data.</string>
+    <string name="menu_settings">Settings</string>
+    <string name="start_publish_btn">Start writing</string>
+    <string name="stop_publish_btn">Stop writing</string>
+    
+    <string name="broadcast_qeo_fail_msg">Qeo Service Fail Message</string>
+    <string name="broadcast_general_failure">Qeo Service General Status</string>
+    <string name="broadcast_qeo_force_stop">Qeo Service Stopped</string>
+</resources>

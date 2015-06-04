@@ -1,0 +1,8 @@
+
+[meta]
+appname = "QFinder"
+version = 1
+
+[application]
+org::qeo::system::DeviceInfo = r
+

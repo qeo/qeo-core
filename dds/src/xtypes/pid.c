@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -3141,6 +3141,25 @@ int pid_parse_topic_key (DBW walk, unsigned char *key, int swap)
 	if (data.type_name)
 		str_unref (data.type_name);
 	return (DDS_RETCODE_OK);
+}
+
+void endpoint_key_from_guid (const GuidPrefix_t *prefix,
+			     EntityId_t         *eid,
+			     KeyHash_t          *key)
+{
+	MD5_CONTEXT	mdc;
+
+	if (sizeof (DDS_BuiltinTopicKey_t) > GUIDPREFIX_SIZE) {
+		memcpy (key->hash, prefix, GUIDPREFIX_SIZE);
+		memcpy (&key->hash [12], eid, 4);
+	}
+	else {
+		md5_init (&mdc);
+		md5_update (&mdc, prefix->prefix, GUIDPREFIX_SIZE);
+		md5_final (key->hash, &mdc);
+		memcpy (&key->hash [8], eid->id, 4);
+		/*memset (&key->hash [12], 0, 4);*/
+	}
 }
 
 #ifdef DDS_NATIVE_SECURITY

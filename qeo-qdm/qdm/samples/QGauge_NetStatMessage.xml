@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+	<include file="qeo_types.xml"/>
+	<module name="org::qeo::sample::gauge">
+		<struct name="NetStatMessage" behavior="state">
+			<doc>NetStatMessage represents different statistics of a network interface.</doc>
+			<member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId" key="true">
+				<doc>The DeviceId of the host of this network interface.</doc>
+			</member>
+			<member name="ifName" type="string" key="true">
+				<doc>The name of the network interface.</doc>
+			</member>
+			<member name="bytesIn" type="int64">
+				<doc>The number of bytes received.</doc>
+			</member>
+			<member name="packetsIn" type="int64">
+				<doc>The number of packets received.</doc>
+			</member>
+			<member name="bytesOut" type="int64">
+				<doc>The number of bytes transmitted.</doc>
+			</member>
+			<member name="packetsOut" type="int64">
+				<doc>The number of packets transmitted.</doc>
+			</member>
+			<member name="timestamp" type="int64">
+				<doc>The timestamp (in milliseconds) at which this NetStatMessage was updated.</doc>
+			</member>
+		</struct>
+	</module>
+</types>

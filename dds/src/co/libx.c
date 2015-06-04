@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -114,4 +114,22 @@ int slist_match (const char *list, const char *name, char sep)
 	}
 	return (0);
 }
+
+int is_dns_name (const char *s)
+{
+	unsigned	ndots, ncolons;
+
+	ndots = ncolons = 0;
+	while (*s) {
+		if (((*s < '0' || *s > '9') && 
+		     *s != '.' && *s != ':') ||
+		    (*s == '.' && ++ndots > 3) ||
+		    (*s == ':' && ++ncolons > 1))
+			return (1);
+
+		s++;
+	}
+	return (0);
+}
+
 

@@ -20,7 +20,9 @@ qeo-c_TEST_PARTS_INSTALL := \
 	systest_policy_public@$$(bindir/)systest/public/policy:755 \
 	systest_policy_updates_public@$$(bindir/)systest/public/policy_updates:755 \
 	systest_policy_missing_user_public@$$(bindir/)systest/public/policy_missing_user:755 \
-	systest_state_open_realm_public@$$(bindir/)systest/public/state_open_realm:755
+	systest_state_open_realm_public@$$(bindir/)systest/public/state_open_realm:755 \
+	systest_cleanup_after_suspend_public@$$(bindir/)systest/public/cleanup_after_suspend:755 \
+	systest_open_and_closed_realm_public@$$(bindir/)systest/public/open_and_closed_realm:755
 qeo-c_TEST_PARTS_INSTALL += \
 	libutapi.so@$$(libdir/)unittests/libutapi.so:755
 qeo-c_TEST_ELEM_INSTALL  := \
@@ -49,7 +51,7 @@ qeo-c.libqeoc_LDADD         := $(qeo-c-core_LIBS)
  
 # Build rules for system tests
 
-qeo-c_SYSTESTS = event state stress_factory policy policy_updates policy_missing_user state_open_realm
+qeo-c_SYSTESTS = event state stress_factory policy policy_updates policy_missing_user state_open_realm open_and_closed_realm cleanup_after_suspend
 
 qeo-c.PROGRAMS += $(foreach test, $(qeo-c_SYSTESTS), systest_$(test)_public)
 

@@ -1,0 +1,30 @@
+
+project.ext.artifactoryPomPackaging = "zip"
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+
+apply plugin: "base"
+
+def generatedDir = "${buildDir}/generated-src/qdm/"
+
+task generateZip(type: Zip) {
+    dependsOn generateTypes
+    from file("tests")
+    from file("lib")
+    from file(generatedDir)
+}
+
+generateTypes {
+    language = "js"
+    qdms = ["catalog/qeo_types.xml", "catalog/qeo_DeviceInfo.xml", "catalog/qeo_RegistrationRequest.xml", "catalog/qeo_RegistrationCredentials.xml" ]
+    outputDir = generatedDir
+}
+
+artifacts {
+    archives generateZip
+}
+
+dependencies {
+    generated "org.qeo:qeo-qdm:${project.qeoVersion}@zip"
+}
+

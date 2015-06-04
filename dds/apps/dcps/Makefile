@@ -22,23 +22,28 @@ CO         = ${BASE}/co
 DBG        = ${BASE}/dbg
 DYNIP	   = ${BASE}/dynip
 TYPE       = ${BASE}/xtypes
+#TYPE       = ${BASE}/typecode
 SQL	   = ${BASE}/sql
+BGNS       = ${BASE}/bgns
 SECURITY   = ${BASE}/security
 NSEC	   = ${BASE}/nsec
+DD         = ../co
 
 SECP       = ../../plugins/secplug
 NSECP      = ../../plugins/nsecplug
+ENGINE     = ../../plugins/security
 
 dds_CSRCS  = ${DDS}/dds.c ${DDS}/domain.c ${DDS}/locator.c ${DDS}/guid.c \
 	     ${DDS}/dds_seq.c ${DDS}/uqos.c ${DDS}/guard.c
 type_CSRCS = ${TYPE}/xtypecode.c ${TYPE}/xtypes.c ${TYPE}/xdata.c \
 	     ${TYPE}/xcdr.c ${TYPE}/tsm.c ${TYPE}/pl_cdr.c ${TYPE}/pid.c \
 	     ${TYPE}/xtopic.c ${TYPE}/builtin.c ${TYPE}/vtc.c
+#type_CSRCS = ${TYPE}/cdr.c ${TYPE}/pid.c ${TYPE}/pl_cdr.c ${TYPE}/typecode.c
 dcps_CSRCS = ${DCPS}/dcps_main.c ${DCPS}/dcps_dpfact.c ${DCPS}/dcps_part.c \
 	     ${DCPS}/dcps_pub.c ${DCPS}/dcps_sub.c ${DCPS}/dcps_topic.c \
 	     ${DCPS}/dcps_reader.c ${DCPS}/dcps_writer.c ${DCPS}/dcps_event.c \
 	     ${DCPS}/dcps_waitset.c ${DCPS}/dcps_builtin.c ${DCPS}/dcps_qos.c \
-	     ${DCPS}/dcps_entity.c ${DCPS}/dcps_dbg.c
+	     ${DCPS}/dcps_entity.c ${DCPS}/dcps_dbg.c ${DCPS}/dcps_notif.c
 cache_CSRCS= ${CACHE}/cache.c
 disc_CSRCS = ${DISC}/disc_tc.c ${DISC}/disc_sub.c ${DISC}/disc_pub.c \
 	     ${DISC}/disc_msg.c ${DISC}/disc_ep.c ${DISC}/disc_match.c \
@@ -52,21 +57,23 @@ rtps_CSRCS = ${RTPS}/rtps_main.c ${RTPS}/rtps_mux.c ${RTPS}/rtps_msg.c \
 	     ${RTPS}/rtps_dbg.c ${RTPS}/rtps_trace.c ${RTPS}/rtps_ft.c \
 	     ${RTPS}/rtps_fwd.c
 trans_CSRCS= ${TRANS}/ip/rtps_ip.c ${TRANS}/ip/ri_udp.c ${TRANS}/ip/ri_dtls.c \
-	     ${TRANS}/ip/ri_tcp.c ${TRANS}/ip/ri_tcp_sock.c ${TRANS}/ip/ri_tls.c
+	     ${TRANS}/ip/ri_tcp.c ${TRANS}/ip/ri_tcp_sock.c ${TRANS}/ip/ri_tls.c \
+	     ${TRANS}/ip/ri_bgcp.c
 co_CSRCS   = ${CO}/pool.c ${CO}/sys.c ${CO}/error.c ${CO}/ipc.c ${CO}/timer.c \
 	     ${CO}/sock.c ${CO}/skiplist.c ${CO}/str.c ${CO}/heap.c ${CO}/md5.c \
 	     ${CO}/db.c ${CO}/handle.c ${CO}/tty.c ${CO}/log.c ${CO}/ctrace.c \
 	     ${CO}/thread.c ${CO}/prof.c ${CO}/hash.c ${CO}/strseq.c \
 	     ${CO}/nmatch.c ${CO}/random.c ${CO}/ipfilter.c ${CO}/libx.c \
-	     ${CO}/config.c ${CO}/cmdline.c
+	     ${CO}/config.c ${CO}/cmdline.c ${CO}/table.c
 #sec_CSRCS  = ${SECURITY}/security.c
 sec_CSRCS  = ${NSEC}/sec_main.c ${NSEC}/sec_id.c ${NSEC}/sec_perm.c \
 	     ${NSEC}/sec_auth.c ${NSEC}/sec_access.c ${NSEC}/sec_crypto.c \
 	     ${NSEC}/sec_cdata.c ${NSEC}/sec_logging.c ${NSEC}/sec_util.c \
 	     ${NSEC}/sec_compat.c ${NSEC}/sec_a_std.c  ${NSEC}/sec_p_std.c \
-	     ${NSEC}/sec_c_std.c ${NSEC}/sec_a_dtls.c ${NSEC}/sec_p_dtls.c \
-	     ${NSEC}/sec_a_qeo.c ${NSEC}/sec_p_qeo.c ${NSEC}/sec_qeo_policy.c
-#splug_CSRCS= ../secplug/msecplug.c ../secplug/xmlparse.c ../security/engine_fs.c
+	     ${NSEC}/sec_c_std.c ${NSEC}/sec_a_qeo.c ${NSEC}/sec_p_qeo.c \
+	     ${NSEC}/sec_qeo_policy.c
+#${NSEC}/sec_a_dtls.c ${NSEC}/sec_p_dtls.c
+#splug_CSRCS= ${SECP}/msecplug.c ${SECP}/xmlparse.c ${ENGINE}/engine_fs.c
 #splug_CSRCS= ../../test/splug/p_main.c ../../test/splug/p_xml.c \
 #	     ../security/engine_fs.c
 splug_CSRCS= ${NSECP}/sp_auth.c ${NSECP}/sp_crypto.c \
@@ -78,10 +85,12 @@ splug_CSRCS= ${NSECP}/sp_auth.c ${NSECP}/sp_crypto.c \
 sql_CSRCS  = ${SQL}/scan.c ${SQL}/parse.c ${SQL}/bytecode.c
 dbg_CSRCS  = ${DBG}/debug.c
 dynip_CSRCS= ${DYNIP}/di_main.c ${DYNIP}/di_linux.c
+bgns_CSRCS = ${BGNS}/bgns.c
+dd_CSRCS   = ${DD}/dd_log.c
 
 prog_CSRCS = main.c ${dds_CSRCS} ${type_CSRCS} ${dcps_CSRCS} ${disc_CSRCS} \
 	     ${cache_CSRCS} ${dbg_CSRCS} ${sql_CSRCS} ${co_CSRCS} \
-	     ${dynip_CSRCS} ${sec_CSRCS} ${splug_CSRCS}
+	     ${dynip_CSRCS} ${bgns_CSRCS} ${sec_CSRCS} ${splug_CSRCS} ${dd_CSRCS}
 
 #comment the following && don't define RTPS_USED to drop RTPS/Discovery
 prog_CSRCS += ${rtps_CSRCS} ${trans_CSRCS}
@@ -106,15 +115,18 @@ INC_PATH = -I${BASE}/include -I../../api/headers -I/usr/include/libxml2 -I../../
 LIB_PATH = -L../../../qeo-c/output/openssl/HOSTLINUX
 LIBS     = 
 
-DEFINES  = -DPTHREADS_USED -DRTPS_USED -DCDD_USED -DDDS_DEBUG -DLOG_FILE \
-	   -DXTYPES_USED -DDDS_BUILTINS -DDDS_IPV6 -DDDS_TYPECODE -DDDS_AUTO_LIVELINESS \
-	   -DDDS_DYN_IP -DDDS_TCP -DBIGDATA -DRTPS_TRACE -DDDS_TRACE -DDDS_FORWARD \
-	   -DEXTRA_STATS -DUSE_BYTESWAP -DDDS_SECURITY \
-	   -DFORWARD_TRC -DUSE_ABORT -DMSECPLUG_WITH_SECXML \
-	   -DDDS_NATIVE_SECURITY -DDDS_NO_MCAST \
-	   -DUNIX_TERM -DQEO_SECURITY -DDDS_QEO_TYPES -DTTY_NORMAL -DFORCE_MALLOC
-#-DDTLS_SECURITY
+DEFINES  = -DPTHREADS_USED -DRTPS_USED -DCDD_USED -DDDS_DEBUG -DXTYPES_USED \
+	   -DDDS_BUILTINS -DDDS_IPV6 -DDDS_TYPECODE -DDDS_AUTO_LIVELINESS \
+	   -DDDS_DYN_IP -DDDS_TCP -DBIGDATA -DDDS_FORWARD -DUSE_BYTESWAP \
+	   -DDDS_SECURITY -DUSE_ABORT -DUNIX_TERM -DMSECPLUG_WITH_SECXML \
+	   -DDDS_NATIVE_SECURITY -DDDS_NO_MCAST -DTCP_SUSPEND \
+	   -DQEO_SECURITY -DDDS_QEO_TYPES -DRX_TX_BUF_ALLOC -DTTY_NORMAL \
+	   -DLOG_FILE -DRTPS_TRACE -DDDS_TRACE -DEXTRA_STATS -DFORWARD_TRC \
+	   -DRTPS_SPDP_BCAST -DFORCE_MALLOC -DPARSE_CDR_CMD -DMSG_TRACE \
+	   -DCTRACE_USED
+#-DFILT_VMWARE
 #-DDDS_ACT_LOG
+#-DDTLS_SECURITY
 #-DMSG_TRACE
 #-DFORCE_MALLOC
 #-DQEO_SECURITY
@@ -157,6 +169,7 @@ OPTTYPE  = -O0
 PROFILE  =
 #-pg
 CFLAGS   = -Werror -Wall -Wextra -pedantic -Wno-long-long ${OPTTYPE} ${INC_PATH} ${DEFINES} -g ${PROFILE}
+#-Werror 
 LDFLAGS  = ${LIB_PATH} ${LIBS} -lnsl -lrt -lpthread -lssl -lcrypto -lxml2 -g ${PROFILE}
 
 all: ${EXECUTABLE}

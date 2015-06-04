@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <module name="org::qeo::sample::note">
+    <struct behavior="event" name="NoteRequest">
+      <member name="id" type="int32">
+        <doc>Unique ID of the note request. This ID will be a randomly generated integer and should be unique for all running QNote applications. It is very important that the ID is chosen by the client application because it is necessary to indicate what kind of action the NoteRequest represents.</doc>
+      </member>
+      <member name="wallId" type="int32">
+        <doc>Unique ID of the wall where this request is addressed to. Combined with the ID of the NoteRequest, it will be used to indicate what kind of action this request represents. If the Wall that receives the request has the same Wall ID as the NoteRequest it will either be a note creation (if the wall does not have a note with the given ID yet) or a modification (if the wall already has a note with the given ID). If the Wall ID of the request does not match the ID of the receiving wall the wall should delete it (if the wall has a note with the same note ID) or ignore it (if it doesn't have a note with a matching ID).</doc>
+      </member>
+      <member name="message" type="string">
+        <doc>The content of the note.</doc>
+      </member>
+    </struct>
+  </module>
+</types>

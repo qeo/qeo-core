@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -64,6 +64,9 @@ CCREF *ccref_add (CCLIST        *list,
 	rp->state = state;
 	rp->relevant = 1;
 	rp->ack_req = 0;
+	rp->override = 0;
+	rp->mcdata = rp->bcdata = 0;
+	rp->dphandle = 0;
 #ifdef RTPS_FRAGMENTS
 	rp->fragments = NULL;
 #endif

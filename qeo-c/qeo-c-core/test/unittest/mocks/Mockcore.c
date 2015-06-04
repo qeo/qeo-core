@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -174,6 +174,13 @@ typedef struct _CMOCK_core_factory_set_tcp_server_no_lock_CALL_INSTANCE
 
 } CMOCK_core_factory_set_tcp_server_no_lock_CALL_INSTANCE;
 
+typedef struct _CMOCK_core_get_domain_id_open_CALL_INSTANCE
+{
+  UNITY_LINE_TYPE LineNumber;
+  qeocore_domain_id_t ReturnVal;
+
+} CMOCK_core_get_domain_id_open_CALL_INSTANCE;
+
 static struct MockcoreInstance
 {
   int core_register_type_IgnoreBool;
@@ -253,6 +260,11 @@ static struct MockcoreInstance
   CMOCK_core_factory_set_tcp_server_no_lock_CALLBACK core_factory_set_tcp_server_no_lock_CallbackFunctionPointer;
   int core_factory_set_tcp_server_no_lock_CallbackCalls;
   CMOCK_MEM_INDEX_TYPE core_factory_set_tcp_server_no_lock_CallInstance;
+  int core_get_domain_id_open_IgnoreBool;
+  qeocore_domain_id_t core_get_domain_id_open_FinalReturn;
+  CMOCK_core_get_domain_id_open_CALLBACK core_get_domain_id_open_CallbackFunctionPointer;
+  int core_get_domain_id_open_CallbackCalls;
+  CMOCK_MEM_INDEX_TYPE core_get_domain_id_open_CallInstance;
 } Mock;
 
 extern jmp_buf AbortFrame;
@@ -340,6 +352,11 @@ void Mockcore_Verify(void)
   UNITY_TEST_ASSERT(CMOCK_GUTS_NONE == Mock.core_factory_set_tcp_server_no_lock_CallInstance, cmock_line, "Function 'core_factory_set_tcp_server_no_lock' called less times than expected.");
   if (Mock.core_factory_set_tcp_server_no_lock_CallbackFunctionPointer != NULL)
     Mock.core_factory_set_tcp_server_no_lock_CallInstance = CMOCK_GUTS_NONE;
+  if (Mock.core_get_domain_id_open_IgnoreBool)
+    Mock.core_get_domain_id_open_CallInstance = CMOCK_GUTS_NONE;
+  UNITY_TEST_ASSERT(CMOCK_GUTS_NONE == Mock.core_get_domain_id_open_CallInstance, cmock_line, "Function 'core_get_domain_id_open' called less times than expected.");
+  if (Mock.core_get_domain_id_open_CallbackFunctionPointer != NULL)
+    Mock.core_get_domain_id_open_CallInstance = CMOCK_GUTS_NONE;
 }
 
 void Mockcore_Init(void)
@@ -383,6 +400,8 @@ void Mockcore_Destroy(void)
   Mock.core_get_open_domain_factory_CallbackCalls = 0;
   Mock.core_factory_set_tcp_server_no_lock_CallbackFunctionPointer = NULL;
   Mock.core_factory_set_tcp_server_no_lock_CallbackCalls = 0;
+  Mock.core_get_domain_id_open_CallbackFunctionPointer = NULL;
+  Mock.core_get_domain_id_open_CallbackCalls = 0;
 }
 
 qeo_retcode_t core_register_type(const qeo_factory_t* factory, DDS_DynamicTypeSupport dts, DDS_TypeSupport ts, const char* name)
@@ -1268,5 +1287,52 @@ void core_factory_set_tcp_server_no_lock_CMockExpectAndReturn(UNITY_LINE_TYPE cm
 void core_factory_set_tcp_server_no_lock_StubWithCallback(CMOCK_core_factory_set_tcp_server_no_lock_CALLBACK Callback)
 {
   Mock.core_factory_set_tcp_server_no_lock_CallbackFunctionPointer = Callback;
+}
+
+qeocore_domain_id_t core_get_domain_id_open(void)
+{
+  UNITY_LINE_TYPE cmock_line = TEST_LINE_NUM;
+  CMOCK_core_get_domain_id_open_CALL_INSTANCE* cmock_call_instance = (CMOCK_core_get_domain_id_open_CALL_INSTANCE*)CMock_Guts_GetAddressFor(Mock.core_get_domain_id_open_CallInstance);
+  Mock.core_get_domain_id_open_CallInstance = CMock_Guts_MemNext(Mock.core_get_domain_id_open_CallInstance);
+  if (Mock.core_get_domain_id_open_IgnoreBool)
+  {
+    if (cmock_call_instance == NULL)
+      return Mock.core_get_domain_id_open_FinalReturn;
+    memcpy(&Mock.core_get_domain_id_open_FinalReturn, &cmock_call_instance->ReturnVal, sizeof(qeocore_domain_id_t));
+    return cmock_call_instance->ReturnVal;
+  }
+  if (Mock.core_get_domain_id_open_CallbackFunctionPointer != NULL)
+  {
+    return Mock.core_get_domain_id_open_CallbackFunctionPointer(Mock.core_get_domain_id_open_CallbackCalls++);
+  }
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'core_get_domain_id_open' called more times than expected.");
+  cmock_line = cmock_call_instance->LineNumber;
+  return cmock_call_instance->ReturnVal;
+}
+
+void core_get_domain_id_open_CMockIgnoreAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_domain_id_t cmock_to_return)
+{
+  CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_core_get_domain_id_open_CALL_INSTANCE));
+  CMOCK_core_get_domain_id_open_CALL_INSTANCE* cmock_call_instance = (CMOCK_core_get_domain_id_open_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
+  Mock.core_get_domain_id_open_CallInstance = CMock_Guts_MemChain(Mock.core_get_domain_id_open_CallInstance, cmock_guts_index);
+  cmock_call_instance->LineNumber = cmock_line;
+  cmock_call_instance->ReturnVal = cmock_to_return;
+  Mock.core_get_domain_id_open_IgnoreBool = (int)1;
+}
+
+void core_get_domain_id_open_CMockExpectAndReturn(UNITY_LINE_TYPE cmock_line, qeocore_domain_id_t cmock_to_return)
+{
+  CMOCK_MEM_INDEX_TYPE cmock_guts_index = CMock_Guts_MemNew(sizeof(CMOCK_core_get_domain_id_open_CALL_INSTANCE));
+  CMOCK_core_get_domain_id_open_CALL_INSTANCE* cmock_call_instance = (CMOCK_core_get_domain_id_open_CALL_INSTANCE*)CMock_Guts_GetAddressFor(cmock_guts_index);
+  UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "CMock has run out of memory. Please allocate more.");
+  Mock.core_get_domain_id_open_CallInstance = CMock_Guts_MemChain(Mock.core_get_domain_id_open_CallInstance, cmock_guts_index);
+  cmock_call_instance->LineNumber = cmock_line;
+  memcpy(&cmock_call_instance->ReturnVal, &cmock_to_return, sizeof(qeocore_domain_id_t));
+}
+
+void core_get_domain_id_open_StubWithCallback(CMOCK_core_get_domain_id_open_CALLBACK Callback)
+{
+  Mock.core_get_domain_id_open_CallbackFunctionPointer = Callback;
 }
 

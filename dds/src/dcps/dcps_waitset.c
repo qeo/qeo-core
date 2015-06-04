@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -39,7 +39,7 @@ DDS_ConditionSeq *DDS_ConditionSeq__alloc (void)
 {
 	DDS_ConditionSeq	*p;
 
-	p = mm_fcts.alloc_ (sizeof (DDS_ConditionSeq));
+	p = Alloc (sizeof (DDS_ConditionSeq));
 	if (!p)
 		return (NULL);
 
@@ -51,7 +51,7 @@ void DDS_ConditionSeq__free (DDS_ConditionSeq *conditions)
 {
 	if (conditions->_length)
 		DDS_ConditionSeq__clear (conditions);
-	mm_fcts.free_ (conditions);
+	Free (conditions);
 }
 
 void DDS_ConditionSeq__init (DDS_ConditionSeq *conditions)

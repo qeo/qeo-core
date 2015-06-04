@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          package="org.qeo.android.service.core">
+
+
+    <uses-sdk
+        android:minSdkVersion="9"/>
+
+    <!-- needed by READ_PHONE_STATE permission? not 100% clear. -->
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false"/>
+
+    <!-- needed by ACCESS_WIFI_STATE and ACCESS_WIFI_STATE permission -->
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false"/>
+
+    <!--
+        Make sure to update the uses-feature if you add a permission!
+        http://developer.android.com/guide/topics/manifest/uses-feature-element.html#permissions
+    -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.GET_ACCOUNTS"/>
+    <uses-permission android:name="android.permission.USE_CREDENTIALS"/>
+
+    <application>
+
+
+        <service
+            android:name="org.qeo.android.service.QeoService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.qeo.android.service.QeoService"/>
+            </intent-filter>
+        </service>
+        <service android:name="org.qeo.android.service.QeoServiceTimeout"/>
+        <service
+            android:name="org.qeo.android.service.QeoServiceVersion"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.qeo.android.service.QeoServiceVersion"/>
+            </intent-filter>
+        </service>
+
+
+        <service android:name="org.qeo.deviceregistration.service.RegisterService"/>
+        <service android:name="org.qeo.deviceregistration.service.OAuthTokenService"/>
+        <service android:name="org.qeo.deviceregistration.service.HeadlessRegistrationQeoService"/>
+        <service android:name="org.qeo.deviceregistration.rootresource.LoadResourcesService"/>
+        <service android:name="org.qeo.deviceregistration.service.RemoteDeviceRegistrationService"/>
+
+
+        <receiver
+            android:name="org.qeo.android.service.ServiceReceiver"
+            android:enabled="false"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+        <receiver android:name="org.qeo.android.service.BgnsConnectionAlarmReceiver"/>
+    </application>
+
+</manifest>

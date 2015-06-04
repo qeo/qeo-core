@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -54,6 +54,10 @@
 #include "dds.h"
 #include "dynip.h"
 #include "ri_data.h"
+#ifdef TCP_SUSPEND
+#include "ri_bgcp.h"
+#include "bgns.h"
+#endif
 #include "rtps.h"
 #include "rtps_cfg.h"
 #include "rtps_ip.h"
@@ -73,6 +77,9 @@
 #include "rtps_fwd.h"
 #include "rtps_data.h"
 #endif
+#ifdef PARSE_CDR_CMD
+#include "xcdr.h"
+#endif
 #include "dds/dds_aux.h"
 #include "dds/dds_debug.h"
 #include "debug.h"
@@ -91,6 +98,7 @@ typedef struct dbg_session {
 #endif
 	HANDLE			in_fd, out_fd;
 	unsigned		session;
+	unsigned		prev_log;
 	unsigned long		log_events;
 	ssize_t			nchars;
 	struct sockaddr_in	remote;
@@ -120,14 +128,16 @@ void debug_help (void)
 	dbg_printf ("\tscx [<cx>]            Display connections.\r\n");
 	dbg_printf ("\tscxa [<cx>]           Display connections (extended).\r\n");
 	dbg_printf ("\tscxq                  Display queued connections.\r\n");
+	dbg_printf ("\tccx <cx>              Close a connection.\r\n");
 #endif
 	dbg_printf ("\tsloc                  Display locators.\r\n");
-	dbg_printf ("\tsconfig               Display configuration data.\r\n");
+	dbg_printf ("\tsconfig [<var> | '?'] Display configuration data.\r\n");
 	dbg_printf ("\tsdomain <d> <lf> <rf> Display domain (d) info.\r\n");
 	dbg_printf ("\t                      <lf> and <rf> are bitmaps for local/remote info.\r\n");
 	dbg_printf ("\t                      1=Locator, 2=Builtin, 4=Endp, 8=Type, 10=Topic.\r\n");
 	dbg_printf ("\tsdisc                 Display discovery info.\r\n");
 	dbg_printf ("\tsdisca                Display all discovery info (sdisc + endpoints)\r\n");
+	dbg_printf ("\tremp <id>             Remove a participant.\r\n");
 #ifdef XTYPES_USED
 	dbg_printf ("\tstype [<name>]        Display Type information.\r\n");
 #endif
@@ -202,6 +212,8 @@ void debug_help (void)
 	dbg_printf ("\tctoff                 Disable the cyclic trace buffer.\r\n");
 	dbg_printf ("\tctclr                 Clear the cyclic trace buffer.\r\n");
 	dbg_printf ("\tctmode <m>            Set tracing mode ('C'=cyclic/'S'=stop).\r\n");
+	dbg_printf ("\tctmask <m>            Set the tracing mask.\r\n");
+	dbg_printf ("\tctminfo               List tracing mask bits.\r\n");
 	dbg_printf ("\tctinfo                Display the state of the cyclic trace buffer.\r\n");
 	dbg_printf ("\tctaadd <pos> <name> <dlen> [<data>] <action> {<action>}\r\n");
 	dbg_printf ("\t                      Add an action list to a tracepoint.\r\n");
@@ -230,11 +242,18 @@ void debug_help (void)
 	dbg_printf ("\ttaflags <flags>       Set type attribute display flags.\r\n");
 	dbg_printf ("\t                      <flags>: 1=header, 2=size, 4=elsize, 8=ofs.\r\n");
 	dbg_printf ("\tserver [<port>]       Start debug server on the given port.\r\n");
-	dbg_printf ("\tenv                   Display configuration data (=sconf).\r\n");
+	dbg_printf ("\tenv [<var> | '?']     Display configuration data (=sconf).\r\n");
 	dbg_printf ("\tset <var> <value>     Set the configuration variable to given value.\r\n");
 	dbg_printf ("\tunset <var>           Unset the configuration variable.\r\n");
 	dbg_printf ("\tsuspend <value>       Suspend with given mode.\r\n");
 	dbg_printf ("\tactivate <value>      Activate with given mode.\r\n");
+#ifdef TCP_SUSPEND
+	dbg_printf ("\tnotify <d> <top> <ty> Notify when the given topic/type has new data.\r\n");
+	dbg_printf ("\tssndata               Show negotiation service data.\r\n");
+#endif
+#ifdef PARSE_CDR_CMD
+	dbg_printf ("\tcdr <sc> <type> <f>   Parse a CDR file (f) for the given scope/type.\r\n");
+#endif
 	dbg_printf ("\thelp                  Display general help.\r\n");
 	if (aborting)
 	      	dbg_printf ("\tquit                  Quit main DDS program.\r\n");
@@ -352,6 +371,10 @@ void debug_data_dump (void)
 #ifdef RTPS_USED
 	dbg_printf ("Accumulation size of RTPS submessages = %lu bytes.\r\n",
 						(unsigned long) rtps_max_msg_size);
+#ifdef RX_TX_BUF_ALLOC
+	dbg_printf ("Maximum size of received IP packets = %lu bytes.\r\n", (unsigned long) rtps_max_rx_size);
+	dbg_printf ("Maximum size of transmitted IP packets = %lu bytes.\r\n", (unsigned long) rtps_max_tx_size);
+#endif
 #if defined (BIGDATA) || (WORDSIZE == 64)
 	if (rtps_frag_size == ~0U)
 		dbg_printf ("RTPS fragmentation disabled.\r\n");
@@ -631,6 +654,25 @@ void debug_disc_dump (void)
 	disc_dump (1);
 }
 
+void debug_rem_part (const char *cmd)
+{
+	unsigned	entity;
+	Entity_t	*ep;
+	char		buf [64];
+
+	skip_blanks (&cmd);
+	skip_string (&cmd, buf);
+	entity = get_num (0, buf);
+	ep = entity_ptr (entity);
+	if (!ep ||
+	    entity_type (ep) != ET_PARTICIPANT ||
+	    !entity_discovered (entity_flags (ep))) {
+		dbg_printf ("No such entity!\r\n");
+		return;
+	}
+	disc_remote_participant_delete ((Participant_t *) ep);
+}
+
 static void dbg_entity_qos_dump (const char *cmd)
 {
 	unsigned	entity;
@@ -889,6 +931,28 @@ static void ctrace_add_actions (const char *cmd)
 	dbg_printf ("Extra arguments expected!\r\n");
 }
 
+static void ctrace_mask_info (void)
+{
+	unsigned	i;
+
+	dbg_printf ("ctmask currently enables ");
+	if (ctrace_mask == ~0UL)
+		dbg_printf ("all events.\r\n");
+	else {
+		dbg_printf ("only");
+		for (i = 0; i <= USER_ID; i++)
+			if (((1UL << i) & ctrace_mask) != 0)
+				dbg_printf (" %s", log_id_str [i]);
+		dbg_printf (" events.\r\n");
+	}
+
+	dbg_printf ("Possible event group bits:\r\n");
+	for (i = 0; i <= USER_ID; i++)
+		if (log_id_str [i])
+			dbg_printf ("\t%s\t-> 0x%08lx\r\n", log_id_str [i], 1UL << i);
+
+}
+
 static void ctrace_list_actions (void)
 {
 	void		*data;
@@ -1050,20 +1114,38 @@ static void dump_memory (const char *cmd, const char *args)
 	}
 	skip_blanks (&args);
 	if (args [0] == '\0') {
-		cp = mp;
+		if (mp)
+			cp = mp;
+		else
+			cp = rtps_rx_buf;
 		length = 64;
 	}
 	else {
 		skip_string (&args, buf);
-		cp = (unsigned char *) get_num (1, buf);
-		if (!cp)
-			return;
-
+#ifdef RTPS_USED
+		if (!strncmp (buf, "tx", 2))
+			cp = rtps_tx_buf;
+		else if (!strncmp (buf, "rx", 2))
+			cp = rtps_rx_buf;
+		else {
+#endif
+			cp = (unsigned char *) get_num (1, buf);
+			if (!cp)
+				return;
+#ifdef RTPS_USED
+		}
+#endif
 		if (args [0] == '\0')
 			length = 64;
 		else
 			length = get_num (0, args);
 	}
+	if (!cp)
+#ifdef RTPS_USED
+		cp = rtps_rx_buf;
+#else
+		cp = (unsigned char *) dbg_sessions;
+#endif
 	nv = 0;
 	in_str = 0;
 	buf [16] = '\0';
@@ -1215,9 +1297,213 @@ void debug_log (const char *s, int nl)
 	}
 }
 
+#ifdef TCP_SUSPEND
+
+static void sn_notify (const char *cmd)
+{
+	unsigned	domain_id;
+	char		buf [256], *topicp, *bp;
+
+	skip_blanks (&cmd);
+	skip_string (&cmd, buf);
+	if (!buf [0]) {
+		dbg_printf ("domain_id expected!");
+		return;
+	}
+	domain_id = get_num (0, buf);
+	skip_string (&cmd, buf);
+	if (!buf [0]) {
+		dbg_printf ("topic expected!");
+		return;
+	}
+	topicp = buf;
+	bp = &buf [strlen (topicp) + 1];
+	skip_string (&cmd, bp);
+	if (!*bp) {
+		dbg_printf ("type expected!");
+		return;
+	}
+	bgcp_notify (domain_id, topicp, bp, 0);
+}
+
+#endif
+#ifdef PARSE_CDR_CMD
+
+static Type *get_type (unsigned scope, const char *typename)
+{
+	TypeLib	*lp;
+	int	id;
+
+	if (!typename || !typename [0])
+		return (NULL);
+
+	lp = xt_lib_ptr (scope);
+	if (!lp)
+		return (NULL);
+
+	id = xt_lib_lookup (lp, typename);
+	if (id <= 0)
+		return (NULL);
+
+	return (xt_type_ptr (scope, id));
+}
+
+static void cdr_check (const unsigned char *data, size_t hsize, Type *tp)
+{
+	unsigned char		*bp;
+	DDS_ReturnCode_t	error;
+	size_t			n;
+
+	n = cdr_unmarshalled_size (data, hsize, tp, 0, 0, 0, 0, &error);
+	if (!n) {
+		dbg_printf ("Can't unmarshall CDR data - error = %u!\r\n", error);
+		return;
+	}
+	bp = xmalloc (n);
+	if (!bp) {
+		dbg_printf ("Can't allocate %lu byte buffer for unmarshalling!\r\n", (unsigned long) n);
+		return;
+	}
+	error = cdr_unmarshall (bp, data, hsize, tp, 0, 0, 0, 0);
+	if (error) {
+		dbg_printf ("Can't unmarshall CDR data - error = %u!\r\n", error);
+		return;
+	}
+	dbg_printf ("Unmarshalled data (%lu bytes):\r\n", (unsigned long) n);
+	dbg_print_region (bp, n, 1, 1);
+	xfree (bp);
+}
+
+static int parse_cdr (const char *cmd)
+{
+	Type		*tp;
+	FILE		*fp;
+	unsigned	base, num, max, i, d, n, scope;
+	char		*p;
+	unsigned char	*dp, *ndp;
+	size_t		size;
+	char		s [128];
+
+	skip_blanks (&cmd);
+	skip_string (&cmd, s);
+	if (!s [0]) {
+		dbg_printf ("scope expected!\r\n");
+		return (1);
+	}
+	scope = get_num (0, s);
+	skip_string (&cmd, s);
+	if (!s [0]) {
+		dbg_printf ("typename expected!\r\n");
+		return (1);
+	}
+	tp = get_type (scope, s);
+	if (!tp) {
+		dbg_printf ("No such type!\r\n");
+		return (1);
+	}
+	skip_string (&cmd, s);
+	fp = fopen (s, "r");
+	if (!fp) {
+		dbg_printf ("No such file!\r\n");
+		return (1);
+	}
+	size = 512;
+	dp = xmalloc (size);
+	if (!dp) {
+		dbg_printf ("Not enough memory for data buffer!\r\n");
+		return (1);
+	}
+	n = 0;
+	while ((p = fgets (s, sizeof (s), fp)) != NULL) {
+		if (s [0] == '-' || s [0] == '(')
+			continue;
+
+		p = strchr (s, ':');
+		if (p)
+			++p;
+		else
+			p = s;
+
+		
+		while (*p) {
+			if (*p == ' ' || *p == '\t') {
+				p++;
+				continue;
+			}
+			num = 0;
+			if (*p >= '0' && *p <= '9')
+				if (*p == '0') {
+					if (p [1] == 'x' || p [1] == 'X') {
+						base = 16;
+						p += 2;
+						max = 2;
+					}
+					else {
+						base = 8;
+						max = 3;
+						p++;
+					}
+				}
+				else {
+					base = 10;
+					num = *p++ - '0';
+					max = 3;
+				}
+			else if (*p >= 'a' && *p <= 'f') {
+				base = 16;
+				num = *p++ - 'a' + 10;
+				max = 2;
+			}
+			else if (*p >= 'A' && *p <= 'F') {
+				base = 16;
+				num = *p++ - 'A' + 10;
+				max = 2;
+			}
+			else if (!*p || *p == '\n')
+				break;
+
+			for (i = 0; i < max; i++) {
+				if (*p >= '0' && *p <= '9')
+					d = *p++ - '0';
+				else if (*p >= 'a' && *p <= 'f')
+					d = *p++ - 'a' + 10;
+				else if (*p >= 'A' && *p <= 'F')
+					d = *p++ - 'A' + 10;
+				else
+					break;
+
+				if (d >= base || num * base + d > 255) {
+					dbg_printf ("Invalid number!\r\n");
+					xfree (dp);
+					return (1);
+				}
+				num = num * base + d;
+			}
+			if (n == size) {
+				size <<= 1;
+				ndp = xrealloc (dp, size);
+				if (!ndp) {
+					dbg_printf ("Not enough memory for data buffer!\r\n");
+					xfree (dp);
+					return (1);
+				}
+				dp = ndp;
+			}
+			dp [n++] = num;
+		}
+	}
+	dbg_printf ("Parsed %u bytes.\r\n", n);
+	cdr_check (dp + 4, 4, tp);
+	xfree (dp);
+	return (0);
+}
+
+#endif
+
 void debug_command (const char *buf)
 {
 	char		cmd [64];
+	char		*cp;
 	unsigned short	port;
 	unsigned	mode;
 #ifdef RTPS_USED
@@ -1229,6 +1515,8 @@ void debug_command (const char *buf)
 	int		itmode;
 #endif
 #endif
+	char		var [80];
+
 	/* Strip leading spaces. */
 	skip_blanks (&buf);
 	skip_string (&buf, cmd);
@@ -1253,17 +1541,26 @@ void debug_command (const char *buf)
 		rtps_ip_dump (buf, 1);
 	else if (!strncmp (cmd, "scx", 3))
 		rtps_ip_dump (buf, 0);
+	else if (!strncmp (cmd, "ccx", 3))
+		rtps_ip_close (atoi (buf));
 #endif
 	else if (!strncmp (cmd, "sloc", 3))
 		locator_dump ();
 	else if (!strncmp (cmd, "sdomain", 3))
 		domain_dump (buf);
-	else if (!strncmp (cmd, "sconfig", 3) || !strncmp (cmd, "env", 3))
-		config_dump ();
+	else if (!strncmp (cmd, "sconfig", 3) ||
+		 !strncmp (cmd, "env", 3)) {
+		if (buf [0])
+			config_info (buf);
+		else
+			config_dump ();
+	}
 	else if (!strncmp (cmd, "sdisca", 6))
 		debug_disc_dump ();
 	else if (!strncmp (cmd, "sdisc", 4))
 		disc_dump (0);
+	else if (!strncmp (cmd, "remp", 4))
+		debug_rem_part (buf);
 #ifdef XTYPES_USED
 	else if (!strncmp (cmd, "stypes", 3))
 		dbg_type_dump (buf);
@@ -1359,6 +1656,7 @@ void debug_command (const char *buf)
 			if (session->log_events) {
 				session->log_events = 0;
 				log_debug_count--;
+				err_actions_set (EL_LOG, session->prev_log);
 			}
 		}
 		else
@@ -1366,8 +1664,10 @@ void debug_command (const char *buf)
 	else if ((paused || (session && session->in_fd != tty_stdin)) &&
 		 !strncmp (cmd, "resume", 1))
 		if (session && session->in_fd != tty_stdin) {
-			if (!session->log_events)
+			if (!session->log_events) {
 				log_debug_count++;
+				session->prev_log = err_actions_add (EL_LOG, ACT_LOG);
+			}
 			if (*buf >= '1' && *buf <= '9')
 				session->log_events = atoi (buf);
 			else
@@ -1453,7 +1753,7 @@ void debug_command (const char *buf)
 		ctrc_stop ();
 	else if (!strncmp (cmd, "ctclr", 4))
 		ctrc_clear ();
-	else if (!strncmp (cmd, "ctmode", 3)) {
+	else if (!strncmp (cmd, "ctmode", 4)) {
 		if (*buf == 'c' || *buf == 'C')
 			ctrc_mode (1);
 		else if (*buf == 's' || *buf == 'S')
@@ -1463,6 +1763,14 @@ void debug_command (const char *buf)
 			fflush (stdout);
 		}
 	}
+	else if (!strncmp (cmd, "ctmask", 4)) {
+		if (*buf == '\0')
+			ctrc_mask (~0UL);
+		else
+			ctrc_mask (strtol (buf, NULL, 0));
+	}
+	else if (!strncmp (cmd, "ctminfo", 4))
+		ctrace_mask_info ();
 	else if (!strncmp (cmd, "ctinfo", 3))
 		ctrc_info ();
 	else if (!strncmp (cmd, "ctaadd", 4))
@@ -1504,10 +1812,12 @@ void debug_command (const char *buf)
 		}
 	}
 	else if (!strncmp (cmd, "set", 3)) {
-		char var [64];
-
 		skip_string (&buf, var);
-		if (DDS_parameter_set (var, buf) != DDS_RETCODE_OK)
+		if ((cp = strchr (var, '=')) != NULL)
+			*cp++ = '\0';
+		else
+			cp = (char *) buf;
+		if (DDS_parameter_set (var, cp) != DDS_RETCODE_OK)
 			dbg_printf ("Could not set %s\r\n", var);
 	}
 	else if (!strncmp (cmd, "unset", 5)) {
@@ -1530,6 +1840,16 @@ void debug_command (const char *buf)
 		dbg_printf ("Resuming DDS.\r\n");
 		DDS_Activities_resume (mode);
 	}
+#ifdef TCP_SUSPEND
+	else if (!strncmp (cmd, "notify", 3))
+		sn_notify (buf);
+	else if (!strncmp (cmd, "ssndata", 3))
+		bgns_dump ();
+#endif
+#ifdef PARSE_CDR_CMD
+	else if (!strncmp (cmd, "cdr", 3))
+		parse_cdr (buf);
+#endif
 	else if (menu && !strncmp (cmd, "menu", 4)) {
 		*menu = 1;
 		if (aborting)
@@ -1985,8 +2305,8 @@ static void dbg_sessions_reset (int suspend)
 			sock_fd_remove_handle (sp->in_fd);
 		}
 #else
-		close (sp->in_fd);
 		sock_fd_remove (sp->in_fd);
+		close (sp->in_fd);
 #endif
 		if (sp->in_fd == tty_stdin && !suspend)
 			cl_save (sp->cmdline, ".tdds_hist");

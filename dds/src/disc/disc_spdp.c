@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -23,6 +23,7 @@
 #endif
 #include "log.h"
 #include "error.h"
+#include "thread.h"
 #include "dds.h"
 #include "dds/dds_security.h"
 #ifdef DDS_SECURITY
@@ -114,6 +115,24 @@ void spdp_final (void)
 #endif
 	msg_final ();
 }
+
+#ifdef RTPS_SPDP_BCAST
+
+static void spdp_bcast_timeout (uintptr_t user)
+{
+	Domain_t	*dp = (Domain_t *) user;
+	Writer_t	*wp;
+
+	wp = (Writer_t *) dp->participant.p_builtin_ep [EPB_PARTICIPANT_W];
+	rtps_stateless_send (wp, NULL, 1);
+	tmr_start_lock (&dp->bc_timer,
+			TICKS_PER_SEC * 55,
+			(uintptr_t) dp,
+			spdp_bcast_timeout,
+			&dp->lock);
+}
+
+#endif
 
 /* spdp_start -- Start the SPDP protocol.  On entry: Domain lock taken, */
 
@@ -220,6 +239,7 @@ int spdp_start (Domain_t *dp)
 
 		/* Create the Participant Volatile Message Secure endpoints. */
 		ctt_start (dp);
+
 #ifdef DDS_QEO_TYPES
 		/* Create the policy updater endpoints */
 		policy_updater_start (dp);
@@ -249,6 +269,14 @@ int spdp_start (Domain_t *dp)
 				   &endpoint, sizeof (endpoint),
 				   handle, hci, &time, NULL, 0);
 	lock_release (wp->w_lock);
+
+#ifdef RTPS_SPDP_BCAST
+
+	/* Start periodic SPDP broadcast. */
+	tmr_init (&dp->bc_timer, "SPDP-BCAST");
+	tmr_start_lock (&dp->bc_timer, TICKS_PER_SEC, (uintptr_t) dp,
+				spdp_bcast_timeout, &dp->lock);
+#endif
 	if (error) {
 		fatal_printf ("spdp_start: can't send SPDP Participant Data!");
 		return (error);
@@ -309,6 +337,7 @@ static int spdp_reauthorize_participant (Domain_t      *dp,
 {
 	Token_t		*id_token;
 	Token_t		*p_token;
+	IdentityData_t	*iddp;
 	AuthState_t	state;
 	unsigned	caps, rem_id, perm = 0;
 	int		authorize;
@@ -335,11 +364,12 @@ static int spdp_reauthorize_participant (Domain_t      *dp,
 				authorize = DDS_AA_ACCEPTED;
 				break;
 			}
+			iddp = id_lookup (rem_id, NULL);
 			perm = sec_validate_remote_permissions (dp->participant.p_id,
 								rem_id,
 								caps,
-								p_token->data,
-								id_lookup (rem_id, NULL)->perm_cred,
+								(p_token) ? p_token->data : NULL,
+								(iddp) ? iddp->perm_cred : NULL,
 								&error);
 			if (check_peer_participant (perm, user_data)) {
 				authorize = DDS_AA_REJECTED;
@@ -466,6 +496,82 @@ int spdp_rehandshake (Domain_t *dp, int notify_only)
 	return (DDS_RETCODE_OK);
 }
 
+/* sedp_topic_free -- Free a previously created topic. */
+
+int sedp_topic_free (Skiplist_t *list, void *node, void *arg)
+{
+	Topic_t		*tp, **tpp = (Topic_t **) node;
+	Participant_t	*pp = (Participant_t *) arg;
+
+	ARG_NOT_USED (list)
+
+	tp = *tpp;
+	lock_take (tp->lock);
+	/*log_printf (DISC_ID, 0, "sedp_topic_free (%s)!\r\n", str_ptr (tp->name));*/
+	/*if (pp->p_domain->builtin_readers [BT_Topic])
+		user_topic_notify_delete (tp, tp->entity.handle);*/
+	topic_delete (pp, tp, NULL, NULL);
+	return (1);
+}
+
+/* unmatch_peer_endpoint -- If the user endpoint matches one of ours, end the
+			    association since the peer participant is disabled. */
+
+static int unmatch_peer_endpoint (Skiplist_t *list, void *node, void *arg)
+{
+	Endpoint_t	*ep, **epp = (Endpoint_t **) node;
+
+	ep = *epp;
+	if ((ep->entity.flags & EF_BUILTIN) != 0)
+		return (1);
+
+	return (sedp_unmatch_peer_endpoint (list, node, arg));
+}
+
+/* spdp_remote_participant_disable -- Disable a remote participant again until 
+				      rehandshake completed. */
+
+void spdp_remote_participant_disable (Participant_t *pp)
+{
+	Domain_t	*dp;
+	char            buf [32];
+
+	if (spdp_log) {
+		log_printf (SPDP_ID, 0, "SPDP: Participant");
+		if (pp->p_entity_name)
+			log_printf (SPDP_ID, 0, " (%s) %s", str_ptr (pp->p_entity_name),
+				    guid_prefix_str ((GuidPrefix_t *) pp->p_guid_prefix.prefix, buf));
+		log_printf (SPDP_ID, 0, " disabled!\r\n");
+	}
+	dp = pp->p_domain;
+	lock_required (dp->lock);
+
+	/* Remove relay as default route. */
+	if (pp->p_forward)
+		rtps_relay_remove (pp);
+
+	/* Disconnect the SPDP/SEDP endpoints from the peer participant. */
+	sedp_disconnect (dp, pp);
+
+	/* Disconnect the Participant Message endpoints. */
+	msg_disconnect (dp, pp);
+
+	/* Release the various ReaderLocator instances that were created for
+	   the Stateless Writers and the Stateful Reader/Writer proxies. */
+	sl_walk (&pp->p_endpoints, unmatch_peer_endpoint, pp);
+
+#ifdef DDS_NATIVE_SECURITY
+	if (NATIVE_SECURITY (dp)) {
+
+#ifdef DDS_QEO_TYPES
+		policy_updater_disconnect (dp, pp);
+#endif
+		/* Disconnect the Crypto Token Transport endpoints. */
+		ctt_disconnect (dp, pp);
+	}
+#endif
+}
+
 #endif
 
 /* spdp_end_participant -- End participant due to either a time-out or by an
@@ -487,7 +593,7 @@ void spdp_end_participant (Participant_t *pp, int ignore)
 	if (spdp_log) {
 		log_printf (SPDP_ID, 0, "SPDP: Participant");
 		if (pp->p_entity_name)
-			log_printf (SPDP_ID, 0, " (%s) [%s]", str_ptr (pp->p_entity_name),
+			log_printf (SPDP_ID, 0, " (%s) %s", str_ptr (pp->p_entity_name),
 				    guid_prefix_str ((GuidPrefix_t *) pp->p_guid_prefix.prefix, buf));
 		log_printf (SPDP_ID, 0, " removed!\r\n");
 	}
@@ -519,8 +625,12 @@ void spdp_end_participant (Participant_t *pp, int ignore)
 		ctt_disconnect (dp, pp);
 
 		/* End knowledge of this identity. */
-        if (pp->p_id)
-    		sec_release_identity (pp->p_id);
+		if (pp->p_id)
+			sec_release_identity (pp->p_id);
+
+		/* Clear handshake reply cache. */
+		locator_list_delete_list (&pp->p_uc_locs);
+		pp->p_uc_dreply = NULL;
 	}
 #endif
 
@@ -566,6 +676,7 @@ void spdp_end_participant (Participant_t *pp, int ignore)
 	if (ignore) {
 
 		/* Set ignored status. */
+		pp->p_uc_dreply = NULL;
 		pp->p_flags &= ~(EF_NOT_IGNORED | EF_SHUTDOWN);
 		return;
 	}
@@ -628,6 +739,23 @@ void spdp_timeout_participant (Participant_t *p, Ticks_t ticks)
 				&p->p_domain->lock);
 }
 
+void disc_remote_participant_delete (Participant_t *p)
+{
+	if (p && p->p_domain) {
+		lock_take (p->p_domain->lock);
+		if (!p->p_domain) {
+			lock_release (p->p_domain->lock);
+			return;
+		}
+		tmr_start_lock (&p->p_timer,
+				1,
+				(uintptr_t) p,
+				spdp_participant_timeout,
+				&p->p_domain->lock);
+		lock_release (p->p_domain->lock);
+	}
+}
+
 /* spdp_stop -- Stop the SPDP discovery protocol. Called from disc_stop with
  		domain_lock and global_lock taken. */
 
@@ -642,6 +770,11 @@ void spdp_stop (Domain_t *dp)
 
 	log_printf (SPDP_ID, 0, "SPDP: ending protocol for domain #%u.\r\n", dp->domain_id);
 
+#ifdef RTPS_SPDP_BCAST
+
+	/* Stop periodic SPDP broadcast. */
+	tmr_stop (&dp->bc_timer);
+#endif
 #ifdef DDS_AUTO_LIVELINESS
 
 	/* Stop automatic liveliness. */
@@ -761,7 +894,7 @@ void spdp_remote_participant_enable (Domain_t      *dp,
 
 	/* Resend participant info. */
 	wp = (Writer_t *) dp->participant.p_builtin_ep [EPB_PARTICIPANT_W];
-	rtps_stateless_resend (wp);
+	rtps_stateless_send (wp, pp, 0);
 
 #ifdef DDS_NATIVE_SECURITY
 	if (NATIVE_SECURITY (dp)) {
@@ -809,13 +942,29 @@ void spdp_remote_participant_enable (Domain_t      *dp,
 
 }
 
+#ifdef DDS_NATIVE_SECURITY
+
+void spdp_log_handshake (Participant_t *pp)
+{
+	char	buf [32];
+
+	log_printf (SPDP_ID, 0, "SPDP: ");
+	log_printf (SPDP_ID, 0, " %s - ", guid_prefix_str ((GuidPrefix_t *) pp->p_guid_prefix.prefix, buf));
+	locator_list_log (SPDP_ID, 0, pp->p_uc_locs);
+	log_printf (SPDP_ID, 0, " - local = %ld, dreply = %s, inforeply = %d\r\n", pp->p_local, (pp->p_uc_dreply) ? locator_str (&pp->p_uc_dreply->locator) : "not set", pp->p_ir_locs);
+}
+
+#endif
+
 /* spdp_new_participant -- Add a new peer participant as discovered by the
 			   participant discovery algorithm.
 			   On entry/exit: DP locked. */
 
 static void spdp_new_participant (Domain_t                      *dp,
 				  SPDPdiscoveredParticipantData *info,
-				  LocatorList_t                 srcs)
+				  LocatorList_t                 srcs,
+				  int64_t                       dt,
+				  int                           indirect)
 {
 	Participant_t		*pp;
 	unsigned		ticks;
@@ -839,7 +988,7 @@ static void spdp_new_participant (Domain_t                      *dp,
 	if (spdp_log) {
 		log_printf (SPDP_ID, 0, "SPDP: New participant");
 		if (info->entity_name)
-		log_printf (SPDP_ID, 0, " (%s) [%s]", str_ptr (info->entity_name),
+		log_printf (SPDP_ID, 0, " (%s) %s", str_ptr (info->entity_name),
 			    guid_prefix_str ((GuidPrefix_t *) info->proxy.guid_prefix.prefix, buf));
 		log_printf (SPDP_ID, 0, " detected!\r\n");
 	}
@@ -877,7 +1026,7 @@ static void spdp_new_participant (Domain_t                      *dp,
 				perm = sec_validate_remote_permissions (dp->participant.p_id,
 									rem_id,
 									caps,
-									p_token->data,
+									(p_token) ? p_token->data : NULL,
 									NULL,
 									&error);
 				if (check_peer_participant (perm, info->user_data)) {
@@ -944,11 +1093,21 @@ static void spdp_new_participant (Domain_t                      *dp,
 	if (!pp)
 		return;
 
+	if (pp->p_local && indirect) {
+		pp->p_local = 0;
+#ifdef DDS_NATIVE_SECURITY
+		rtps_participant_reset_reply_locators (pp);
+#endif
+	}
+	/*log_printf (SPDP_ID, 0, "SPDP: New participant is %s (indirect=%d) due to %s.\r\n", 
+		pp->p_local ? "local" : "remote", indirect, locator_str (&srcs->data->locator));*/
+
 #ifdef DDS_SECURITY
 	pp->p_permissions = perm;
 #ifdef DDS_NATIVE_SECURITY
 	pp->p_auth_state = state;
 	pp->p_id = rem_id;
+	/*spdp_log_handshake (pp);*/
 #endif
 #endif
 	if (authorize == DDS_AA_ACCEPTED)
@@ -977,6 +1136,7 @@ static void spdp_new_participant (Domain_t                      *dp,
 #endif
 
 	/* Start participant timer. */
+	pp->p_dt = dt;
 	ticks = duration2ticks (&pp->p_lease_duration) + 2;
 	tmr_init (&pp->p_timer, "DiscParticipant");
 	tmr_start_lock (&pp->p_timer,
@@ -984,7 +1144,6 @@ static void spdp_new_participant (Domain_t                      *dp,
 		        (uintptr_t) pp,
 		        spdp_participant_timeout,
 		        &dp->lock);
-
 }
 
 /* update_locators -- Update a locator list if the new one is different. */
@@ -1026,33 +1185,20 @@ static int endpoint_locators_update (Skiplist_t *list, void *node, void *arg)
 	return (1);
 }
 
-/* endpoint_locators_local -- Update the locators of an endpoint due to locality
-			      changes. */
-
-static int endpoint_locators_local (Skiplist_t *list, void *node, void *arg)
-{
-	Endpoint_t	*ep, **epp = (Endpoint_t **) node;
-	Ticks_t		local, *p_local = (Ticks_t *) arg;
-
-	ARG_NOT_USED (list)
-
-	ep = *epp;
-	local = *p_local;
-	rtps_endpoint_locality_update (ep, local);
-
-	return (1);
-}
-
 #ifdef DDS_SECURITY
 
 unsigned ntokens (Token_t *tp)
 {
+#ifdef DDS_NATIVE_SECURITY
 	Token_t		*p;
 	unsigned	n = 0;
 
 	for (p = tp; p; p = p->next)
 		n++;
 	return (n);
+#else
+	return (tp != NULL);
+#endif
 }
 
 int same_token (Token_t *tp1, Token_t *tp2)
@@ -1083,12 +1229,13 @@ int same_token (Token_t *tp1, Token_t *tp2)
 	if (str_len (tp1) != str_len (tp2))
 		return (0);
 
-	return (!memcmp (str_ptr (tp1), str_ptr (tp2)));
+	return (!memcmp (str_ptr (tp1), str_ptr (tp2), str_len (tp1)));
 #endif	
 }
 
 static int spdp_tokens_changed (Token_t *otp, Token_t *ntp)
 {
+#ifdef DDS_NATIVE_SECURITY
 	Token_t	*tp, *xp;
 	int	found;
 
@@ -1106,6 +1253,12 @@ static int spdp_tokens_changed (Token_t *otp, Token_t *ntp)
 			return (1);
 	}
 	return (0);
+#else
+	if (otp == NULL && ntp == NULL)
+		return (1);
+	else
+		return (same_token (otp, ntp));
+#endif
 }
 
 #endif
@@ -1118,7 +1271,9 @@ static int spdp_tokens_changed (Token_t *otp, Token_t *ntp)
 static void spdp_update_participant (Domain_t                      *dp,
 				     Participant_t                 *pp,
 				     SPDPdiscoveredParticipantData *info,
-				     LocatorList_t                 srcs)
+				     LocatorList_t                 srcs,
+				     int64_t                       dt,
+				     int                           indirect)
 {
 	unsigned	n [4];
 #ifdef DDS_SECURITY
@@ -1131,7 +1286,7 @@ static void spdp_update_participant (Domain_t                      *dp,
 	int		locators_update;
 	unsigned	is_local;
 	Ticks_t		ticks;
-	char		buf [30];
+	char		buf [32];
 
 	ARG_NOT_USED (dp)
 
@@ -1147,11 +1302,15 @@ static void spdp_update_participant (Domain_t                      *dp,
 		log_printf (SPDP_ID, 0, ")");
 	}
 	log_printf (SPDP_ID, 0, "\r\n");
+	dbg_printf ("Delta-T: %ld * 3 / 4 + %ld / 4 -> ", pp->p_dt, dt);
 # endif
-
+	pp->p_dt = ((pp->p_dt * 3) >> 2) + (dt >> 2);
+# if 0
+	dbg_printf ("%ld\r\n", pp->p_dt);
+# endif
 	pp->p_no_mcast = info->proxy.no_mcast;
 
-#ifdef DDS_NATIVE_SECURITY
+#ifdef DDS_SECURITY
 	if (dp->security) {
 
 		/* Identity tokens changed? */
@@ -1159,9 +1318,11 @@ static void spdp_update_participant (Domain_t                      *dp,
 
 			/* Just restart as if a new host connected. */
 			log_printf (SPDP_ID, 0, "SPDP: Update participant: IdTokens changed!\r\n");
+#ifdef DDS_NATIVE_SECURITY
 			psmp_delete (dp, pp);
+#endif
 			spdp_end_participant (pp, 0);
-			spdp_new_participant (dp, info, srcs);
+			spdp_new_participant (dp, info, srcs, dt, indirect);
 			return;
 		}
 #if 0
@@ -1219,17 +1380,19 @@ static void spdp_update_participant (Domain_t                      *dp,
 #endif
 	proxy_local_update = 0;
 	locators_update = ((n [0] + n [1] + n [2] + n [3]) != 0);
+	if (locators_update)
+		rtps_update_kinds (pp);
 
 	/* Remember who sent this. */
 	is_local = 0;
 	if (srcs) {
 		foreach_locator (srcs, srp, snp) {
 			if (!is_local &&
+			    !indirect &&
 			    (snp->locator.kind & LOCATOR_KINDS_UDP) != 0)
-				foreach_locator (pp->p_def_ucast, rp, np)
+				foreach_locator (pp->p_meta_ucast, rp, np)
 					if (locator_addr_equal (&np->locator, &snp->locator)) {
 						is_local = 1;
-						/*log_printf (SPDP_ID, 0, "SPDP: Found match!\r\n");*/
 						break;
 					}
 
@@ -1242,9 +1405,12 @@ static void spdp_update_participant (Domain_t                      *dp,
 			pp->p_local = sys_ticks_last;
 		}
 	}
+	/*log_printf (SPDP_ID, 0, "SPDP: participant is %s now.\r\n", 
+					pp->p_local ? "local" : "remote");*/
 	if (!is_local &&
 	    pp->p_local && 
-	    sys_ticksdiff (pp->p_local, sys_ticks_last) > MAX_LOCAL_TICKS) {
+	    (locators_update ||
+	     sys_ticksdiff (pp->p_local, sys_ticks_last) > MAX_LOCAL_TICKS)) {
 		proxy_local_update = 1;
 		pp->p_local = 0;
 		log_printf (SPDP_ID, 0, "SPDP: Participant locality time-out (%s).\r\n",
@@ -1252,6 +1418,14 @@ static void spdp_update_participant (Domain_t                      *dp,
 	}
 	relay_update = (pp->p_forward != info->proxy.forward ||
 			(pp->p_forward && locators_update));
+
+#ifdef DDS_NATIVE_SECURITY
+
+	/* Clear handshake reply cache. */
+	if (locators_update || proxy_local_update || relay_update)
+		rtps_participant_reset_reply_locators (pp);
+	/* spdp_log_handshake (pp); */
+#endif
 
 	/* If any locators have changed, update all proxies connected to
 	   endpoints for this participant! */
@@ -1266,7 +1440,7 @@ static void spdp_update_participant (Domain_t                      *dp,
 	else if (proxy_local_update && !relay_update) {
 		log_printf (SPDP_ID, 0, "SPDP: Participant locality update (%s is %s now).\r\n",
 			guid_prefix_str (&pp->p_guid_prefix, buf), (pp->p_local) ? "local" : "remote");
-		sl_walk (&pp->p_endpoints, endpoint_locators_local, &pp->p_local);
+		rtps_participant_locality_update (pp);
 	}
 
 	/* Else if relay info is updated, update all proxies. */
@@ -1285,6 +1459,7 @@ static void spdp_update_participant (Domain_t                      *dp,
 		}
 		else 
 			rtps_relay_update (pp);
+		/* spdp_log_handshake (pp); */
 	}
 
 #ifdef DDS_FORWARD
@@ -1337,6 +1512,8 @@ void spdp_event (Reader_t *rp, NotificationType_t t)
 	GuidPrefix_t	  		*guidprefixp;
 	RemPrefix_t			*prp;
 	InfoType_t                      type;
+	FTime_t				now;
+	int64_t				delta;
 	int				error;
 	spdp_buf			(32);
 
@@ -1354,6 +1531,10 @@ void spdp_event (Reader_t *rp, NotificationType_t t)
 			xfree (info);
 			info = NULL;
 		}
+		sys_getftime (&now);
+		/*dbg_printf ("SPDP: timestamp = ");
+		dbg_print_time (&change.time);
+		dbg_printf ("\r\n");*/
 		/*dtrc_print0 ("SPDP: get samples");*/
 		error = disc_get_data (rp, &change);
 		if (error) {
@@ -1379,17 +1560,26 @@ void spdp_event (Reader_t *rp, NotificationType_t t)
 		if (memcmp (&dp->participant.p_guid_prefix,
 			    guidprefixp,
 			    sizeof (GuidPrefix_t)) != 0/* && prp*/) {
+			delta = ftime_delta (&now, &change.time);
 			pp = participant_lookup (dp, guidprefixp);
 			if (type == EI_DELETE) {
 				if (pp)
 					spdp_end_participant (pp, 0);
 			}
-			else if (!pp)
+			else if (!pp) {
+				/*if (prp && prp->locators) {
+					log_printf (SPDP_ID, 0, "SPDP: Prefix locators found [%s] : ", guid_prefix_str (guidprefixp, buf));
+					locator_list_log (SPDP_ID, 0, prp->locators);
+					log_printf (SPDP_ID, 0, "\r\n");
+				}*/
 				spdp_new_participant (dp, info,
-						(prp) ? prp->locators : NULL);
+						(prp) ? prp->locators : NULL,
+						delta, change.indirect);
+			}
 			else
 				spdp_update_participant (dp, pp, info, 
-						 (prp) ? prp->locators : NULL);
+						 (prp) ? prp->locators : NULL,
+						 delta, change.indirect);
 		}
 		if (prp)
 			prefix_forget (prp);

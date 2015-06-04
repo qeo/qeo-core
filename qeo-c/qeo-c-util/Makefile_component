@@ -63,6 +63,10 @@ qeo-c-util.libqeoutil_SRCS          += $(addprefix src/platform/impl/default/, d
 qeo-c-util.libqeoutil_SRCS          += $(addprefix src/platform/impl/soap/, qeo_registration_credentials_soap.c soap_impl.c)
 endif
 
+ifeq ($(TARG_OS),MACOS)
+qeo-c-util.libqeoutil_LDADD  += -framework CoreFoundation -framework Security
+endif
+
 ### Test programs ###
 
 ### Unit test libraries ###
@@ -107,6 +111,10 @@ qeo-c-util.libutplatform_LOCALINCLUDES := src $(qeo-c-util_INCLUDES) $(cmock_INC
 qeo-c-util.libutplatform_LOCALDEFINES  := -Wall -Werror
 qeo-c-util.libutplatform_LDADD         := $(qeo-c-util_LIBS) $(cmock_LIBS) $(unittest-check_LIBS) -L$(qeo-c-util_PREFIX)
 qeo-c-util.libutplatform_LDDEPS        := libqeoutil.so
+
+ifeq ($(TARG_OS),MACOS)
+qeo-c-util.libutplatform_LDADD += -framework CoreFoundation -framework Security
+endif
 
 include $(projectdir/)build/Makefile_component_bot
 

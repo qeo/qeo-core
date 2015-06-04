@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -93,7 +93,7 @@ static void remove_plugincred_node (PluginCred_t *node)
 {
 
 #ifdef SP_CRED_LOG
-	log_printf (SEC_ID, 0, "SP_CRED: remove node (%p)[%d] from credential list\r\n",(void *) node, node->id);
+	log_printf (SEC_ID, 0, "SP_CRED: remove node (%p)[%d] from credential list\r\n",(void *) node, (node) ? node->id : 0);
 #endif
 	if (node) {
 		if (node->name)
@@ -124,13 +124,22 @@ DDS_ReturnCode_t sp_add_credential (IdentityHandle_t id,
 	node = add_plugincred_node (id);
 	if (name) {
 		node->name = malloc (sizeof (unsigned char) * strlen (name) + 1);
+		if (!node->name)
+			return (DDS_RETCODE_OUT_OF_RESOURCES);
+
 		strcpy ((char *) node->name, (const char *) name);
 	}
 	node->certificate = malloc (sizeof (unsigned char) * cert_len + 2);
+	if (!node->certificate)
+		return (DDS_RETCODE_OUT_OF_RESOURCES);
+
 	strcpy ((char *) node->certificate, (const char *) cert);
 	node->cert_len = cert_len;
 	if (key) {
 		node->key = malloc (sizeof (unsigned char) * key_len + 2); 
+		if (!node->key)
+			return (DDS_RETCODE_OUT_OF_RESOURCES);
+
 		strcpy ( (char *) node->key,(const char *) key);
 		node->key_len = key_len;
 	} 
@@ -214,11 +223,16 @@ DDS_ReturnCode_t sp_extract_pem (DDS_Credentials *cred,
 		rewind ( fp );
 		
 		*cert = calloc ( 1, lSize+1 );
-		if( !*cert ) fclose(fp),fputs("memory alloc fails",stderr),exit(1);
-		
-		if( 1!=fread( (void *) *cert , lSize, 1 , fp) )
-			fclose(fp),free(*cert),fputs("entire read fails",stderr),exit(1);
-		
+		if( !*cert ) {
+			fclose(fp);
+			fputs("memory alloc fails",stderr);
+			exit(1);
+		}
+		if( 1!=fread( (void *) *cert , lSize, 1 , fp) ) {
+			fclose(fp);
+			fputs("entire read fails",stderr);
+			exit(1);
+		}
 		*cert_len = (size_t) lSize;
 		fclose(fp);
 
@@ -234,12 +248,18 @@ DDS_ReturnCode_t sp_extract_pem (DDS_Credentials *cred,
 		rewind ( fp );
 		
 		*key = calloc ( 1, lSize+1 );
-		if( !*key ) fclose(fp),fputs("memory alloc fails",stderr),exit(1);
-		
-		if( 1!=fread( (void *) *key , lSize, 1 , fp) )
-			fclose(fp),free(*key),fputs("entire read fails",stderr),exit(1);
-		
+		if( !*key ) {
+			fclose(fp);
+			fputs("memory alloc fails",stderr);
+			exit(1);
+		}
+		if( 1!=fread( (void *) *key , lSize, 1 , fp) ) {
+			fclose(fp);
+			fputs("entire read fails",stderr);
+			exit(1);
+		}
 		*key_len = (size_t) lSize;
+		(*key) [lSize] = '\0';
 		fclose(fp);
 
 	}
@@ -252,6 +272,8 @@ DDS_ReturnCode_t sp_extract_pem (DDS_Credentials *cred,
 			PEM_write_bio_X509(cert_in, sk_X509_value (cred->info.sslData.certificate_list, i));
 
 		*cert = malloc (sizeof (unsigned char) * cert_in->num_write + 1);
+		if (!*cert)
+			return (DDS_RETCODE_OUT_OF_RESOURCES);
 		
 		/* read from the BIO into a char * */
 		*cert_len = BIO_read (cert_in, *cert, cert_in->num_write);
@@ -260,6 +282,10 @@ DDS_ReturnCode_t sp_extract_pem (DDS_Credentials *cred,
 		/* Write the X509 to a PEM format in a BIO */
 		PEM_write_bio_PrivateKey(key_in, cred->info.sslData.private_key, NULL, NULL, 0, 0, NULL);
 		*key = malloc (sizeof (unsigned char) * key_in->num_write + 1);
+		if (!*key) {
+			free (*cert);
+			return (DDS_RETCODE_OUT_OF_RESOURCES);
+		}
 		
 		/* read from the BIO into a char * */
 		*key_len = BIO_read (key_in, *key, key_in->num_write);
@@ -270,18 +296,24 @@ DDS_ReturnCode_t sp_extract_pem (DDS_Credentials *cred,
 	else if (cred->credentialKind == DDS_DATA_BASED) {
 		if (cred->info.data.private_key.format == DDS_FORMAT_PEM) {
 			*key = malloc (sizeof (unsigned char) * cred->info.data.private_key.length + 1);
+			if (!*key)
+				return (DDS_RETCODE_OUT_OF_RESOURCES);
+
 			strcpy ((char *) *key, (char *) cred->info.data.private_key.data);
 			*key_len = cred->info.data.private_key.length;
+			(*key) [cred->info.data.private_key.length] = '\0';
 		}
-		else {
-			/* Not implemented */
-		}
-		/* This is okay for the current useage, but not for the intended useage */
+
+		/* This is okay for the current usage, but not for the intended usage */
 		for (i = 0; i < (int) cred->info.data.num_certificates ; i++) {
 			if (cred->info.data.certificates [i].format == DDS_FORMAT_PEM) {
 				*cert = malloc (sizeof (unsigned char) * cred->info.data.certificates [i].length + 1);
+				if (!*cert)
+					return (DDS_RETCODE_OUT_OF_RESOURCES);
+
 				strcpy ((char *) *cert, (char *) cred->info.data.certificates [i].data);
 				*cert_len = cred->info.data.certificates [i].length;
+				(*cert) [cred->info.data.certificates [i].length] = '\0';
 			}
 		}
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -41,6 +41,7 @@
 #include "dds/dds_debug.h"
 #include "dds/dds_trans.h"
 #include "dds/dds_aux.h"
+#include "guid.h"
 #ifdef XTYPES_USED
 #include "dds/dds_xtypes.h"
 #endif
@@ -55,8 +56,8 @@
 /*#define WRDISPATCH	** Dispatch from extra reader to extra thread. */
 /*#define EXTRA_TAKE	** Define to take items in extra reader. */
 /*#define DO_DISC_LISTEN * Listen on discovery info. */
+/*#define DDL_DELAY 2	** Delay (seconds) until Discovery Readers started. */
 /*#define DO_SUSPEND	** Periodic suspend/resume. */
-#define DDL_DELAY 2	/* Delay (seconds) until Discovery Readers started. */
 #define	RELIABLE	/* Use reliable transfer mode. */
 #define TRANSIENT_LOCAL	/* Use TRANSIENT-LOCAL mode. */
 /*#define KEEP_ALL	** Use KEEP_ALL history. */
@@ -116,6 +117,7 @@ int                     file;
 char                    *fname;
 int                     sfile;
 char                    *sname;
+int			forward;		/* Forwarding mode. */
 int			dbg_server;		/* Start a debug server. */
 unsigned		dbg_port;		/* Debug server port. */
 #ifdef DDS_SECURITY
@@ -207,6 +209,7 @@ void usage (void)
 	fprintf (stderr, "                  When sending, dtime is the delay before exit.\r\n");
 	fprintf (stderr, "                  When receiving, dtime is the max. time to wait.\r\n");
 	fprintf (stderr, "   -f             Flood mode (no waiting: as fast as possible).\r\n");
+	fprintf (stderr, "   -ff            Forwarding mode: no readers/writers.\r\n");
 	fprintf (stderr, "   -d <msec>      Max. delay to wait between bursts (10..10000).\r\n");
 	fprintf (stderr, "   -p             Startup in paused state.\r\n");
 	fprintf (stderr, "   -t             Trace transmitted/received messages.\r\n");
@@ -337,7 +340,12 @@ int do_switches (int argc, const char **argv)
 						usage ();
 					break;
 				case 'f':
-					sleep_time = 0;
+					if (*cp == 'f') {
+						forward = 1;
+						cp++;
+					}
+					else
+						sleep_time = 0;
 					break;
 				case 'd':
 					INC_ARG()
@@ -1572,7 +1580,11 @@ void dcps_do_writer (DDS_DomainParticipant part)
 }
 
 #ifdef DO_DISC_LISTEN
+
+#include "../co/dd_log.h"
+
 void start_disc_readers (DDS_DomainParticipant part);
+
 #endif
 
 static DDS_DataReaderListener dr_listener = {
@@ -1753,10 +1765,8 @@ void dcps_do_reader (DDS_DomainParticipant part)
 		}
 #endif
 #if defined (DO_DISC_LISTEN) && defined (DDL_DELAY)
-		if (i == DDL_DELAY) {
-			printf ("Starting Discovery readers.\r\n");
+		if (i == DDL_DELAY)
 			start_disc_readers (part);
-		}
 #endif
 		to.sec = 1;
 		to.nanosec = 0;
@@ -1895,600 +1905,17 @@ void dcps_do_reader (DDS_DomainParticipant part)
 
 #ifdef DO_DISC_LISTEN
 
-static const char	*names [] = {
-	"DCPSParticipant",
-	"DCPSTopic",
-	"DCPSPublication",
-	"DCPSSubscription"
-};
-
-void dump_key (DDS_BuiltinTopicKey_t *kp)
-{
-	printf ("%08x:%08x:%08x", ntohl (kp->value [0]), 
-			ntohl (kp->value [1]), ntohl (kp->value [2]));
-}
-
-void dump_user_data (DDS_OctetSeq *sp)
-{
-	unsigned	i;
-	unsigned char	*p;
-
-	if (!DDS_SEQ_LENGTH (*sp))
-		printf ("<none>\r\n");
-	else if (DDS_SEQ_LENGTH (*sp) < 10) {
-		DDS_SEQ_FOREACH_ENTRY (*sp, i, p)
-			printf ("%02x ", *p);
-		printf ("\r\n");
-	}
-	else {
-		printf ("\r\n");
-		dbg_print_region (DDS_SEQ_ITEM_PTR (*sp, 0), DDS_SEQ_LENGTH (*sp), 0, 0);
-	}
-}
-
-void display_participant_info (DDS_ParticipantBuiltinTopicData *sample)
-{
-	printf ("\tKey                = ");
-	dump_key (&sample->key);
-	printf ("\r\n\tUser data          = ");
-	dump_user_data (&sample->user_data.value);
-}
-
-void participant_info (DDS_DataReaderListener *l,
-		       DDS_DataReader         dr)
-{
-	static DDS_DataSeq	rx_sample = DDS_SEQ_INITIALIZER (void *);
-	static DDS_SampleInfoSeq rx_info = DDS_SEQ_INITIALIZER (DDS_SampleInfo *);
-	DDS_SampleStateMask	ss = DDS_NOT_READ_SAMPLE_STATE;
-	DDS_ViewStateMask	vs = DDS_ANY_VIEW_STATE;
-	DDS_InstanceStateMask	is = DDS_ANY_INSTANCE_STATE;
-	DDS_SampleInfo		*info;
-	DDS_ParticipantBuiltinTopicData tmp;
-	DDS_ParticipantBuiltinTopicData *sample;
-	DDS_ReturnCode_t	error;
-
-	ARG_NOT_USED (l)
-
-	/*printf ("do_read: got notification!\r\n");*/
-	for (;;) {
-		error = DDS_DataReader_read (dr, &rx_sample, &rx_info, 1, ss, vs, is);
-		if (error) {
-			if (error != DDS_RETCODE_NO_DATA)
-				printf ("Unable to read Discovered Participant samples: error = %u!\r\n", error);
-			return;
-		}
-		if (DDS_SEQ_LENGTH (rx_info)) {
-			sample = DDS_SEQ_ITEM (rx_sample, 0);
-			info = DDS_SEQ_ITEM (rx_info, 0);
-			if (verbose) {
-				printf ("* ");
-				if (info->valid_data)
-					dump_key (&sample->key);
-				else {
-					DDS_DataReader_get_key_value (dr, &tmp, info->instance_handle);
-					dump_key (&tmp.key);
-				}
-				printf ("  ");
-				if ((info->view_state & DDS_NEW_VIEW_STATE) != 0)
-					printf ("New");
-				else if (info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-					printf ("Updated");
-				else
-					printf ("Deleted");
-				printf (" Participant\r\n");
-				if (info->valid_data)
-					display_participant_info (sample);
-			}
-
-			/*if (trace && info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-				trace_data (bufp, data_size);*/
-			DDS_DataReader_return_loan (dr, &rx_sample, &rx_info);
-		}
-		else {
-			/*printf ("do_read: all read!\r\n");*/
-			return;
-		}
-	}
-}
-
-void dump_duration (DDS_Duration_t *dp)
-{
-	if (dp->sec == DDS_DURATION_ZERO_SEC &&
-	    dp->nanosec == DDS_DURATION_ZERO_NSEC)
-		printf ("0s");
-	else if (dp->sec == DDS_DURATION_INFINITE_SEC &&
-	         dp->nanosec == DDS_DURATION_INFINITE_NSEC)
-		printf ("<infinite>");
-	else
-		printf ("%d.%09us", dp->sec, dp->nanosec);
-}
-
-void dump_durability (DDS_DurabilityQosPolicy *dp)
-{
-	static const char *durability_str [] = {
-		"Volatile", "Transient-local", "Transient", "Persistent"
-	};
-
-	if (dp->kind <= DDS_PERSISTENT_DURABILITY_QOS)
-		printf ("%s", durability_str [dp->kind]);
-	else
-		printf ("?(%d)", dp->kind);
-}
-
-void dump_history (DDS_HistoryQosPolicyKind k, int depth)
-{
-	if (k == DDS_KEEP_ALL_HISTORY_QOS)
-		printf ("All");
-	else
-		printf ("Last %d", depth);
-}
-
-void dump_resource_limits (int max_samples, int max_inst, int max_samples_per_inst)
-{
-	printf ("max_samples/instances/samples_per_inst=%d/%d/%d",
-			max_samples, max_inst, max_samples_per_inst);
-}
-
-void dump_durability_service (DDS_DurabilityServiceQosPolicy *sp)
-{
-	printf ("\r\n\t     Cleanup Delay = ");
-	dump_duration (&sp->service_cleanup_delay);
-	printf ("\r\n\t     History       = ");
-	dump_history (sp->history_kind, sp->history_depth);
-	printf ("\r\n\t     Limits        = ");
-	dump_resource_limits (sp->max_samples,
-			      sp->max_instances,
-			      sp->max_samples_per_instance);
-}
-
-void dump_liveliness (DDS_LivelinessQosPolicy *lp)
-{
-	static const char *liveness_str [] = {
-		"Automatic", "Manual_by_Participant", "Manual_by_Topic"
-	};
-
-	if (lp->kind <= DDS_MANUAL_BY_TOPIC_LIVELINESS_QOS)
-		printf ("%s", liveness_str [lp->kind]);
-	else
-		printf ("?(%d)", lp->kind);
-	printf (", Lease duration: ");
-	dump_duration (&lp->lease_duration);
-}
-
-void dump_reliability (DDS_ReliabilityQosPolicy *rp)
-{
-	if (rp->kind == DDS_BEST_EFFORT_RELIABILITY_QOS)
-		printf ("Best-effort");
-	else if (rp->kind == DDS_RELIABLE_RELIABILITY_QOS)
-		printf ("Reliable");
-	else
-		printf ("?(%d)", rp->kind);
-	printf (", Max_blocking_time: ");
-	dump_duration (&rp->max_blocking_time);
-}
-
-void dump_destination_order (DDS_DestinationOrderQosPolicyKind k)
-{
-	if (k == DDS_BY_RECEPTION_TIMESTAMP_DESTINATIONORDER_QOS)
-		printf ("Reception_Timestamp");
-	else if (k == DDS_BY_SOURCE_TIMESTAMP_DESTINATIONORDER_QOS)
-		printf ("Source_Timestamp");
-	else
-		printf ("?(%d)", k);
-}
-
-void dump_ownership (DDS_OwnershipQosPolicyKind k)
-{
-	if (k == DDS_SHARED_OWNERSHIP_QOS)
-		printf ("Shared");
-	else if (k == DDS_EXCLUSIVE_OWNERSHIP_QOS)
-		printf ("Exclusive");
-	else
-		printf ("?(%d)", k);
-}
-
-void display_topic_info (DDS_TopicBuiltinTopicData *sample)
-{
-	printf ("\tKey                = ");
-	dump_key (&sample->key);
-	printf ("\r\n\tName               = %s", sample->name);
-	printf ("\r\n\tType Name          = %s", sample->type_name);
-	printf ("\r\n\tDurability         = ");
-	dump_durability (&sample->durability);
-	printf ("\r\n\tDurability Service:");
-	dump_durability_service (&sample->durability_service);
-	printf ("\r\n\tDeadline           = ");
-	dump_duration (&sample->deadline.period);
-	printf ("\r\n\tLatency Budget     = ");
-	dump_duration (&sample->latency_budget.duration);
-	printf ("\r\n\tLiveliness         = ");
-	dump_liveliness (&sample->liveliness);
-	printf ("\r\n\tReliability        = ");
-	dump_reliability (&sample->reliability);
-	printf ("\r\n\tTransport Priority = %d", sample->transport_priority.value);
-	printf ("\r\n\tLifespan           = ");
-	dump_duration (&sample->lifespan.duration);
-	printf ("\r\n\tDestination Order  = ");
-	dump_destination_order (sample->destination_order.kind);
-	printf ("\r\n\tHistory            = ");
-	dump_history (sample->history.kind, sample->history.depth);
-	printf ("\r\n\tResource Limits    = ");
-	dump_resource_limits (sample->resource_limits.max_samples,
-			      sample->resource_limits.max_instances,
-			      sample->resource_limits.max_samples_per_instance);
-	printf ("\r\n\tOwnership          = ");
-	dump_ownership (sample->ownership.kind);
-	printf ("\r\n\tTopic Data         = ");
-	dump_user_data (&sample->topic_data.value);
-}
-
-void topic_info (DDS_DataReaderListener *l,
-		 DDS_DataReader         dr)
-{
-	static DDS_DataSeq	rx_sample = DDS_SEQ_INITIALIZER (void *);
-	static DDS_SampleInfoSeq rx_info = DDS_SEQ_INITIALIZER (DDS_SampleInfo *);
-	DDS_SampleStateMask	ss = DDS_NOT_READ_SAMPLE_STATE;
-	DDS_ViewStateMask	vs = DDS_ANY_VIEW_STATE;
-	DDS_InstanceStateMask	is = DDS_ANY_INSTANCE_STATE;
-	DDS_SampleInfo		*info;
-	DDS_TopicBuiltinTopicData tmp;
-	DDS_TopicBuiltinTopicData *sample;
-	DDS_ReturnCode_t	error;
-
-	ARG_NOT_USED (l)
-
-	/*printf ("do_read: got notification!\r\n");*/
-	for (;;) {
-		error = DDS_DataReader_read (dr, &rx_sample, &rx_info, 1, ss, vs, is);
-		if (error) {
-			if (error != DDS_RETCODE_NO_DATA)
-				printf ("Unable to read Discovered Topic samples: error = %u!\r\n", error);
-			return;
-		}
-		if (DDS_SEQ_LENGTH (rx_info)) {
-			sample = DDS_SEQ_ITEM (rx_sample, 0);
-			info = DDS_SEQ_ITEM (rx_info, 0);
-			if (verbose) {
-				printf ("* ");
-				if (info->valid_data)
-					dump_key (&sample->key);
-				else {
-					DDS_DataReader_get_key_value (dr, &tmp, info->instance_handle);
-					dump_key (&tmp.key);
-				}
-				printf ("  ");
-				if ((info->view_state & DDS_NEW_VIEW_STATE) != 0)
-					printf ("New");
-				else if (info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-					printf ("Updated");
-				else
-					printf ("Deleted");
-				printf (" Topic");
-				if (info->valid_data)
-					printf (" (%s/%s)", sample->name, sample->type_name);
-				printf ("\r\n");
-				if (info->valid_data)
-					display_topic_info (sample);
-			}
-
-			/*if (trace && info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-				trace_data (bufp, data_size);*/
-			DDS_DataReader_return_loan (dr, &rx_sample, &rx_info);
-		}
-		else {
-			/*printf ("do_read: all read!\r\n");*/
-			return;
-		}
-	}
-}
-
-void dump_presentation (DDS_PresentationQosPolicy *pp)
-{
-	static const char *pres_str [] = {
-		"Instance", "Topic", "Group"
-	};
-
-	printf ("Scope: ");
-	if (pp->access_scope <= DDS_GROUP_PRESENTATION_QOS)
-		printf ("%s", pres_str [pp->access_scope]);
-	else
-		printf ("?(%d)", pp->access_scope);
-	printf (", coherent: %d, ordered: %d", pp->coherent_access, pp->ordered_access);
-}
-
-void dump_partition (DDS_PartitionQosPolicy *pp)
-{
-	unsigned	i;
-	char		**cp;
-
-	if (!DDS_SEQ_LENGTH (pp->name)) {
-		printf ("<none>");
-		return;
-	}
-	DDS_SEQ_FOREACH_ENTRY (pp->name, i, cp) {
-		if (i)
-			printf (", ");
-		printf ("%s", *cp);
-	}
-}
-
-void display_publication_info (DDS_PublicationBuiltinTopicData *sample)
-{
-	printf ("\tKey                = ");
-	dump_key (&sample->key);
-	printf ("\r\n\tParticipant Key    = ");
-	dump_key (&sample->participant_key);
-	printf ("\r\n\tTopic Name         = %s", sample->topic_name);
-	printf ("\r\n\tType Name          = %s", sample->type_name);
-	printf ("\r\n\tDurability         = ");
-	dump_durability (&sample->durability);
-	printf ("\r\n\tDurability Service:");
-	dump_durability_service (&sample->durability_service);
-	printf ("\r\n\tDeadline           = ");
-	dump_duration (&sample->deadline.period);
-	printf ("\r\n\tLatency Budget     = ");
-	dump_duration (&sample->latency_budget.duration);
-	printf ("\r\n\tLiveliness         = ");
-	dump_liveliness (&sample->liveliness);
-	printf ("\r\n\tReliability        = ");
-	dump_reliability (&sample->reliability);
-	printf ("\r\n\tLifespan           = ");
-	dump_duration (&sample->lifespan.duration);
-	printf ("\r\n\tUser Data          = ");
-	dump_user_data (&sample->user_data.value);
-	printf ("\tOwnership          = ");
-	dump_ownership (sample->ownership.kind);
-	printf ("\r\n\tOwnership strength = %d",
-			sample->ownership_strength.value);
-	printf ("\r\n\tDestination Order  = ");
-	dump_destination_order (sample->destination_order.kind);
-	printf ("\r\n\tPresentation       = ");
-	dump_presentation (&sample->presentation);
-	printf ("\r\n\tPartition          = ");
-	dump_partition (&sample->partition);
-	printf ("\r\n\tTopic Data         = ");
-	dump_user_data (&sample->topic_data.value);
-	printf ("\tGroup Data         = ");
-	dump_user_data (&sample->group_data.value);
-}
-
-void publication_info (DDS_DataReaderListener *l,
-		       DDS_DataReader         dr)
-{
-	static DDS_DataSeq	rx_sample = DDS_SEQ_INITIALIZER (void *);
-	static DDS_SampleInfoSeq rx_info = DDS_SEQ_INITIALIZER (DDS_SampleInfo *);
-	DDS_SampleStateMask	ss = DDS_NOT_READ_SAMPLE_STATE;
-	DDS_ViewStateMask	vs = DDS_ANY_VIEW_STATE;
-	DDS_InstanceStateMask	is = DDS_ANY_INSTANCE_STATE;
-	DDS_SampleInfo		*info;
-	DDS_PublicationBuiltinTopicData tmp;
-	DDS_PublicationBuiltinTopicData *sample;
-	DDS_ReturnCode_t	error;
-
-	ARG_NOT_USED (l)
-
-	/*printf ("do_read: got notification!\r\n");*/
-	for (;;) {
-		error = DDS_DataReader_read (dr, &rx_sample, &rx_info, 1, ss, vs, is);
-		if (error) {
-			if (error != DDS_RETCODE_NO_DATA)
-				printf ("Unable to read Discovered Publication samples: error = %u!\r\n", error);
-			return;
-		}
-		if (DDS_SEQ_LENGTH (rx_info)) {
-			sample = DDS_SEQ_ITEM (rx_sample, 0);
-			info = DDS_SEQ_ITEM (rx_info, 0);
-			if (verbose) {
-				printf ("* ");
-				if (info->valid_data)
-					dump_key (&sample->key);
-				else {
-					DDS_DataReader_get_key_value (dr, &tmp, info->instance_handle);
-					dump_key (&tmp.key);
-				}
-				printf ("  ");
-				if ((info->view_state & DDS_NEW_VIEW_STATE) != 0)
-					printf ("New");
-				else if (info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-					printf ("Updated");
-				else
-					printf ("Deleted");
-				printf (" Publication");
-				if (info->valid_data)
-					printf (" (%s/%s)", sample->topic_name, sample->type_name);
-				printf ("\r\n");
-				if (info->valid_data)
-					display_publication_info (sample);
-			}
-
-			/*if (trace && info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-				trace_data (bufp, data_size);*/
-			DDS_DataReader_return_loan (dr, &rx_sample, &rx_info);
-		}
-		else {
-			/*printf ("do_read: all read!\r\n");*/
-			return;
-		}
-	}
-}
-
-void display_subscription_info (DDS_SubscriptionBuiltinTopicData *sample)
-{
-	printf ("\tKey                = ");
-	dump_key (&sample->key);
-	printf ("\r\n\tParticipant Key    = ");
-	dump_key (&sample->participant_key);
-	printf ("\r\n\tTopic Name         = %s", sample->topic_name);
-	printf ("\r\n\tType Name          = %s", sample->type_name);
-	printf ("\r\n\tDurability         = ");
-	dump_durability (&sample->durability);
-	printf ("\r\n\tDeadline           = ");
-	dump_duration (&sample->deadline.period);
-	printf ("\r\n\tLatency Budget     = ");
-	dump_duration (&sample->latency_budget.duration);
-	printf ("\r\n\tLiveliness         = ");
-	dump_liveliness (&sample->liveliness);
-	printf ("\r\n\tReliability        = ");
-	dump_reliability (&sample->reliability);
-	printf ("\r\n\tOwnership          = ");
-	dump_ownership (sample->ownership.kind);
-	printf ("\r\n\tDestination Order  = ");
-	dump_destination_order (sample->destination_order.kind);
-	printf ("\r\n\tUser Data          = ");
-	dump_user_data (&sample->user_data.value);
-	printf ("\tTime based filter  = ");
-	dump_duration (&sample->time_based_filter.minimum_separation);
-	printf ("\r\n\tPresentation       = ");
-	dump_presentation (&sample->presentation);
-	printf ("\r\n\tPartition          = ");
-	dump_partition (&sample->partition);
-	printf ("\r\n\tTopic Data         = ");
-	dump_user_data (&sample->topic_data.value);
-	printf ("\tGroup Data         = ");
-	dump_user_data (&sample->group_data.value);
-}
-
-void subscription_info (DDS_DataReaderListener *l,
-		        DDS_DataReader         dr)
-{
-	static DDS_DataSeq	rx_sample = DDS_SEQ_INITIALIZER (void *);
-	static DDS_SampleInfoSeq rx_info = DDS_SEQ_INITIALIZER (DDS_SampleInfo *);
-	DDS_SampleStateMask	ss = DDS_NOT_READ_SAMPLE_STATE;
-	DDS_ViewStateMask	vs = DDS_ANY_VIEW_STATE;
-	DDS_InstanceStateMask	is = DDS_ANY_INSTANCE_STATE;
-	DDS_SampleInfo		*info;
-	DDS_SubscriptionBuiltinTopicData tmp;
-	DDS_SubscriptionBuiltinTopicData *sample;
-	DDS_ReturnCode_t	error;
-
-	ARG_NOT_USED (l)
-
-	/*printf ("do_read: got notification!\r\n");*/
-	for (;;) {
-		error = DDS_DataReader_read (dr, &rx_sample, &rx_info, 1, ss, vs, is);
-		if (error) {
-			if (error != DDS_RETCODE_NO_DATA)
-				printf ("Unable to read Discovered Subscription samples: error = %u!\r\n", error);
-			return;
-		}
-		if (DDS_SEQ_LENGTH (rx_info)) {
-			sample = DDS_SEQ_ITEM (rx_sample, 0);
-			info = DDS_SEQ_ITEM (rx_info, 0);
-			if (verbose) {
-				printf ("* ");
-				if (info->valid_data)
-					dump_key (&sample->key);
-				else {
-					DDS_DataReader_get_key_value (dr, &tmp, info->instance_handle);
-					dump_key (&tmp.key);
-				}
-				printf ("  ");
-				if ((info->view_state & DDS_NEW_VIEW_STATE) != 0)
-					printf ("New");
-				else if (info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-					printf ("Updated");
-				else
-					printf ("Deleted");
-				printf (" Subscription");
-				if (info->valid_data)
-					printf (" (%s/%s)", sample->topic_name, sample->type_name);
-				printf ("\r\n");
-				if (info->valid_data)
-					display_subscription_info (sample);
-			}
-
-			/*if (trace && info->instance_state == DDS_ALIVE_INSTANCE_STATE)
-				trace_data (bufp, data_size);*/
-			DDS_DataReader_return_loan (dr, &rx_sample, &rx_info);
-		}
-		else {
-			/*printf ("do_read: all read!\r\n");*/
-			return;
-		}
-	}
-}
-
-static DDS_DataReaderListener builtin_listeners [] = {{
-	NULL,			/* Sample rejected. */
-	NULL,			/* Liveliness changed. */
-	NULL,			/* Requested Deadline missed. */
-	NULL,			/* Requested incompatible QoS. */
-	participant_info,	/* Data available. */
-	NULL,			/* Subscription matched. */
-	NULL,			/* Sample lost. */
-	NULL			/* Cookie */
-}, {
-	NULL,			/* Sample rejected. */
-	NULL,			/* Liveliness changed. */
-	NULL,			/* Requested Deadline missed. */
-	NULL,			/* Requested incompatible QoS. */
-	topic_info,		/* Data available. */
-	NULL,			/* Subscription matched. */
-	NULL,			/* Sample lost. */
-	NULL			/* Cookie */
-}, {
-	NULL,			/* Sample rejected. */
-	NULL,			/* Liveliness changed. */
-	NULL,			/* Requested Deadline missed. */
-	NULL,			/* Requested incompatible QoS. */
-	publication_info,	/* Data available. */
-	NULL,			/* Subscription matched. */
-	NULL,			/* Sample lost. */
-	NULL			/* Cookie */
-}, {
-	NULL,			/* Sample rejected. */
-	NULL,			/* Liveliness changed. */
-	NULL,			/* Requested Deadline missed. */
-	NULL,			/* Requested incompatible QoS. */
-	subscription_info,	/* Data available. */
-	NULL,			/* Subscription matched. */
-	NULL,			/* Sample lost. */
-	NULL			/* Cookie */
-}};
+unsigned log_handle;
 
 void start_disc_readers (DDS_DomainParticipant part)
 {
-	DDS_Subscriber		sub;
-	DDS_DataReader		dr;
-	unsigned		i;
-	DDS_ReturnCode_t	ret;
+	printf ("Starting Discovery readers.\r\n");
+	log_handle = discovery_log_enable (part, stdout, DDS_NOTIFY_ALL_REMOTE);
+}
 
-	sub = DDS_DomainParticipant_get_builtin_subscriber (part);
-	if (!sub)
-		fatal ("DDS_DomainParticipant_get_builtin_subscriber() returned an error!");
-
-	if (verbose)
-		printf ("DDS Builtin Subscriber found.\r\n");
-
-	for (i = 0; i < sizeof (names) / sizeof (char *); i++) {
-		dr = DDS_Subscriber_lookup_datareader (sub, names [i]);
-		if (!dr)
-			fatal ("DDS_Subscriber_lookup_datareader returned an error!");
-
-		ret = DDS_DataReader_set_listener (dr, &builtin_listeners [i], DDS_DATA_AVAILABLE_STATUS);
-		if (ret)
-			fatal ("DDS_DataReader_set_listener returned an error (%s)!", DDS_error (ret));
-
-		if (verbose)
-			printf ("DDS Discovery Reader created (%s).\r\n", names [i]);
-
-		switch (i) {
-			case 0:
-				participant_info (NULL, dr);
-				break;
-			case 1:
-				topic_info (NULL, dr);
-				break;
-			case 2:
-				publication_info (NULL, dr);
-				break;
-			case 3:
-				subscription_info (NULL, dr);
-				break;
-			default:
-				break;
-		}
-	}
+void stop_disc_readers (void)
+{
+	discovery_log_disable (log_handle);
 }
 
 #endif
@@ -2515,7 +1942,7 @@ DDS_TopicListener t_listener = {
 
 static void enable_security (void)
 {
-	DDS_Credentials		credentials;
+	static DDS_Credentials	credentials;
 	DDS_ReturnCode_t	error;
 #ifdef MSECPLUG_WITH_SECXML
 	/*int dhandle, thandle;*/
@@ -2577,16 +2004,6 @@ static void cleanup_security (void)
 	DDS_SP_access_db_cleanup ();
 	DDS_SP_engine_cleanup ();
 
-	/* Cleanup malloc-ed memory. */
-	if (engine_id)
-		free (engine_id);
-	if (cert_path)
-		free (cert_path);
-	if (key_path)
-		free (key_path);
-	if (realm_name)
-		free (realm_name);
-
 #ifdef DDS_NATIVE_SECURITY
 	DDS_Security_cleanup_credentials ();
 #endif
@@ -2594,9 +2011,42 @@ static void cleanup_security (void)
 
 #endif
 
+#ifdef TCP_SUSPEND
+
+void wakeup_fct (const char *topic_name, const char *type_name, unsigned char id [12])
+{
+	char	buf [32];
+
+	printf ("S/R ==> Wakeup-CB: %s/%s from peer %s!\n", 
+			topic_name,
+			type_name,
+			guid_prefix_str ((GuidPrefix_t *) id, buf));
+}
+
+void connect_fct (int fd, int connected)
+{
+	printf ("S/R ==> Connect_CB: fd=%d, state=%s!\n", fd, connected ? "connected" : "disconnected");
+}
+
+void client_fct (DDS_DomainId_t            domain_id,
+		 DDS_BuiltinTopicKey_t     *client_key,
+		 DDS_ActivitiesClientState state)
+{
+	char	buf [32];
+
+	static const char *state_s [] = { "Active", "Sleeping", "Dead" };
+
+	printf ("S/R ==> Client-state-CB: domain %u: client %s = %s!\n",
+			domain_id,
+			guid_prefix_str ((GuidPrefix_t *) client_key, buf),
+			state_s [state]);
+}
+
+#endif
+
 int main (int argc, const char *argv [])
 {
-	DDS_DomainParticipant		part, part2;
+	DDS_DomainParticipant		part, part2 = NULL;
 #ifdef POOL_CONSTRAINED
 	DDS_PoolConstraints		reqs;
 #endif
@@ -2630,6 +2080,11 @@ int main (int argc, const char *argv [])
 #endif
 	if (dbg_server)
 		DDS_Debug_server_start (2, dbg_port);
+#endif
+
+#ifdef TCP_SUSPEND
+	DDS_Activities_register (wakeup_fct, connect_fct);
+	DDS_Activities_client_info (client_fct);
 #endif
 	for (; nruns; nruns--) {
 		aborting = 0;
@@ -2676,76 +2131,81 @@ int main (int argc, const char *argv [])
 		if (verbose)
 			printf ("DDS Domain Participant created.\r\n");
 
-		/* Test get_qos() fynctionality. */
-		if ((error = DDS_DomainParticipant_get_qos (part, &dpqos)) != DDS_RETCODE_OK)
-			fatal ("DDS_DomainParticipant_get_qos () failed (%s)!", DDS_error (error));
-
 #if defined (DO_DISC_LISTEN) && !defined (DDL_DELAY)
 		start_disc_readers (part);
 #endif
 
-		/* Register the message topic type. */
-		error = register_HelloWorldData_type (part);
-		if (error) {
-			DDS_DomainParticipantFactory_delete_participant (part);
-			fatal ("DDS_DomainParticipant_register_type ('HelloWorldData') failed (%s)!", DDS_error (error));
-		}
-		if (verbose)
-			printf ("DDS Topic type ('%s') registered.\r\n", "HelloWorldData");
-
-		/* Create a topic */
-		sm = DDS_INCONSISTENT_TOPIC_STATUS;
-		topic = DDS_DomainParticipant_create_topic (part, "HelloWorld", "HelloWorldData",
-								NULL, &t_listener, sm);
-		if (!topic) {
-			DDS_DomainParticipantFactory_delete_participant (part);
-			fatal ("DDS_DomainParticipant_create_topic ('HelloWorld') failed!");
-		}
-		if (verbose)
-			printf ("DDS Topic created.\r\n");
-
 		/* Test get_qos() fynctionality. */
-		if ((error = DDS_Topic_get_qos (topic, &tqos)) != DDS_RETCODE_OK)
-			fatal ("DDS_Topic_get_qos () failed (%s)!", DDS_error (error));
+		if ((error = DDS_DomainParticipant_get_qos (part, &dpqos)) != DDS_RETCODE_OK)
+			fatal ("DDS_DomainParticipant_get_qos () failed (%s)!", DDS_error (error));
 
-		/* Check Topic QoS functionality working. */
-
-		/* Create Topic Description. */
-		topic_desc = DDS_DomainParticipant_lookup_topicdescription (part, "HelloWorld");
-		if (!topic_desc) {
-			DDS_DomainParticipantFactory_delete_participant (part);
-			fatal ("Unable to create topic description for 'HelloWorld'!");
+		if (forward) {
+			aborting = 0;
+			do {
+				DDS_wait (1000);
+			}
+			while (!aborting);
 		}
+		else {
 
-		/* Start either a reader or a writer depending on program options. */
-		if (writer) 
-			dcps_do_writer (part);
-		else
-			dcps_do_reader (part);
+			/* Register the message topic type. */
+			error = register_HelloWorldData_type (part);
+			if (error) {
+				DDS_DomainParticipantFactory_delete_participant (part);
+				fatal ("DDS_DomainParticipant_register_type ('HelloWorldData') failed (%s)!", DDS_error (error));
+			}
+			if (verbose)
+				printf ("DDS Topic type ('%s') registered.\r\n", "HelloWorldData");
 
-		if (tests) {
-			DDS_Debug_command ("sdisca");
-			DDS_wait (start_delay);
-		}
+			/* Create a topic */
+			sm = DDS_INCONSISTENT_TOPIC_STATUS;
+			topic = DDS_DomainParticipant_create_topic (part, "HelloWorld", "HelloWorldData",
+									NULL, &t_listener, sm);
+			if (!topic) {
+				DDS_DomainParticipantFactory_delete_participant (part);
+				fatal ("DDS_DomainParticipant_create_topic ('HelloWorld') failed!");
+			}
+			if (verbose)
+				printf ("DDS Topic created.\r\n");
 
-		/* Delete the topic. */
-		error = DDS_DomainParticipant_delete_topic (part, topic);
-		if (error)
-			fatal ("DDS_DomainParticipant_delete_topic () failed (%s)!", DDS_error (error));
+			/* Test get_qos() fynctionality. */
+			if ((error = DDS_Topic_get_qos (topic, &tqos)) != DDS_RETCODE_OK)
+				fatal ("DDS_Topic_get_qos () failed (%s)!", DDS_error (error));
 
-		if (verbose)
-			printf ("DDS Topic deleted.\r\n");
+			/* Check Topic QoS functionality working. */
 
-		free_HelloWorldData_type (part);
+			/* Create Topic Description. */
+			topic_desc = DDS_DomainParticipant_lookup_topicdescription (part, "HelloWorld");
+			if (!topic_desc) {
+				DDS_DomainParticipantFactory_delete_participant (part);
+				fatal ("Unable to create topic description for 'HelloWorld'!");
+			}
 
-		if (extra_dp) {
-			error = DDS_DomainParticipantFactory_delete_participant (part2);
+			/* Start either a reader or a writer depending on program options. */
+			if (writer) 
+				dcps_do_writer (part);
+			else
+				dcps_do_reader (part);
+
+			if (tests) {
+				DDS_Debug_command ("sdisca");
+				DDS_wait (start_delay);
+			}
+
+			/* Delete the topic. */
+			error = DDS_DomainParticipant_delete_topic (part, topic);
 			if (error)
-				fatal ("DDS_DomainParticipantFactory_delete_participant () failed (%s)!", DDS_error (error));
+				fatal ("DDS_DomainParticipant_delete_topic () failed (%s)!", DDS_error (error));
 
 			if (verbose)
-				printf ("Secondary DDS Participant deleted\r\n");
+				printf ("DDS Topic deleted.\r\n");
+
+			free_HelloWorldData_type (part);
 		}
+
+#ifdef DO_DISC_LISTEN
+		stop_disc_readers ();
+#endif
 
 		error = DDS_DomainParticipant_delete_contained_entities (part);
 		if (error)
@@ -2773,8 +2233,18 @@ int main (int argc, const char *argv [])
 		if (cert_path || key_path || engine_id)
 			cleanup_security ();
 #endif
+		if (extra_dp) {
+			error = DDS_DomainParticipantFactory_delete_participant (part2);
+			if (error)
+				fatal ("DDS_DomainParticipantFactory_delete_participant () failed (%s)!", DDS_error (error));
+
+			if (verbose)
+				printf ("Secondary DDS Participant deleted\r\n");
+		}
+
 		if (nruns > 1) {
-			DDS_wait (1000);
+			DDS_wait (200);
+#ifdef MULTIRUN_DUMP
 			printf ("\r\n --- Dumping some data ---\r\n\r\n");
 			DDS_Debug_command ("spool");
 			DDS_Debug_command ("sstr");
@@ -2783,8 +2253,23 @@ int main (int argc, const char *argv [])
 			DDS_Debug_command ("scxa");
 			DDS_wait (1000);
 			printf ("\r\n --- Restarting ---\r\n\r\n");
+#endif
 		}
 	}
+
+#ifdef DDS_SECURITY
+
+	/* Cleanup malloc-ed memory. */
+	if (engine_id)
+		free (engine_id);
+	if (cert_path)
+		free (cert_path);
+	if (key_path)
+		free (key_path);
+	if (realm_name)
+		free (realm_name);
+
+#endif
 	return (0);
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -31,6 +31,7 @@
 #include "nmatch.h"
 #include "tty.h"
 #include "thread.h"
+#include "../co/dd_log.h"
 #ifdef DDS_SECURITY
 #include "dds/dds_security.h"
 #ifdef DDS_NATIVE_SECURITY
@@ -48,7 +49,6 @@
 #include "dds/dds_aux.h"
 #include "dds/dds_xtypes.h"
 #include "dds/dds_dreader.h"
-#include "../co/bi_handler.h"
 
 /*#define TRACE_DISC	** Define to trace discovery endpoints. */
 /*#define TRACE_DATA	** Define to trace data endpoints. */
@@ -111,6 +111,7 @@ unsigned		sleep_time = 100;
 TopicList		topics;
 EndpointList		endpoints;
 lock_t			topic_lock;
+unsigned		dlog;
 char			auto_filter [64];
 #ifdef DDS_SECURITY
 char                    *engine_id;		/* Engine id. */
@@ -667,17 +668,17 @@ void t_ignore (const char *cmd, DDS_DomainParticipant part)
 	}
 }
 
-void t_trace (void)
+void t_trace (DDS_DomainParticipant part)
 {
 	if (trace) {
 		printf ("Discovery tracing disabled.\r\n");
 		trace = 0;
-		bi_log (stdout, 0);
+		discovery_log_disable (dlog);
 	}
 	else {
 		printf ("Discovery tracing enabled.\r\n");
 		trace = 1;
-		bi_log (stdout, BI_ALL_M);
+		dlog = discovery_log_enable (part, stdout, DDS_NOTIFY_ALL_REMOTE);
 	}
 }
 
@@ -730,7 +731,7 @@ void dds_dump (DDS_DomainParticipant part)
 		else if (!memcmp (cmd, "ignore", 2))
 			t_ignore (sp, part);
 		else if (!memcmp (cmd, "trace", 2))
-			t_trace ();			
+			t_trace (part);			
 #ifndef DDS_DEBUG
 		else if (!memcmp (cmd, "pause", 1))
 			paused = 1;
@@ -758,10 +759,12 @@ void participant_update (DDS_BuiltinTopicKey_t           *key,
 	ARG_NOT_USED (user)
 }
 
-void topic_update (DDS_TopicBuiltinTopicData *data,
+void topic_update (DDS_BuiltinTopicKey_t     *key,
+		   DDS_TopicBuiltinTopicData *data,
 		   DDS_SampleInfo            *info,
 		   uintptr_t                 user)
 {
+	ARG_NOT_USED (key)
 	ARG_NOT_USED (data)
 	ARG_NOT_USED (info)
 	ARG_NOT_USED (user)
@@ -866,6 +869,7 @@ int main (int argc, const char *argv [])
 {
 	DDS_DomainParticipant	part;
 	DDS_ReturnCode_t	error;
+	unsigned		h;
 
 	do_switches (argc, argv);
 	if (verbose > 1)
@@ -900,16 +904,18 @@ int main (int argc, const char *argv [])
 		printf ("DDS Domain Participant created.\r\n");
 
 	if (trace)
-		bi_log (stdout, BI_ALL_M);
+		dlog = discovery_log_enable (part, stdout, DDS_NOTIFY_ALL_REMOTE);
 
-	error = bi_attach (part,
-			   BI_ALL_M,
-			   participant_update,
-			   topic_update,
-			   publisher_update,
-			   subscriber_update,
-			   (uintptr_t) part);
-	if (error)
+	h = DDS_Notification_attach (part,
+			             DDS_NOTIFY_ALL_REMOTE,
+				     participant_update,
+				     topic_update,
+				     publisher_update,
+				     subscriber_update,
+				     NULL,
+				     (uintptr_t) part,
+				     &error);
+	if (!h)
 		fatal ("Couldn't start the discovery readers.");
 
 	if (verbose)
@@ -917,6 +923,8 @@ int main (int argc, const char *argv [])
 
 	/* Start either a reader or a writer depending on program options. */
 	dds_dump (part);
+
+	DDS_Notification_detach (h);
 
 	error = DDS_DomainParticipant_delete_contained_entities (part);
 	if (error)

@@ -1,0 +1,15 @@
+/* AUTOMATICALLY GENERATED ON Wed Apr 24 11:11:59 CEST 2013*/
+/* DO NOT EDIT */
+
+grant codeBase "file:${qeo-java-path}/*" {
+  permission java.util.logging.LoggingPermission "control";
+  permission java.lang.RuntimePermission "getenv.QEO_DEBUG";
+  permission java.util.PropertyPermission "java.runtime.name", "read";
+  permission java.lang.RuntimePermission "loadLibrary.qeoJNI";
+  permission java.util.PropertyPermission "user.dir", "read";
+};
+
+grant codeBase "file:${qeo-java-core-jar}" {
+  permission java.lang.RuntimePermission "accessDeclaredMembers";
+  permission java.lang.reflect.ReflectPermission "suppressAccessChecks";
+};

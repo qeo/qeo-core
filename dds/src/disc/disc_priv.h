@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -16,6 +16,8 @@
 
 #ifndef __disc_priv_h_
 #define __disc_priv_h_
+
+#include "prof.h"
 
 #if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
 #define ACCESS_CONTROL(dp) ((dp)->security && (dp)->access_protected)
@@ -42,6 +44,16 @@
 #endif
 
 #define	locator_list_swap(l1,l2,t)	t = l1; l1 = l2; l2 = t
+
+#ifdef PROFILE
+EXT_PROF_PID (disc_mr_sec)
+EXT_PROF_PID (disc_mw_sec)
+EXT_PROF_PID (disc_bir_sec)
+EXT_PROF_PID (disc_biw_sec)
+EXT_PROF_PID (disc_ctt_ptok)
+EXT_PROF_PID (disc_ctt_wtok)
+EXT_PROF_PID (disc_ctt_rtok)
+#endif
 
 extern int disc_log;	/* General Discovery logging. */
 #ifdef SIMPLE_DISCOVERY

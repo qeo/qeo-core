@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+    <module name="org::qeo::huddle::datatype">
+
+        <struct name="ImageIndex" behavior="state">
+            <member name="deviceId" key="true" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId"/>
+            <member name="ip" type="string"/>
+            <member name="port" type="int32"/>
+            <member name="pathCurrent" type="string"/>
+            <member name="pathNext" type="string"/>
+            <member name="sizeCurrent" type="int32"/>
+            <member name="sizeNext" type="int32"/>
+        </struct>
+
+        <struct name="HuddleListener" behavior="state">
+            <member name="deviceId" key="true" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId"/>
+        </struct>
+        
+        <struct name="HuddleStartEvent" behavior="event">
+            <member name="deviceId" type="nonBasic" nonBasicTypeName="org::qeo::system::DeviceId"/>
+        </struct>
+
+    </module>
+</types>

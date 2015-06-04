@@ -59,10 +59,15 @@
          <property name="format" value="^\s*\*\s*@version.*$"/> <!-- javadoc version tag -->
          <property name="message" value="@author tag is not allowed"/>
     </module>
+    <module name="RegexpSingleline">
+         <property name="severity" value="warning"/>
+         <property name="format" value="^\s*\*\s*Created by .*$"/>
+         <property name="message" value="&quot;Created by&quot; in comments is not allowed"/>
+    </module>
 
     <module name="RegexpHeader">
       <property name="severity" value="warning"/>
-      <property name="header" value="^/\*\*\*\*\*\*\*\*\*\*\*\*\*\* COPYRIGHT AND CONFIDENTIALITY INFORMATION \*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*$\n^.*$\n^ \*\* Copyright \(c\) \d\d\d\d.*Technicolor .*\*\*$\n^ \*\* All Rights Reserved.*\*\*$\n^ \*\*                                                                          \*\*$\n^ \*\* This program contains proprietary information which is a trade           \*\*$\n^ \*\* secret of TECHNICOLOR and/or its affiliates and also is protected as     \*\*$\n^ \*\* an unpublished work under applicable Copyright laws. Recipient is        \*\*$\n^ \*\* to retain this program in confidence and is not permitted to use or      \*\*$\n^ \*\* make copies thereof other than as permitted in a written agreement       \*\*$\n^ \*\* with TECHNICOLOR, UNLESS OTHERWISE EXPRESSLY ALLOWED BY APPLICABLE LAWS. \*\*$\n^ \*\*                                                                          \*\*$\n^ \*\*\*\*\*\*\*\*\*\**\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\**\*\*\*\*\*\*\*\*\*\*\*\*\*\*/$\n"/>
+      <property name="header" value="^/\*\*\*\*\*\*\*\*\*\*\*\*\*\* COPYRIGHT AND CONFIDENTIALITY INFORMATION \*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*$\n^.*$\n^ \*\* Copyright \(c\) \d\d\d\d.*Qeo .*\*\*$\n^ \*\* All Rights Reserved.*\*\*$\n^ \*\*                                                                          \*\*$\n^ \*\* This program contains proprietary information which is a trade           \*\*$\n^ \*\* secret of Qeo and/or its affiliates and also is protected as     \*\*$\n^ \*\* an unpublished work under applicable Copyright laws. Recipient is        \*\*$\n^ \*\* to retain this program in confidence and is not permitted to use or      \*\*$\n^ \*\* make copies thereof other than as permitted in a written agreement       \*\*$\n^ \*\* with Qeo, UNLESS OTHERWISE EXPRESSLY ALLOWED BY APPLICABLE LAWS. \*\*$\n^ \*\*                                                                          \*\*$\n^ \*\*\*\*\*\*\*\*\*\**\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*\**\*\*\*\*\*\*\*\*\*\*\*\*\*\*/$\n"/>
     </module>
 
     <!-- Checks for Headers                                -->
@@ -165,7 +170,7 @@
         <module name="MethodParamPad"/>
         <module name="NoWhitespaceAfter"/>
         <module name="NoWhitespaceBefore"/>
-        <module name="OperatorWrap"/>
+        <!-- <module name="OperatorWrap"/> -->
         <module name="ParenPad"/>
         <module name="TypecastParenPad"/>
         <module name="WhitespaceAfter"/>

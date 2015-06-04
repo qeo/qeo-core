@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent" 
+    android:layout_height="60dp"
+    android:padding="10dip" >
+        
+    <ImageView android:id="@+id/device_type"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:src="@drawable/qgauge_writer" 
+        android:contentDescription="@string/device_type"
+        android:layout_marginRight="10dip" />
+ 
+    <TextView android:id="@+id/device_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_toRightOf="@+id/device_type"
+        android:layout_alignParentTop="true"
+        android:textAppearance="?android:attr/textAppearanceLarge"
+        android:textStyle="bold" />
+
+    <TextView android:id="@+id/device_description"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_toRightOf="@+id/device_type"
+        android:layout_below="@+id/device_name"
+        android:layout_alignParentBottom="true"
+        android:textAppearance="?android:attr/textAppearanceMedium" />
+    
+</RelativeLayout>

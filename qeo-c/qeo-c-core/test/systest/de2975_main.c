@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -48,7 +48,7 @@ int main(int argc, const char **argv)
     pidforwarder = fork();
     assert(-1 != pidforwarder);
     if (0 == pidforwarder) {
-        assert(NULL != (factory = qeocore_fwdfactory_new(get_public_locator_callback, "10101")));
+        assert(NULL != (factory = qeocore_fwdfactory_new(get_public_locator_callback, "10101", NULL)));
         sleep(20);
         qeocore_fwdfactory_close(factory);
         return 0;

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.qeo.sample.qsimplechatembedded"
+    android:versionCode="1"
+    android:versionName="0.14.0" >
+
+    <uses-sdk
+        android:minSdkVersion="9"
+        android:targetSdkVersion="20" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/qsimplechat_icon"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme">
+
+        <meta-data android:name="org.qeo.rest.google.client.id" android:value=""/>
+        <meta-data android:name="org.qeo.rest.qeo.client.secret" android:value="41303763-49e3-456f-891e-4289166a718c"/>
+        <meta-data android:name="org.qeo.rest.qeo.client.id" android:value="easy-install"/>
+        
+        <activity
+            android:name="org.qeo.sample.simplechat.android.ChatActivity"
+            android:label="@string/app_name" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

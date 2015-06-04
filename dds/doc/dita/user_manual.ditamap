@@ -32,6 +32,10 @@
         <topicref href="mempools.dita"/>
         <topicref href="poolcfg.dita"/>
     </topicref>
+    <topicref href="battery.dita">
+        <topicref href="activities.dita"/>
+        <topicref href="bgns.dita"/>
+    </topicref>
     <topicref href="env_vars.dita">
         <topicref href="config.dita"/>
         <topicref href="env_groups.dita"/>
@@ -45,6 +49,8 @@
         <topicref href="mode_env.dita"/>
         <topicref href="udp-cfg.dita"/>
         <topicref href="tcp-cfg.dita"/>
+        <topicref href="notif-cfg.dita" navtitle="Battery saving configuration parameters"
+            locktitle="yes"/>
     </topicref>
     <topicref href="building.dita">
         <topicref href="components.dita"/>

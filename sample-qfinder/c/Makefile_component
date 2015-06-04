@@ -1,0 +1,37 @@
+ifneq ($($(sample-qfinder-c_INCLUDED)),1)
+
+override COMPONENT := sample-qfinder-c
+override COMPONENT_SEARCH_PATH_PREFIX :=  $(projectdir/)../../*/%/Makefile_component
+
+sample-qfinder-c_PARTS_INSTALL := qfinder-c@$$(bindir/)qfinder-c:755
+sample-qfinder-c_DEPS          := qeo-c
+
+include $(projectdir/)build/Makefile_component_top
+
+sample-qfinder-c.PROGRAMS = qfinder-c
+
+sample-qfinder-c_src := main.c
+sample-qfinder-c_qdm := qeo_types qeo_DeviceInfo
+
+$(COMPONENT)_generated_h := $(foreach f, $($(COMPONENT)_qdm), $(f).h)
+$(COMPONENT)_generated_c := $(foreach f, $($(COMPONENT)_qdm), $(f).c)
+$(COMPONENT)_generated_all := $($(COMPONENT)_generated_h) $($(COMPONENT)_generated_c)
+
+sample-qfinder-c.qfinder-c_LDADD         := $(qeo-c_LIBS)
+sample-qfinder-c.qfinder-c_LOCALDEFINES  := $(qeo-c_CFLAGS) -Wall -Werror
+sample-qfinder-c.qfinder-c_LOCALINCLUDES := $(qeo-c_INCLUDES)
+sample-qfinder-c.qfinder-c_SRCS          := $(addprefix src/, $($(COMPONENT)_src) $($(COMPONENT)_generated_c))
+
+include $(projectdir/)build/Makefile_component_bot
+
+# code generation
+
+clean:
+	rm -f $(addprefix $($(COMPONENT)_COMP_DIR)/src/, $($(COMPONENT)_generated_all))
+
+$(addprefix $($(COMPONENT)_COMP_DIR)/src/, $($(COMPONENT)_src)): $(addprefix $($(COMPONENT)_COMP_DIR)/src/, $($(COMPONENT)_generated_all))
+
+$(addprefix $($(COMPONENT)_COMP_DIR)/src/, $($(COMPONENT)_generated_all)): build.gradle
+	gradle generateTypes && touch $@ 
+
+endif

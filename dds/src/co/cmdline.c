@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include "pool.h"
 #include "error.h"
 #include "cmdline.h"
 
@@ -91,7 +92,7 @@ CmdLine_t *cl_new (void)
 {
 	CmdLine_t	*p;
 
-	p = malloc (sizeof (CmdLine_t));
+	p = Alloc (sizeof (CmdLine_t));
 	if (!p)
 		return (NULL);
 
@@ -107,13 +108,13 @@ static CmdLineStatus_t line_add_tail (CmdLine_t *p,
 {
 	Cmd_t	*lp;
 
-	lp = malloc (sizeof (Cmd_t));
+	lp = Alloc (sizeof (Cmd_t));
 	if (!lp)
 		return (CLS_DONE_ERROR);
 
-	lp->buffer = malloc (size);
+	lp->buffer = Alloc (size);
 	if (!lp->buffer) {
-		free (lp);
+		Free (lp);
 		return (CLS_DONE_ERROR);
 	}
 	lp->next = NULL;
@@ -182,11 +183,11 @@ void cl_delete (CmdLine_t *hp)
 
 	for (p = hp->head; p; p = next_p) {
 		next_p = p->next;
-		free (p->buffer);
-		free (p);
+		Free (p->buffer);
+		Free (p);
 	}
 	hp->head = hp->tail = hp->line = NULL;
-	free (hp);
+	Free (hp);
 }
 
 /* cl_home -- Move to the start of the current command line. */
@@ -222,10 +223,10 @@ static void line_delete_tail (CmdLine_t *p)
 
 	lp = p->tail;
 	if (lp->buffer && lp->size)
-		free (lp->buffer);
+		Free (lp->buffer);
 
 	p->tail = lp->prev;
-	free (lp);
+	Free (lp);
 	if (!p->tail)
 		p->head = NULL;
 	else
@@ -525,7 +526,7 @@ static CmdLineStatus_t cl_visible (CmdLine_t *p, char ch)
 		p->length++;
 	}
 	if (p->line->size <= p->pos + 1) {
-		xp = realloc (p->line->buffer, p->line->size + LINE_INC);
+		xp = Realloc (p->line->buffer, p->line->size + LINE_INC);
 		if (!xp) {
 			dbg_printf ("%c", BEL);
 			return (CLS_DONE_ERROR);
@@ -553,12 +554,12 @@ static CmdLineStatus_t cl_visible (CmdLine_t *p, char ch)
 
 static int cl_empty_line (CmdLine_t *p)
 {
-	p->line = malloc (sizeof (Cmd_t));
+	p->line = Alloc (sizeof (Cmd_t));
 	if (!p->line)
 		return (CLS_DONE_ERROR);
-	p->line->buffer = malloc (LINE_INC);
+	p->line->buffer = Alloc (LINE_INC);
 	if (!p->line->buffer) {
-		free (p->line);
+		Free (p->line);
 		p->line = NULL;
 		return (CLS_DONE_ERROR);
 	}

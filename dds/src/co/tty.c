@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -66,9 +66,7 @@ static void stty_restore (void)
 	SetConsoleMode (tty_stdin, old_tty_mode);
 #else
 #ifndef TTY_NORMAL
-	if (tcsetattr (STDIN_FILENO, TCSANOW, &old_tty_mode) < 0)
-		perror ("stty_raw::tcsetattr");
-
+	tcsetattr (STDIN_FILENO, TCSANOW, &old_tty_mode);
 	tcflush (STDIN_FILENO, TCIOFLUSH);
 #endif
 #endif
@@ -153,6 +151,7 @@ static void stty_raw (void)
 		perror ("stty_raw::tcsetattr");
 
 	tcflush (STDIN_FILENO, TCIOFLUSH);
+	printf ("stty_raw: tcflush (STDIN_FILENO, TCIOFLUSH)\r\n");
 #endif
 	tty_stdin = STDIN_FILENO;
 #endif

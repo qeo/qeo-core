@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -76,7 +76,7 @@ typedef struct change_winfo_st {
 
 typedef struct change_st Change_t;
 struct change_st {
-	unsigned	c_nrefs:12;	/* # of entities using this. */
+	unsigned	c_nrefs:11;	/* # of entities using this. */
 	unsigned	c_wack:11;	/* # of active reliable transfers. */
 	unsigned	c_urgent:1;	/* Urgent data. */
 	unsigned	c_kind:2;	/* Type of cache change. */
@@ -85,6 +85,7 @@ struct change_st {
 	unsigned	c_sstate:1;	/* Sample state: READ=0, NOT_READ=1. */
 	unsigned	c_vstate:1;	/* View state: NEW=0, NOT_NEW=1. */
 	unsigned	c_istate:2;	/* Instance state at collect time. */
+	unsigned	c_indirect:1;	/* Indirectly connected writer. */
 	handle_t	c_writer;	/* Writer endpoint. */
 	InstanceHandle	c_handle;	/* Instance/destination handle(rx/tx).*/
 	FTime_t		c_time;		/* Timestamp. */

@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<types xmlns="http://www.qeo.org/formal/2013/Qeo_Data_Model" version="0.1">
+  <module name="org::qeo::psademo">
+    <struct behavior="event" name="TripUpdateRequest">
+      <member name="requestedLocation" type="string">
+        <doc>A reference to the location of the requester, i.e. the person who wants to be picked up.</doc>
+      </member>
+      <member name="comment" type="string">
+        <doc>Extra comment related to the request, e.g. I missed my bus.</doc>
+      </member>
+     </struct>
+  </module>
+</types>

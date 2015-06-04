@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -22,6 +22,7 @@
 #include "error.h"
 #include "debug.h"
 #include "rtps_cfg.h"
+#include "rtps_mux.h"
 #include "rtps_data.h"
 #include "rtps_priv.h"
 
@@ -715,8 +716,7 @@ void rtps_receiver_dump (void)
 	dbg_printf ("\r\n");
 	if (rtps_receiver.have_timestamp) {
 		dbg_print_indent (0, "Timestamp");
-		dbg_printf ("%d.%us", FTIME_SEC (rtps_receiver.timestamp),
-				      FTIME_FRACT (rtps_receiver.timestamp));
+		dbg_print_time (&rtps_receiver.timestamp);
 		dbg_printf ("\r\n");
 	}
 	if (rtps_receiver.n_uc_replies) {
@@ -777,7 +777,33 @@ void rtps_transmitter_dump (void)
 		"No destination (reader)",
 		"Out of memory"
 	};
+	LocatorKind_t	i;
+	char		*s;
 
+	dbg_printf ("Mux mode =");
+	for (i = 1; i <= LOCATOR_KIND_TCPv6; i <<= 1)
+		if ((rtps_mux_mode & i) != 0) {
+			switch (i) {
+				case LOCATOR_KIND_UDPv4:
+					s = "UDPv4";
+					break;
+				case LOCATOR_KIND_UDPv6:
+					s = "UDPv6";
+					break;
+				case LOCATOR_KIND_TCPv4:
+					s = "TCPv4";
+					break;
+				case LOCATOR_KIND_TCPv6:
+					s = "TCPv6";
+					break;
+				default:
+					s = NULL;
+					break;
+			}
+			if (s)
+				dbg_printf (" %s", s);
+		}
+	dbg_printf ("\r\n");
 	dbg_print_indent (0, "# of locator transmits");
 	dbg_printf ("%lu\r\n", rtps_transmitter.nlocsend);
 	dbg_print_indent (0, "# of missing locator events");

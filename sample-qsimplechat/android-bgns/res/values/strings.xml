@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">QBgnsChat</string>
+    <string name="buttonSend">Send</string>
+    <string name="participant_is">is</string>
+    <string name="participant_name_hint">Your name</string>
+    <string-array name="participant_states">
+        <item>Available</item>
+        <item>Idle</item>
+        <item>Busy</item>
+        <item>Away</item>
+    </string-array>
+</resources>

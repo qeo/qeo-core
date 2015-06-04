@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -23,7 +23,11 @@
 #include "prof.h"
 #include "list.h"
 #include "pid.h"
+#ifdef XTYPES_USED
 #include "xcdr.h"
+#else
+#include "cdr.h"
+#endif
 #include "dds.h"
 #if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
 #include "sec_crypto.h"
@@ -40,11 +44,38 @@
 #include "rtps_slbr.h"
 #include "rtps_msg.h"
 
+/*#define RTPS_MSG_CHECKS	** Do message consistency checks if defined. */
+
+#ifdef RTPS_MSG_CHECKS
+#define	MP_CHECK(mp)	mp_check(mp)
+
+static void mp_check (RMBUF *mp)
+{
+	RME	*mep, *last;
+
+	unsigned	i;
+
+	for (i = 0, mep = mp->first, last = NULL; mep; last = mep, mep = mep->next)
+		if (++i > 20)
+			abort ();
+
+	assert (mp->last == last);
+}
+
+#else
+#define	MP_CHECK(mp)
+#endif
+
 /* rtps_msg_header_set -- Initialize the RTPS message header. */
 
 static RMBUF *rtps_new_msg (Proxy_t *pp)
 {
 	RMBUF	*mp;
+
+#ifdef RTPS_MSG_CHECKS
+	if (pp->head && pp->tail->first == pp->tail->last)
+		abort ();
+#endif
 
 	mp = mds_pool_alloc (&rtps_mem_blocks [MB_MSG_BUF]);
 	if (!mp)
@@ -67,50 +98,19 @@ static RMBUF *rtps_new_msg (Proxy_t *pp)
 	else
 		pp->head = mp;
 	pp->tail = mp;
-	pp->msg_time = 0;
 	pp->id_prefix = 0;
+	pp->msg_complete = 0;
 	mp->next = NULL;
+	MP_CHECK (mp);
 	return (mp);
-}
-
-/* new_proxy_element -- Allocate a new submessage element container. */
-
-static RME *new_proxy_element (Proxy_t *pp, int new_message)
-{
-	RMBUF	*mp;
-	RME	*mep;
-
-	if (!pp->head || new_message ||
-	    (pp->tail->last &&
-	     (pp->tail->last->flags & RME_HEADER) != 0 &&
-	     (pp->tail->last->header.id == ST_HEARTBEAT))) {
-		mp = rtps_new_msg (pp);
-		if (!mp)
-			return (NULL);
-
-		mep = &mp->element;
-		mep->flags = RME_CONTAINED;
-		mep->pad = 0;
-	}
-	else {
-		mep = mds_pool_alloc (&rtps_mem_blocks [MB_MSG_ELEM_BUF]);
-		if (!mep)
-			return (NULL);
-
-		mep->pad = 0;
-		mep->flags = 0;
-	}
-	mep->next = NULL;
-	mep->db = NULL;
-	return (mep);
 }
 
 /* rtps_msg_add_info_destination -- Add an INFO_DEST submessage to an existing
 				    message for a remote Reader/Writer. */
 
-static int rtps_msg_add_info_destination (Proxy_t            *pp,
-					  RME                *mep,
-				          const GuidPrefix_t *prefix)
+static int rtps_msg_add_info_destination (Proxy_t             *pp,
+					  RME                 *mep,
+				          const Participant_t *dest)
 {
 	InfoDestinationSMsg	*dp;
 
@@ -118,7 +118,7 @@ static int rtps_msg_add_info_destination (Proxy_t            *pp,
 	ARG_NOT_USED (pp)
 #endif
 
-	ctrc_printd (RTPS_ID, RTPS_TX_INFO_DEST, prefix, sizeof (GuidPrefix_t));
+	ctrc_printd (RTPS_ID, RTPS_TX_INFO_DEST, &dest->p_guid_prefix, sizeof (GuidPrefix_t));
 
 	/* Setup submessage header. */
 	mep->flags |= RME_HEADER;
@@ -129,42 +129,13 @@ static int rtps_msg_add_info_destination (Proxy_t            *pp,
 	mep->data = mep->d;
 	dp = (InfoDestinationSMsg *) mep->d;
 	mep->length = mep->header.length = sizeof (InfoDestinationSMsg);
-	dp->guid_prefix = *prefix;
+	dp->guid_prefix = dest->p_guid_prefix;
 
 	/* Trace INFO_DESTINATION frame if enabled. */
 	TX_INFO_DST (&pp->u.writer->endpoint, dp);
 
 	return (DDS_RETCODE_OK);
 }
-
-/* rtps_msg_time_add -- Add an INFO_TS submessage element. */
-
-static void rtps_msg_time_add (Proxy_t *pp, RME *mep, FTime_t *time)
-{
-	InfoTimestampSMsg *tp;
-
-	/* Setup submessage header. */
-	mep->flags |= RME_HEADER;
-	mep->header.id = ST_INFO_TS;
-	mep->header.flags = SMF_CPU_ENDIAN;
-
-	/* Add extra INFO_TS submessage fields. */
-	mep->data = mep->d;
-	tp = (InfoTimestampSMsg *) mep->d;
-	mep->length = mep->header.length = sizeof (InfoTimestampSMsg);
-	tp->seconds = FTIME_SEC (*time);
-	tp->fraction = FTIME_FRACT (*time);
-	pp->msg_time = 1;
-
-	/* Trace INFO_TS frame if enabled. */
-	TX_INFO_TS (pp->u.writer, tp, mep->header.flags);
-}
-
-#ifdef RTPS_COMBINE_MSGS
-#define	RTPS_COMBINE	0
-#else
-#define	RTPS_COMBINE	1
-#endif
 
 static RME *rtps_msg_append_mep (RME *prev_mep)
 {
@@ -183,18 +154,102 @@ static RME *rtps_msg_append_mep (RME *prev_mep)
 	return (mep);
 }
 
-static void add_proxy_elements (Proxy_t            *pp,
-				RME                *mep,
-				unsigned           size,
-				int                ts_on_split,
-				const GuidPrefix_t *prefix)
+/* new_proxy_element -- Allocate a new submessage element container. */
+
+static RME *new_proxy_element (Proxy_t             *pp,
+			       int                 new_message,
+			       const Participant_t *dest,
+			       unsigned            mcflag)
+{
+	RMBUF		*mp;
+	RME		*mep;
+	unsigned	h;
+
+	h = (dest) ? dest->p_handle : 0;
+	if (!pp->head || new_message ||
+	    pp->dest_handle != h ||
+	    (pp->tail->last &&
+	     (pp->tail->last->flags & RME_HEADER) != 0 &&
+	     (pp->tail->last->header.id == ST_HEARTBEAT))) {
+		mp = rtps_new_msg (pp);
+		if (!mp)
+			return (NULL);
+
+		pp->dest_handle = h;
+		mep = &mp->element;
+		mep->pad = 0;
+		mep->flags = RME_CONTAINED;
+		mep->next = NULL;
+		mep->db = NULL;
+		if (!dest) {
+			mp->element.flags |= mcflag;
+			MP_CHECK (mp);
+			return (mep);
+		}
+		rtps_msg_add_info_destination (pp, mep, dest);
+		pp->id_prefix = 1;
+		mp->size = mep->length + sizeof (SubmsgHeader);
+		mp->first = mp->last = mep;
+		MP_CHECK (mp);
+	}
+	mep = mds_pool_alloc (&rtps_mem_blocks [MB_MSG_ELEM_BUF]);
+	if (!mep)
+		return (NULL);
+
+	mep->pad = 0;
+	mep->flags = 0;
+	mep->next = NULL;
+	mep->db = NULL;
+	return (mep);
+}
+
+/* rtps_msg_time_add -- Add an INFO_TS submessage element. */
+
+static void rtps_msg_time_add (Proxy_t *pp, RME *mep, FTime_t *time)
+{
+	InfoTimestampSMsg *tp;
+
+	ARG_NOT_USED (pp)
+
+	/* Setup submessage header. */
+	mep->flags |= RME_HEADER;
+	mep->header.id = ST_INFO_TS;
+	mep->header.flags = SMF_CPU_ENDIAN;
+
+	/* Add extra INFO_TS submessage fields. */
+	mep->data = mep->d;
+	tp = (InfoTimestampSMsg *) mep->d;
+	mep->length = mep->header.length = sizeof (InfoTimestampSMsg);
+	tp->seconds = FTIME_SEC (*time);
+	tp->fraction = FTIME_FRACT (*time);
+
+	/* Trace INFO_TS frame if enabled. */
+	TX_INFO_TS (pp->u.writer, tp, mep->header.flags);
+}
+
+#ifdef RTPS_COMBINE_MSGS
+#define	RTPS_COMBINE	0
+#else
+#define	RTPS_COMBINE	1
+#endif
+
+static int can_append (Proxy_t *pp, unsigned size, unsigned handle)
+{
+	return (pp->head &&
+		handle == pp->dest_handle &&
+		(!pp->msg_complete || pp->tail->size + size <= rtps_max_msg_size));
+}
+
+static void add_proxy_elements (Proxy_t             *pp,
+				RME                 *mep,
+				unsigned            size,
+				const Participant_t *dest,
+				unsigned            mcflag)
 {
 	RMBUF		*mp = pp->tail;
-	RME		*new_mep, *last_mep, *ts_mep, *id_mep;
-	FTime_t		ftime;
+	RME		*new_mep, *last_mep, *id_mep;
 
-	if (pp->head &&
-	    (!mp->size || mp->size + size < rtps_max_msg_size)) { /* Append. */
+	if (can_append (pp, size, dest ? dest->p_handle : 0)) {
 
 	    append_mep:
 		if (!mp->first)
@@ -204,45 +259,28 @@ static void add_proxy_elements (Proxy_t            *pp,
 		mp->last = mep;
 		mp->size += size;
 	}
-	else if (ts_on_split || prefix) {
-		new_mep = last_mep = new_proxy_element (pp, 1);
+	else if (dest) {
+		new_mep = last_mep = new_proxy_element (pp, 1, NULL, 0);
 		if (!new_mep)
 			goto append_mep; /* Just append to previous. */
 
-		if (prefix) {
-			id_mep = new_mep;
-			rtps_msg_add_info_destination (pp, id_mep, prefix);
-			if (ts_on_split) {
-				ts_mep = rtps_msg_append_mep (mep);
-				if (ts_mep)
-					last_mep = ts_mep;
-			}
-			else
-				ts_mep = NULL;
-			size += sizeof (InfoDestinationSMsg);
-		}
-		else
-			ts_mep = new_mep;
-		if (ts_mep) {
-			sys_getftime (&ftime);
-			rtps_msg_time_add (pp, ts_mep, &ftime);
-			size += sizeof (InfoTimestampSMsg);
-		}
+		id_mep = new_mep;
+		rtps_msg_add_info_destination (pp, id_mep, dest);
+		size += sizeof (InfoDestinationSMsg);
 		mp = pp->tail;
 		mp->first = new_mep;
 		last_mep->next = mep;
 		mp->last = mep;
 		mp->size = size;
-		if (!prefix)
-			mp->element.flags |= RME_MCAST;
+		pp->dest_handle = dest->p_handle;
 	}
 	else { /* Can't add, new message buffer needed. */
 		mp = rtps_new_msg (pp);
 		if (!mp)
 			fatal_printf ("RTPS: out of message headers!");
 
-		if (mep->header.id == ST_DATA)
-			log_printf (RTPS_ID, 0, "Missing INFO_TS!\r\n");
+		/*if (mep->header.id == ST_DATA)
+			log_printf (RTPS_ID, 0, "Missing INFO_TS!\r\n");*/
 		mp->element = *mep;
 		if (mep->data == mep->d)
 			mp->element.data = mp->element.d;
@@ -251,10 +289,11 @@ static void add_proxy_elements (Proxy_t            *pp,
 					((unsigned char *) mep->next - mep->d));
 		mds_pool_free (&rtps_mem_blocks [MB_MSG_ELEM_BUF], mep);
 		mep = &mp->element;
-		mp->element.flags |= RME_CONTAINED;
+		mp->element.flags |= (RME_CONTAINED | mcflag);
 		mp->element.pad = 0;
 		mp->first = mp->last = &mp->element;
 		mp->size = size;
+		pp->dest_handle = 0;
 	}
 	if (mep->next) {
 		do {
@@ -263,7 +302,12 @@ static void add_proxy_elements (Proxy_t            *pp,
 		while (mep->next);
 		mp->last = mep;
 	}
+	pp->msg_complete = 1;
+	MP_CHECK (mp);
 }
+
+/* rtps_msg_add_mep -- Used only by rtps_msg_add_data for serializedPayload
+		       data notification. */
 
 static RME *rtps_msg_add_mep (RME *prev_mep, size_t dsize)
 {
@@ -319,17 +363,18 @@ static RME *rtps_msg_add_info_ts (RemReader_t *rrp, FTime_t *ftime)
 /* rtps_msg_add_data -- Add either a DATA submessage element or a DATAFRAG
 			submessage element to an existing message. */
 
-int rtps_msg_add_data (RemReader_t        *rrp,
-		       const GuidPrefix_t *prefix,
-		       const EntityId_t   *eid,
-		       Change_t           *cp,
-		       const HCI          hci,
-		       int                push
+int rtps_msg_add_data (RemReader_t         *rrp,
+		       const Participant_t *pp,
+		       const EntityId_t    *eid,
+		       unsigned            mcflag,
+		       Change_t            *cp,
+		       const HCI           hci,
+		       int                 push
 #ifdef RTPS_FRAGMENTS
-		     , unsigned           first,
-		       unsigned           *nfrags
+		     , unsigned            first,
+		       unsigned            *nfrags
 #endif
-			                         )
+			                          )
 {
 	RME			*mep, *data_mep, *first_mep;
 	NOTIF_DATA		*np;
@@ -348,14 +393,18 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 	FTime_t			ftime, *ftimep;
 	DDS_GUIDSeq		guid_seq;
 	GUID_t			guids [MAX_DW_DESTS];
-	unsigned		remain, ofs, dlen, clen, kh, fofs, nqospars = 0;
+	unsigned		remain, ofs, dlen, clen, kh = 0, fofs = 0, nqospars = 0;
 #ifdef RTPS_FRAGMENTS
-	unsigned		f;
-	size_t			tfsize;
+	unsigned		f = 0;
+	size_t			tfsize = 0;
 #endif
-	size_t			dsize;
-	int			i, add_time_on_split = 0;
+	size_t			dsize = 0;
+	int			i;
+#ifdef XTYPES_USED
 	Type			*tp;
+#else
+	CDR_TypeSupport		*tp;
+#endif
 	unsigned char		*xp;
 #ifdef DDS_NATIVE_SECURITY
 	DBW			dbw;
@@ -375,41 +424,24 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 	ctrc_endd ();
 
 	/* Get a new submessage element header. */
-	first_mep = mep = new_proxy_element (&rrp->proxy, RTPS_COMBINE);
+	first_mep = mep = new_proxy_element (&rrp->proxy, RTPS_COMBINE, pp, mcflag);
 	if (!mep) {
 		log_printf (RTPS_ID, 0, "rtps_msg_add_data: no memory for first submessage element.\r\n");
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
-
-	/* Add an InfoDestination element if this is not a multicast message. */
-	if (prefix) {
-		rtps_msg_add_info_destination (&rrp->proxy, mep, prefix);
-		rrp->rr_id_prefix = 1;
-		msize = mep->length + sizeof (SubmsgHeader);
-		mep = rtps_msg_append_mep (first_mep);
-		if (!mep)
-			goto no_mem;
-	}
-	else {
-		rrp->rr_id_prefix = 0;
-		msize = 0;
-	}
+	msize = 0;
 
 	/* Set timestamp if specified by user, or if not yet in message. */
-	if (!FTIME_ZERO (cp->c_time)) {
+#ifdef RTPS_FRAGMENTS
+	if (!first) {
+#endif
 		ftime = cp->c_time;
 		ftimep = &ftime;
-		add_time_on_split = 0;
+#ifdef RTPS_FRAGMENTS
 	}
-	else if (!rrp->proxy.msg_time) {
-		sys_getftime (&ftime);
-		ftimep = &ftime;
-		add_time_on_split = 0;
-	}
-	else {
-		add_time_on_split = 1;
+	else
 		ftimep = NULL;
-	}
+#endif
 
 	/* Add submessage element header for the timestamp. */
 	if (ftimep) {
@@ -532,8 +564,8 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 				add_proxy_elements (&rrp->proxy,
 						    first_mep,
 						    msize,
-						    add_time_on_split,
-						    prefix);
+						    pp,
+						    mcflag);
 				first_mep = NULL;
 			}
 			tfsize = dlen;
@@ -542,7 +574,10 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 
 		/* Get a new submessage element header. */
 		if (!first_mep) {
-			first_mep = mep = new_proxy_element (&rrp->proxy, RTPS_COMBINE);
+			first_mep = mep = new_proxy_element (&rrp->proxy,
+							     RTPS_COMBINE,
+							     pp,
+							     mcflag);
 			if (!mep) {
 				log_printf (RTPS_ID, 0, "rtps_msg_add_data: no memory for first submessage element.\r\n");
 				return (DDS_RETCODE_OUT_OF_RESOURCES);
@@ -559,8 +594,8 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 #endif
 			mep->header.id = ST_DATA;
 		mep->header.flags = SMF_CPU_ENDIAN;
-		if (!prefix)
-			rrp->rr_tail->element.flags |= RME_MCAST;
+		if (!pp)
+			rrp->rr_tail->element.flags |= mcflag;
 
 		/* Add extra DATA submessage fields. */
 		mep->data = mep->d;
@@ -748,7 +783,11 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 
 			/* Check if key data fits directly in rest of buffer. */
 	 		if (dlen <= remain) { /* Fits! */
+#ifdef XTYPES_USED
 				tp = (ts->ts_prefer == MODE_CDR) ? ts->ts_cdr: ts->ts_pl->xtype;
+#else
+				tp = ts->ts_cdr;
+#endif
 
 				/* Just copy change data. */
 				if (kp) {
@@ -760,7 +799,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 				else if (!tp || (ENDIAN_CPU == ENDIAN_BIG && ts->ts_fksize))
 					memcpy (mep->d + ofs, hp, dlen);
 				else {
-					cdr_key_fields (mep->d + ofs, 4, hp, 4, tp,
+					cdr_key_fields (mep->d + ofs, CDR_DOFS, hp, CDR_DOFS, tp,
 							1, 1, ENDIAN_CPU ^ ENDIAN_BIG, 0);
 					while (clen < dlen)
 						mep->d [ofs + clen++] = 0;
@@ -824,7 +863,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 
 			/* Add submessages to message. */
 			add_proxy_elements (&rrp->proxy, first_mep, msize,
-						add_time_on_split, prefix);
+						pp, mcflag);
 
 #ifdef RTPS_FRAGMENTS
 			break;
@@ -842,7 +881,7 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 		TX_DATA_FRAG (rrp->rr_writer, dfp, mep->header.flags);
 		STATS_INC (rrp->rr_ndatafrags);
 		add_proxy_elements (&rrp->proxy, first_mep, msize, 
-					add_time_on_split, prefix);
+					pp, mcflag);
 	}
 #endif
 	if (kp)
@@ -865,38 +904,26 @@ int rtps_msg_add_data (RemReader_t        *rrp,
 
 int rtps_msg_add_gap (RemReader_t              *rrp,
 		      const DiscoveredReader_t *reader,
+		      unsigned                 mcflag,
 		      const SequenceNumber_t   *start,
 		      const SequenceNumber_t   *base,
 		      unsigned                 n_bits,
 		      uint32_t                 *bits,
 		      int                      push)
 {
-	GapSMsg		*dp;
-	RME		*mep, *first_mep;
-	const GuidPrefix_t	*prefix;
-	unsigned	n_bytes, msize;
+	GapSMsg			*dp;
+	RME			*mep, *first_mep;
+	const Participant_t	*pp = (reader) ? reader->dr_participant : NULL;
+	unsigned		n_bytes, msize;
 
 	/* Get a new submessage element header. */
-	first_mep = mep = new_proxy_element (&rrp->proxy, 1/*RTPS_COMBINE*/);
+	first_mep = mep = new_proxy_element (&rrp->proxy, RTPS_COMBINE, pp, mcflag);
 	if (!mep) {
 		log_printf (RTPS_ID, 0, "rtps_msg_add_gap: no memory for submessage elements.\r\n");
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
+	msize = 0;
 
-	if (reader && reader->dr_participant) {
-		prefix = &reader->dr_participant->p_guid_prefix;
-		rtps_msg_add_info_destination (&rrp->proxy, mep, prefix);
-		msize = mep->length + sizeof (SubmsgHeader);
-		mep = rtps_msg_append_mep (mep);
-		if (!mep) {
-			rtps_free_elements (first_mep);
-			return (DDS_RETCODE_OUT_OF_RESOURCES);
-		}
-	}
-	else {
-		prefix = NULL;
-		msize = 0;
-	}
 	ctrc_begind (RTPS_ID, RTPS_TX_GAP, &rrp->rr_writer->endpoint.endpoint->ep.entity_id, sizeof (EntityId_t));
 	ctrc_contd (start, sizeof (SequenceNumber_t));
 	ctrc_contd (base, sizeof (SequenceNumber_t));
@@ -922,7 +949,7 @@ int rtps_msg_add_gap (RemReader_t              *rrp,
 	msize += mep->length + sizeof (SubmsgHeader);
 
 	/* Add submessage to message. */
-	add_proxy_elements (&rrp->proxy, first_mep, msize, 0, prefix);
+	add_proxy_elements (&rrp->proxy, first_mep, msize, pp, mcflag);
 
 	STATS_INC (rrp->rr_ngap);
 
@@ -941,37 +968,24 @@ int rtps_msg_add_gap (RemReader_t              *rrp,
 
 int rtps_msg_add_heartbeat (RemReader_t              *rrp,
 			    const DiscoveredReader_t *reader,
+			    unsigned                 mcflag,
 			    unsigned                 flags,
 			    const SequenceNumber_t   *min_seqnr,
 			    const SequenceNumber_t   *max_seqnr)
 {
-	HeartbeatSMsg	*dp;
-	RME		*first_mep, *mep;
-	GuidPrefix_t	*prefix;
-	unsigned	msize;
+	HeartbeatSMsg		*dp;
+	RME			*first_mep, *mep;
+	const Participant_t	*pp = (reader) ? reader->dr_participant : NULL;
+	unsigned		msize;
 
 	/* Get a new submessage element header. */
-	first_mep = mep = new_proxy_element (&rrp->proxy, RTPS_COMBINE);
+	first_mep = mep = new_proxy_element (&rrp->proxy, RTPS_COMBINE, pp, mcflag);
 	if (!mep) {
 		log_printf (RTPS_ID, 0, "rtps_msg_add_heartbeat: no memory for first submessage element.\r\n");
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
+	msize = 0;
 
-	/* Prepend with an INFO_DESTINATION if this is not a multicast. */
-	if (reader && reader->dr_participant) {
-		prefix = &reader->dr_participant->p_guid_prefix;
-		rtps_msg_add_info_destination (&rrp->proxy, mep, prefix);
-		msize = mep->length;
-		mep = rtps_msg_append_mep (mep);
-		if (!mep) {
-			rtps_free_elements (first_mep);
-			return (DDS_RETCODE_OUT_OF_RESOURCES);
-		}
-	}
-	else {
-		prefix = NULL;
-		msize = 0;
-	}
 	ctrc_begind (RTPS_ID, RTPS_TX_HBEAT, &rrp->rr_writer->endpoint.endpoint->ep.entity_id, sizeof (EntityId_t));
 	ctrc_contd (min_seqnr, sizeof (SequenceNumber_t));
 	ctrc_contd (max_seqnr, sizeof (SequenceNumber_t));
@@ -981,8 +995,8 @@ int rtps_msg_add_heartbeat (RemReader_t              *rrp,
 	mep->flags |= RME_HEADER;
 	mep->header.id = ST_HEARTBEAT;
 	mep->header.flags = SMF_CPU_ENDIAN;
-	if (!prefix)
-		rrp->rr_tail->element.flags |= RME_MCAST;
+	if (!pp)
+		rrp->rr_tail->element.flags |= mcflag;
 	mep->header.flags |= flags & (SMF_FINAL | SMF_LIVELINESS);
 
 	/* Add extra HEARTBEAT submessage fields. */
@@ -1008,7 +1022,7 @@ int rtps_msg_add_heartbeat (RemReader_t              *rrp,
 	msize += mep->length + sizeof (SubmsgHeader);
 
 	/* Add submessage to message. */
-	add_proxy_elements (&rrp->proxy, first_mep, msize, 0, prefix);
+	add_proxy_elements (&rrp->proxy, first_mep, msize, pp, mcflag);
 
 	STATS_INC (rrp->rr_nheartbeat);
 
@@ -1030,27 +1044,21 @@ int rtps_msg_add_acknack (RemWriter_t              *rwp,
 			  unsigned                 nbits,
 			  const uint32_t           bitmaps [])
 {
-	AckNackSMsg	*dp;
-	RME		*mep, *first_mep;
-	GuidPrefix_t	*prefix;
-	unsigned	n, msize;
+	AckNackSMsg		*dp;
+	RME			*mep, *first_mep;
+	const Participant_t	*pp = (writer) ? writer->dw_participant : NULL;
+	unsigned		n, msize;
 
-	first_mep = mep = new_proxy_element (&rwp->proxy, RTPS_COMBINE);
+	first_mep = mep = new_proxy_element (&rwp->proxy, RTPS_COMBINE, pp, 0);
 	if (!mep) {
 		log_printf (RTPS_ID, 0, "rtps_msg_add_acknack: no memory for first submessage element.\r\n");
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
-	if (writer && writer->dw_participant)
-		prefix = &writer->dw_participant->p_guid_prefix;
-	else
-		prefix = NULL;
-	rtps_msg_add_info_destination (&rwp->proxy, mep, prefix);
-	msize = mep->length + sizeof (SubmsgHeader);
-	mep = rtps_msg_append_mep (first_mep);
-	if (!mep) {
-		rtps_free_elements (first_mep);
+	if (!pp) {
+		log_printf (RTPS_ID, 0, "rtps_msg_add_acknack: no valid destination.\r\n");
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
+	msize = 0;
 
 	ctrc_begind (RTPS_ID, RTPS_TX_ACKNACK, &rwp->rw_reader->endpoint.endpoint->ep.entity_id, sizeof (EntityId_t));
 	ctrc_contd (base, sizeof (SequenceNumber_t));
@@ -1087,7 +1095,7 @@ int rtps_msg_add_acknack (RemWriter_t              *rwp,
 	msize += mep->length + sizeof (SubmsgHeader);
 
 	/* Add submessage to message. */
-	add_proxy_elements (&rwp->proxy, first_mep, msize, 0, prefix);
+	add_proxy_elements (&rwp->proxy, first_mep, msize, pp, 0);
 
 	STATS_INC (rwp->rw_nacknack);
 
@@ -1106,36 +1114,22 @@ int rtps_msg_add_acknack (RemWriter_t              *rwp,
 
 int rtps_msg_add_heartbeat_frag (RemReader_t              *rrp,
 				 const DiscoveredReader_t *reader,
+				 unsigned                 mcflag,
 				 const SequenceNumber_t   *seqnr,
 				 unsigned                 last_frag)
 {
 	HeartbeatFragSMsg	*dp;
 	RME			*first_mep, *mep;
-	GuidPrefix_t		*prefix;
+	const Participant_t	*pp = (reader) ? reader->dr_participant : NULL;
 	unsigned		msize;
 
 	/* Get a new submessage element header. */
-	first_mep = mep = new_proxy_element (&rrp->proxy, RTPS_COMBINE);
+	first_mep = mep = new_proxy_element (&rrp->proxy, RTPS_COMBINE, pp, mcflag);
 	if (!mep) {
 		log_printf (RTPS_ID, 0, "rtps_msg_add_heartbeat_frag: no memory for first submessage element.\r\n");
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
-
-	/* Prepend with an INFO_DESTINATION if this is not a multicast. */
-	if (reader && reader->dr_participant) {
-		prefix = &reader->dr_participant->p_guid_prefix;
-		rtps_msg_add_info_destination (&rrp->proxy, mep, prefix);
-		msize = mep->length;
-		mep = rtps_msg_append_mep (mep);
-		if (!mep) {
-			rtps_free_elements (first_mep);
-			return (DDS_RETCODE_OUT_OF_RESOURCES);
-		}
-	}
-	else {
-		prefix = NULL;
-		msize = 0;
-	}
+	msize = 0;
 
 	ctrc_begind (RTPS_ID, RTPS_TX_HBEAT_FRAG, &rrp->rr_writer->endpoint.endpoint->ep.entity_id, sizeof (EntityId_t));
 	ctrc_contd (seqnr, sizeof (SequenceNumber_t));
@@ -1147,7 +1141,7 @@ int rtps_msg_add_heartbeat_frag (RemReader_t              *rrp,
 	mep->header.id = ST_HEARTBEAT_FRAG;
 	mep->header.flags = SMF_CPU_ENDIAN;
 	if (!reader)
-		rrp->rr_tail->element.flags |= RME_MCAST;
+		rrp->rr_tail->element.flags |= mcflag;
 
 	/* Add extra HEARTBEAT_FRAG submessage fields. */
 	mep->data = mep->d;
@@ -1161,7 +1155,7 @@ int rtps_msg_add_heartbeat_frag (RemReader_t              *rrp,
 	msize += mep->length + sizeof (SubmsgHeader);
 
 	/* Add submessage to message. */
-	add_proxy_elements (&rrp->proxy, first_mep, msize, 0, prefix);
+	add_proxy_elements (&rrp->proxy, first_mep, msize, pp, mcflag);
 
 	STATS_INC (rrp->rr_nheartbeatfrags);
 
@@ -1183,25 +1177,15 @@ int rtps_msg_add_nack_frag (RemWriter_t              *rwp,
 			    unsigned                 nbits,
 			    const uint32_t           bitmaps [])
 {
-	NackFragSMsg	*dp;
-	RME		*first_mep, *mep;
-	GuidPrefix_t	*prefix;
-	unsigned	n, msize;
+	NackFragSMsg		*dp;
+	RME			*first_mep, *mep;
+	const Participant_t	*pp = writer->dw_participant;
+	unsigned		n, msize;
 
 	/* Get a new submessage element header. */
-	first_mep = mep = new_proxy_element (&rwp->proxy, RTPS_COMBINE);
+	first_mep = mep = new_proxy_element (&rwp->proxy, RTPS_COMBINE, pp, 0);
 	if (!mep) {
 		log_printf (RTPS_ID, 0, "rtps_msg_add_nack_frag: no memory for first submessage element.\r\n");
-		return (DDS_RETCODE_OUT_OF_RESOURCES);
-	}
-
-	/* Prepend with an INFO_DESTINATION. */
-	prefix = &writer->dw_participant->p_guid_prefix;
-	rtps_msg_add_info_destination (&rwp->proxy, mep, prefix);
-	msize = mep->length + sizeof (SubmsgHeader);
-	mep = rtps_msg_append_mep (mep);
-	if (!mep) {
-		rtps_free_elements (first_mep);
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
 
@@ -1229,10 +1213,10 @@ int rtps_msg_add_nack_frag (RemWriter_t              *rwp,
 	if (n)
 		memcpy (dp->frag_nr_state.bitmap, bitmaps, n);
 	dp->frag_nr_state.bitmap [n >> 2] = ++rwp->rw_reader->nackfrags;
-	msize += mep->length + sizeof (SubmsgHeader);
+	msize = mep->length + sizeof (SubmsgHeader);
 
 	/* Add submessage to message. */
-	add_proxy_elements (&rwp->proxy, first_mep, msize, 0, prefix);
+	add_proxy_elements (&rwp->proxy, first_mep, msize, pp, 0);
 
 	STATS_INC (rwp->rw_nnackfrags);
 
@@ -1339,9 +1323,10 @@ void *submsg_data_ptr (RME      *mep,	/* Subelement structure. */
 	return (buf);
 }
 
-#define	reply_update_needed(lp,rxp)	(!lp ||						\
-					 rxp->n_uc_replies || rxp->n_mc_replies ||	\
-					 lp->locator.kind > rxp->src_locator.kind)
+#define	reply_update_needed(lp,ir,rxp)	(!lp || 					\
+					 rxp->n_uc_replies ||				\
+					 lp->locator.kind > rxp->src_locator.kind ||	\
+					 (ir && lp->locator.kind == rxp->src_locator.kind))
 
 /* submsg_rx_data -- Receive actions for the RTPS.DATA subelement. */
 
@@ -1437,9 +1422,15 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 					p_builtin_ep [EPB_PARTICIPANT_R];
 #ifdef DDS_NATIVE_SECURITY
 		else if (entity_id_eq (rtps_builtin_eids [EPB_PARTICIPANT_SL_W],
-				  dp->writer_id))
+				  dp->writer_id)) {
 			rp = (Reader_t *) rxp->domain->participant.
 					p_builtin_ep [EPB_PARTICIPANT_SL_R];
+			if (rxp->peer && 
+			    reply_update_needed (rxp->peer->p_uc_dreply,
+						 rxp->peer->p_ir_locs,
+						 rxp))
+				participant_update_reply_locators (rxp->peer, rxp);
+		}
 #endif
 		else
 			rp = NULL;
@@ -1487,6 +1478,8 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 	TRC_CHANGE (cp, "submsg_rx_data", 1);
 
 	/* Create a cache change object. */
+	if (rxp->n_uc_replies || rxp->indirect_src)
+		cp->c_indirect = 1;
 	cp->c_writer = (peer_ep) ? peer_ep->entity.handle : 0;
 	if (rxp->have_timestamp)
 		cp->c_time = rxp->timestamp;
@@ -1839,9 +1832,9 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 
 			/* Update Reply locator if necessary. */
 			if (rwp->rw_reliable &&
-			    reply_update_needed (rwp->rw_uc_dreply, rxp)) {
+			    reply_update_needed (rwp->rw_uc_dreply, rwp->rw_ir_locs, rxp)) {
 				lrloc_print ("RTPS: Data: ");
-				proxy_update_reply_locators (rxp->domain->kinds,
+				proxy_update_reply_locators (rxp->domain->participant.p_kinds,
 							     &rwp->proxy, rxp);
 			}
 
@@ -2029,9 +2022,9 @@ static void submsg_rx_gap (RECEIVER *rxp, RME *mep)
 		if (rwp->rw_reader->endpoint.stateful && rwp->rw_reliable)
 
 			/* Update Reply locator if necessary. */
-			if (reply_update_needed (rwp->rw_uc_dreply, rxp)) {
+			if (reply_update_needed (rwp->rw_uc_dreply, rwp->rw_ir_locs, rxp)) {
 				lrloc_print ("RTPS: Gap: ");
-				proxy_update_reply_locators (rxp->domain->kinds,
+				proxy_update_reply_locators (rxp->domain->participant.p_kinds,
 							     &rwp->proxy, rxp);
 			}
 
@@ -2178,9 +2171,9 @@ static void submsg_rx_heartbeat (RECEIVER *rxp, RME *mep)
 		if (rwp->rw_reader->endpoint.stateful && rwp->rw_reliable) {
 
 			/* Update Reply locator if necessary. */
-			if (reply_update_needed (rwp->rw_uc_dreply, rxp)) {
+			if (reply_update_needed (rwp->rw_uc_dreply, rwp->rw_ir_locs, rxp)) {
 				lrloc_print ("RTPS: Heartbeat: ");
-				proxy_update_reply_locators (rxp->domain->kinds,
+				proxy_update_reply_locators (rxp->domain->participant.p_kinds,
 							     &rwp->proxy, rxp);
 			}
 
@@ -2224,11 +2217,12 @@ static void submsg_rx_acknack (RECEIVER *rxp, RME *mep)
 	prof_start (rtps_rx_acknack);
 	RX_LL_TRACE ("ACKNACK");
 
-	if (mep->header.length < MIN_ACKNACK_SIZE
+	length = mep->header.length;
+	if (length < MIN_ACKNACK_SIZE
 #ifdef RTPS_EMPTY_ACKNACK
-					- 4
+				      - 4
 #endif
-					 	 ) {
+					 ) {
 		RX_LL_ERROR ("TooShort");
 		rxp->submsg_too_short++;
 		rxp->last_error = R_TOO_SHORT;
@@ -2236,7 +2230,6 @@ static void submsg_rx_acknack (RECEIVER *rxp, RME *mep)
 		rxp->msg_size = 0;
 		return;
 	}
-	length = mep->header.length;
 	if (length > MAX_ACKNACK_SIZE)
 		length = MAX_ACKNACK_SIZE;
 	ap = (AckNackSMsg *) SUBMSG_DATA (mep, 0, length, data);
@@ -2322,9 +2315,9 @@ static void submsg_rx_acknack (RECEIVER *rxp, RME *mep)
 		if (lwp->endpoint.stateful && rrp->rr_reliable) {
 
 			/* Update Reply locator. */
-			if (reply_update_needed (rrp->rr_uc_dreply, rxp)) {
+			if (reply_update_needed (rrp->rr_uc_dreply, rrp->rr_ir_locs, rxp)) {
 				lrloc_print ("RTPS: Acknack: ");
-				proxy_update_reply_locators (rxp->domain->kinds,
+				proxy_update_reply_locators (rxp->domain->participant.p_kinds,
 							     &rrp->proxy, rxp);
 			}
 
@@ -2379,7 +2372,7 @@ static void submsg_rx_info_ts (RECEIVER *rxp, RME *mep)
 			SWAP_TS (*ip, t);
 		}
 		rxp->have_timestamp = 1;
-		FTIME_SETF (rxp->timestamp, ip->seconds, ip->fraction);
+		ftime_set_time (&rxp->timestamp, ip->seconds, ip->fraction);
 	}
 	else
 		rxp->have_timestamp = 0;
@@ -2557,6 +2550,7 @@ static void submsg_rx_info_src (RECEIVER *rxp, RME *mep)
 	rxp->n_uc_replies = 0;
 	rxp->n_mc_replies = 0;
 	rxp->have_timestamp = 0;
+	rxp->indirect_src = 1;
 	RX_LL_END ();
 	prof_stop (rtps_rx_inf_src, 1);
 }
@@ -2862,9 +2856,9 @@ static void submsg_rx_data_frag (RECEIVER *rxp, RME *mep)
 
 			/* Update Reply locator if necessary. */
 			if (rwp->rw_reliable &&
-			    reply_update_needed (rwp->rw_uc_dreply, rxp)) {
+			    reply_update_needed (rwp->rw_uc_dreply, rwp->rw_ir_locs, rxp)) {
 				lrloc_print ("RTPS: DataFrag: ");
-				proxy_update_reply_locators (rxp->domain->kinds,
+				proxy_update_reply_locators (rxp->domain->participant.p_kinds,
 							     &rwp->proxy, rxp);
 			}
 
@@ -3048,9 +3042,9 @@ static void submsg_rx_nack_frag (RECEIVER *rxp, RME *mep)
 		if (lwp->endpoint.stateful && rrp->rr_reliable) {
 
 			/* Update Reply locator. */
-			if (reply_update_needed (rrp->rr_uc_dreply, rxp)) {
+			if (reply_update_needed (rrp->rr_uc_dreply, rrp->rr_ir_locs, rxp)) {
 				lrloc_print ("RTPS: NackFrag: ");
-				proxy_update_reply_locators (rxp->domain->kinds,
+				proxy_update_reply_locators (rxp->domain->participant.p_kinds,
 							     &rrp->proxy, rxp);
 			}
 		
@@ -3188,9 +3182,9 @@ static void submsg_rx_heartbeat_frag (RECEIVER *rxp, RME *mep)
 		if (rwp->rw_reader->endpoint.stateful && rwp->rw_reliable) {
 
 			/* Update Reply locator if necessary. */
-			if (reply_update_needed (rwp->rw_uc_dreply, rxp)) {
+			if (reply_update_needed (rwp->rw_uc_dreply, rwp->rw_ir_locs, rxp)) {
 				lrloc_print ("RTPS: HeartbeatFrag: ");
-				proxy_update_reply_locators (rxp->domain->kinds,
+				proxy_update_reply_locators (rxp->domain->participant.p_kinds,
 							     &rwp->proxy, rxp);
 			}
 
@@ -3278,6 +3272,7 @@ void rtps_receive (unsigned        id,		/* Participant id. */
 		/*rxp->reply_locs [1] = locator_invalid;*/
 
 		/* Set the initial state of the receiver. */
+		rxp->indirect_src = 0;
 		rxp->src_guid_prefix = mhp->guid_prefix;
 		/*rxp->dst_guid_prefix = dp->participant.p_guid_prefix;*/
 		rxp->have_prefix = 0;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -54,7 +54,13 @@
 #include "rtps.h"
 #include "rtps_ip.h"
 #include "rtps_mux.h"
+#ifdef TCP_SUSPEND
+#include "ri_bgcp.h"
+#include "bgns.h"
+#endif
+#ifdef DDS_DYN_IP
 #include "dynip.h"
+#endif
 #include "uqos.h"
 #include "disc.h"
 #include "dcps.h"
@@ -202,7 +208,8 @@ static MEM_DESC_ST	mem_blocks [MB_END];	/* Memory blocks. */
 static size_t		mem_size;		/* Total allocated. */
 
 static int		pre_init;		/* Preinitialized state. */
-static int		tmr_suspend;		/* Timer suspend mode. */
+
+int			dds_tmr_suspend;	/* Timers suspend mode. */
 
 #ifdef DDS_TRACE
 unsigned		dds_dtrace;		/* Default tracing mode. */
@@ -793,7 +800,7 @@ static int dds_work (unsigned max_wait_ms)
 		lock_take (ev_lock);
 		events = dds_ev_pending;
 		dds_ev_pending = 0;
-		tmr_delay = (tmr_suspend) ? ~0U : tmr_pending_ms ();
+		tmr_delay = (dds_tmr_suspend) ? ~0U : tmr_pending_ms ();
 		if (!tmr_delay) {
 			events |= DDS_EV_TMR;
 			dds_sleeping = 0;
@@ -829,11 +836,7 @@ static int dds_work (unsigned max_wait_ms)
 		else
 			/* Work to do: handle each event. */
 			do {
-				if ((events & DDS_EV_QUIT) != 0) {
-					ctrc_printd (DDS_ID, DDS_WORK_QUIT, NULL, 0);
-					return (1);
-				}
-				else if ((events & DDS_EV_TMR) != 0) {
+				if ((events & DDS_EV_TMR) != 0) {
 					ctrc_printd (DDS_ID, DDS_WORK_TMR, NULL, 0);
 					prof_start (dds_w_tmr);
 					events &= ~DDS_EV_TMR;
@@ -846,6 +849,10 @@ static int dds_work (unsigned max_wait_ms)
 					events &= ~DDS_EV_IO;
 					sock_fd_schedule ();
 					prof_stop (dds_w_fd, 1);
+				}
+				else if ((events & DDS_EV_QUIT) != 0) {
+					ctrc_printd (DDS_ID, DDS_WORK_QUIT, NULL, 0);
+					return (1);
 				}
 #ifdef RTPS_USED
 				else if (rtps_used && (events & DDS_EV_PROXY_NE) != 0) {
@@ -889,7 +896,7 @@ static int dds_work (unsigned max_wait_ms)
 
 static DDS_exit_cb thread_exit_cb = NULL;
 
-void DDS_atexit(DDS_exit_cb cb)
+void DDS_atexit (DDS_exit_cb cb)
 {
 	thread_exit_cb = cb;
 }
@@ -1032,6 +1039,9 @@ void dds_post_final (void)
 		return;
 	}
 
+#ifdef TCP_SUSPEND
+	bgns_final ();
+#endif
 #ifdef DDS_SECURITY
 #ifdef DDS_NATIVE_SECURITY
 	if (local_identity)
@@ -1219,6 +1229,10 @@ void dds_pre_init (void)
 	bc_init ();
 	sql_parse_init ();
 
+#ifdef TCP_SUSPEND
+	bgns_init (2, ~0);
+#endif
+
 	atexit (dds_post_final);
 	
 	pre_init = 1;
@@ -1401,6 +1415,10 @@ int dds_init (void)
 		if (error)
 			fatal_printf ("rtps_init() failed: error = %d", error);
 
+		rtps_ip_reset ();
+#ifdef TCP_SUSPEND
+		bgcp_reset ();
+#endif
 		log_printf (DDS_ID, 0, "RTPS Initialised.\r\n");
 
 		error = rtps_ipv4_attach (reqs->max_ip_sockets, reqs->max_ipv4_addresses);
@@ -1491,6 +1509,7 @@ int dds_init (void)
 	dds_init_threads ();
 #endif
 
+	dds_tmr_suspend = 0;
 	tmr_init (&shm_timer, "SharedMemory");
 	tmr_start (&shm_timer, TICKS_PER_SEC, 0, dds_assert_shm_liveness);
 
@@ -1590,8 +1609,12 @@ void DDS_continue (void)
 
 void DDS_Activities_suspend (DDS_Activity suspend)
 {
+	DDS_PRE_INIT ();
+#ifdef TCP_SUSPEND
+	bgcp_suspending ();
+#endif
 	if ((suspend & DDS_TIMER_ACTIVITY) != 0) {
-		tmr_suspend = 1;
+		dds_tmr_suspend = 1;
 		disc_suspend ();
 	}
 	if ((suspend & DDS_UDP_ACTIVITY) != 0)
@@ -1608,19 +1631,76 @@ void DDS_Activities_suspend (DDS_Activity suspend)
 
 void DDS_Activities_resume (DDS_Activity resume)
 {
-	if ((resume & DDS_TIMER_ACTIVITY) != 0) {
-		disc_resume ();
-		tmr_suspend = 0;
-	}
+	DDS_PRE_INIT ();
 	if ((resume & DDS_UDP_ACTIVITY) != 0)
 		rtps_udp_resume ();
 #ifdef DDS_TCP
 	if ((resume & DDS_TCP_ACTIVITY) != 0)
 		rtps_tcp_resume ();
 #endif
+#ifdef TCP_SUSPEND
+	bgcp_resuming ();
+#endif
 #ifdef DDS_DEBUG
 	if ((resume & DDS_DEBUG_ACTIVITY) != 0)
 		debug_resume ();
+#endif
+	if ((resume & DDS_TIMER_ACTIVITY) != 0) {
+		disc_resume ();
+		dds_tmr_suspend = 0;
+	}
+}
+
+DDS_ReturnCode_t DDS_Activities_notify (DDS_DomainId_t domain_id,
+					const char     *topic_match,
+					const char     *type_match)
+{
+#ifdef TCP_SUSPEND
+	DDS_PRE_INIT ();
+	return (bgcp_notify (domain_id, topic_match, type_match, 0));
+#else
+	ARG_NOT_USED (domain_id)
+	ARG_NOT_USED (topic_match)
+	ARG_NOT_USED (type_match)
+
+	return (DDS_RETCODE_UNSUPPORTED);
+#endif
+}
+
+void DDS_Activities_unnotify (DDS_DomainId_t domain_id,
+			      const char     *topic_match,
+			      const char     *type_match)
+{
+#ifdef TCP_SUSPEND
+	DDS_PRE_INIT ();
+	bgcp_unnotify (domain_id, topic_match, type_match);
+#else
+	ARG_NOT_USED (domain_id)
+	ARG_NOT_USED (topic_match)
+	ARG_NOT_USED (type_match)
+#endif
+}
+
+void DDS_Activities_register (DDS_Activities_on_wakeup wakeup_fct,
+			      DDS_Activities_on_connected connect_fct)
+{
+#ifdef TCP_SUSPEND
+	DDS_PRE_INIT ();
+	bgns_register_wakeup (wakeup_fct);
+	bgcp_register_connect (connect_fct);
+#else
+	ARG_NOT_USED (wakeup_fct)
+	ARG_NOT_USED (connect_fct)
+#endif
+}
+
+void DDS_Activities_client_info (DDS_Activities_on_client_change client_fct)
+{
+#ifdef TCP_SUSPEND
+	DDS_PRE_INIT ();
+	bgns_register_info (client_fct);
+#else
+	ARG_NOT_USED (client_fct)
 #endif
 }
 
@@ -1786,7 +1866,6 @@ void DDS_Handle_detach (HANDLE h)
 
 void DDS_Log_stdio (int enable)
 {
-	DDS_PRE_INIT ();
 	if (enable)
 		err_actions_add (EL_LOG, ACT_PRINT_STDIO);
 	else
@@ -1987,6 +2066,8 @@ void DDS_Debug_dump_static (unsigned indent,
 #endif
 }
 
+#ifdef XTYPES_USED
+
 void DDS_Debug_dump_dynamic (unsigned indent,
 			     DDS_DynamicTypeSupport ts,
 			     DDS_DynamicData data,
@@ -2015,6 +2096,7 @@ void DDS_Debug_dump_dynamic (unsigned indent,
 #endif
 }
 
+#endif
 
 DDS_ReturnCode_t DDS_Trace_set (DDS_Entity entity, unsigned mode)
 {

@@ -1,0 +1,63 @@
+//The artifactory.gradle file will be used as a helper function in order to use the functionality of artifactory.
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/codegen.gradle'
+
+group = "org.qeo.sample"
+
+generateTypes {
+	ext.qdms = ["samples/QSimpleChat_ChatMessage.xml", "samples/QSimpleChat_ChatParticipant.xml"]
+	ext.language = "java"
+}
+
+eclipse {
+    explodeAar = true
+}
+
+
+/*
+If including an aar library from the local filesystem, you can't use "compile files("/path/to/my/lib.aar")" because of this bug:
+https://code.google.com/p/android/issues/detail?id=55863
+Use the commented approach instead:
+repositories {
+    flatDir {
+        dirs '/path/to/my/'
+    }
+}*/
+
+dependencies {
+	compile project.latestSupportV4
+
+    //qeo-android
+	compile (group: 'org.qeo', name: 'qeo-android', version: version)
+    //qdms for codegen
+    generated "org.qeo:qeo-qdm:${project.qeoVersion}:samples@zip"
+
+    //embedded qeo-android-service
+    compile (group: "org.qeo", name: "qeo-android-service-embedded", version: version, ext: "aar", classifier: "release") {
+        transitive=true
+        exclude (group: "org.apache.httpcomponents", module: "httpclient") //included in android by default
+        exclude (group: "com.google.android", module: "support-v4") //eclipse version
+        exclude (group: "org.qeo", module: "qeo-android-service-core") //this points to the jar instead of the aar. So exclude it here and include the aar version explicit
+    }
+    compile (group: "org.qeo", name: "qeo-android-service-core", version: version, ext: "aar", classifier: "release") {
+        transitive=true
+        exclude (group: "org.apache.httpcomponents", module: "httpclient") //included in android by default
+        exclude (group: "com.google.android", module: "support-v4") //eclipse version
+    }
+
+    /*//dependencies for qeo-android-service below
+	compile (group: 'org.qeo', name: 'qeo-java', version: version)
+    //oauth and rest
+    def googleHttpLibsVersion = "1.17.0-rc"
+    compile ("com.google.oauth-client:google-oauth-client:${googleHttpLibsVersion}") {
+        exclude (group: "com.google.http-client") //included in android by default
+    }
+    compile ("com.google.http-client:google-http-client-jackson:${googleHttpLibsVersion}") {
+        exclude (group: "org.apache.httpcomponents") //included in android by default
+    }
+
+    //actionbarsherlock
+    compile 'com.actionbarsherlock:actionbarsherlock:4.4.0@aar'*/
+
+}
+

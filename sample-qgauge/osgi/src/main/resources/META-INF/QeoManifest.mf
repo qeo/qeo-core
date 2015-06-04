@@ -1,0 +1,2 @@
+[application]
+org::qeo::sample::gauge::NetStatMessage = rw

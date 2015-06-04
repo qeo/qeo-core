@@ -1,0 +1,4 @@
+- Investigate performance of the reflection code and possibly improve
+  + http://www.cowtowncoder.com/blog/archives/2010/04/entry_396.html
+  + http://code.google.com/p/reflectasm/
+  + http://code.google.com/p/reflectify-protocol/

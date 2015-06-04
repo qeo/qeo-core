@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -24,7 +24,12 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#ifdef __linux__
+#include <sys/epoll.h>
+#define	EPOLL_USED
+#else
 #include <poll.h>
+#endif
 #endif
 #include <string.h>
 #include <errno.h>
@@ -34,6 +39,7 @@
 #include "atomic.h"
 #include "list.h"
 #include "error.h"
+#include "ctrace.h"
 #include "timer.h"
 #include "dds.h"
 #include "debug.h"
@@ -43,7 +49,6 @@
 
 static int n_ready;
 static lock_t sock_lock;
-static lock_t poll_lock;
 
 #ifdef _WIN32
 
@@ -115,7 +120,6 @@ int sock_fd_init (unsigned max_cx, unsigned grow)
 
 	if (!initialized) {
 		lock_init_nr (sock_lock, "sock");
-		lock_init_nr (poll_lock, "poll");
 		initialized = 1;
 	}
 	return (0);
@@ -381,7 +385,7 @@ void sock_fd_schedule (void)
 	if (p->is_socket) {
 		sp = (SockSocket_t *) p;
 		if (WSAEnumNetworkEvents (sp->socket, sp->handle, &ev)) {
-			log_printf (LOG_DEF_ID, 0, "sock_fd_schedule: WSAEnumNetworkEvents() returned error %d\r\n", WSAGetLastError ());
+			log_printf (SOCK_ID, 0, "sock_fd_schedule: WSAEnumNetworkEvents() returned error %d\r\n", WSAGetLastError ());
 			return;
 		}
 		events = 0;
@@ -429,15 +433,15 @@ void sock_fd_poll (unsigned poll_time)
 		n_ready = -1;
 	else if (n_ready >= WAIT_ABANDONED_0 &&
 		 n_ready <= (int) (WAIT_ABANDONED_0 + (int) nhandles - 1)) {
-		log_printf (LOG_DEF_ID, 0, "sock_fd_poll: WaitForMultipleObjects(): abandoned handle %d was signalled", n_ready - WAIT_ABANDONED_0);
+		log_printf (SOCK_ID, 0, "sock_fd_poll: WaitForMultipleObjects(): abandoned handle %d was signalled", n_ready - WAIT_ABANDONED_0);
 		n_ready = -1;
 	}
 	else if (n_ready == WAIT_FAILED) {
-		log_printf (LOG_DEF_ID, 0, "sock_fd_poll: WaitForMultipleObjects() returned an error: %d", GetLastError ());
+		log_printf (SOCK_ID, 0, "sock_fd_poll: WaitForMultipleObjects() returned an error: %d", GetLastError ());
 		n_ready = -1;
 	}
 	else {
-		log_printf (LOG_DEF_ID, 0, "sock_fd_poll: WaitForMultipleObjects() returned unknown status: %d", n_ready);
+		log_printf (SOCK_ID, 0, "sock_fd_poll: WaitForMultipleObjects() returned unknown status: %d", n_ready);
 		n_ready = -1;
 	}
 }
@@ -476,10 +480,42 @@ typedef struct sock_list_st {
 
 static SockList_t	sockets;
 static unsigned 	num_fds, max_fds, fd_max_cx, nfds;
-static struct pollfd	*fds;
 static Sock_t		**sds;
 static int		sock_update_needed, poll_active;
+#ifdef EPOLL_USED
+static int		ep_fd;
+static struct epoll_event ep_events [FD_INC_SIZE];
+#else
+static struct pollfd	*fds;
+#endif
 
+#ifdef CTRACE_USED
+
+enum {
+	SK_INIT, SK_FINAL, SK_EP_CREATE,
+	SK_POLL_UPD, SK_POLL_RM, SK_POLL_ACT,
+	SK_ADD, SK_CTL_ERR, SK_CTL_OK, 
+	SK_REM, SK_PEND_RM,
+	SK_EV_SOCK, SK_EVS_UPD,
+	SK_FCT_SOCK, SK_FCT_UPD,
+	SK_UDATA_SOCK, SK_UDATA_UPD,
+	SK_SCHEDULE, SK_SCH_EV,
+	SK_POLL, SK_POLL_DONE, SK_POLL_CHK
+};
+
+static const char *sock_fct_str [] = {
+	"Init", "Final", "EPCreate",
+	"PollUpd", "PollRM", "PollAct",
+	"AddFD", "CtlErr", "CtlOk",
+	"RemFD", "PendRM",
+	"EvSock", "EvUpd",
+	"FctSock", "FctUpd",
+	"UDSock", "UDUpd",
+	"Sched", "SchedEv",
+	"Poll", "PollDone", "PollChk"
+};
+
+#endif
 
 /* sock_fd_init -- Initialize the poll file descriptor array. */
 
@@ -488,10 +524,27 @@ int sock_fd_init (unsigned max_cx, unsigned grow)
 	POOL_LIMITS	limits;
 	static int	initialized = 0;
 
+#ifdef EPOLL_USED
+	if (ep_fd)
+#else
 	if (fds)
+#endif
 		return (DDS_RETCODE_OK);
 
+	ctrc_printd (SOCK_ID, SK_INIT, &max_cx, sizeof (max_cx));
+#ifdef CTRACE_USED
+	log_fct_str [SOCK_ID] = sock_fct_str;
+#endif
+#ifdef EPOLL_USED
+	ep_fd = epoll_create (1024);
+	if (ep_fd < 0) {
+		perror ("epoll_create()");
+		return (DDS_RETCODE_OUT_OF_RESOURCES);
+	}
+	ctrc_printd (SOCK_ID, SK_EP_CREATE, &ep_fd, sizeof (ep_fd));
+#else
 	fds = xmalloc (sizeof (struct pollfd) * FD_INC_SIZE);
+#endif
 	sds = xmalloc (sizeof (Sock_t *) * FD_INC_SIZE);
 
 	fd_max_cx = config_get_number (DC_IP_Sockets, max_cx);
@@ -500,15 +553,19 @@ int sock_fd_init (unsigned max_cx, unsigned grow)
 	MDS_POOL_TYPE (mem_blocks, 0, limits, sizeof (Sock_t));
 	mem_size = mds_alloc (mem_blocks, mem_names, 1);
 
-	if (!fds || !sds
+	if (!sds
 #ifndef FORCE_MALLOC
 			 || !mem_size
 #endif
 				     ) {
+#ifdef EPOLL_USED
+		close (ep_fd);
+#else
 		if (fds) {
 			xfree (fds);
 			fds = NULL;
 		}
+#endif
 		if (sds) {
 			xfree (sds);
 			sds = NULL;
@@ -533,7 +590,12 @@ int sock_fd_init (unsigned max_cx, unsigned grow)
 
 void sock_fd_final (void)
 {
+	ctrc_printd (SOCK_ID, SK_FINAL, NULL, 0);
+#ifdef EPOLL_USED
+	close (ep_fd);
+#else
 	xfree (fds);
+#endif
 	xfree (sds);
 	mds_free (mem_blocks, 1);
 	LIST_INIT (sockets);
@@ -544,6 +606,7 @@ static void sock_poll_update (void)
 {
 	Sock_t		*sdp, *next;
 
+	ctrc_printd (SOCK_ID, SK_POLL_UPD, NULL, 0);
 	if (nfds > max_fds) {
 		do {
 			max_fds += FD_INC_SIZE;
@@ -551,26 +614,35 @@ static void sock_poll_update (void)
 				max_fds = fd_max_cx;
 		}
 		while (nfds > max_fds);
+#ifndef EPOLL_USED
 		fds = xrealloc (fds, sizeof (struct pollfd) * max_fds);
+		if (!fds)
+			fatal_printf ("sock_poll_update: can't extend poll table!");
+#endif
 		sds = xrealloc (sds, sizeof (Sock_t *) * max_fds);
-		lock_release (poll_lock);
-		if (!fds || !sds)
+		if (!sds)
 			fatal_printf ("sock_poll_update: can't extend sockets table!");
 	}
 	num_fds = 0;
 	for (sdp = LIST_HEAD (sockets); sdp; sdp = next) {
 		next = LIST_NEXT (sockets, *sdp);
 		if (sdp->state == PendingRemove) {
+			ctrc_printd (SOCK_ID, SK_POLL_RM, &sdp, sizeof (sdp));
+			
 			LIST_REMOVE (sockets, *sdp);
 			mds_pool_free (&mem_blocks [0], sdp);
 		}
 		else {
+			ctrc_printd (SOCK_ID, SK_POLL_ACT, &sdp, sizeof (sdp));
+
 			sdp->state = ActiveSocket;
-			sdp->index = num_fds;
 			sds [num_fds] = sdp;
+			sdp->index = num_fds;
+#ifndef EPOLL_USED
 			fds [num_fds].fd = sdp->fd;
 			fds [num_fds].events = sdp->events;
 			fds [num_fds].revents = 0;
+#endif
 			num_fds++;
 		}
 	}
@@ -581,12 +653,38 @@ static void sock_poll_update (void)
 
 int sock_fd_add (int fd, short events, RSDATAFCT rx_fct, void *udata, const char *name)
 {
-	Sock_t		*sdp;
-
+	Sock_t			*sdp;
+#ifdef EPOLL_USED
+	struct epoll_event	ev;
+#endif
 	if (!max_fds)
 		dds_pre_init ();
 
+	ctrc_begind (SOCK_ID, SK_ADD, &fd, sizeof (fd));
+	ctrc_contd (&events, sizeof (events));
+	ctrc_contd (name, strlen (name));
+	ctrc_endd ();
+
 	lock_take (sock_lock);
+	LIST_FOREACH (sockets, sdp)
+		if (sdp->fd == fd) {
+			sdp->events = events;
+			sdp->fct = rx_fct;
+			sdp->udata = udata;
+			sdp->name = name;
+			if (sdp->state == PendingRemove) {
+				sdp->state = ActiveSocket;
+				nfds++;
+#ifdef EPOLL_USED
+				goto epoll_add;
+#endif
+			}
+			else
+				log_printf (SOCK_ID, 0, "sock_fd_add: context already present!\r\n");
+			lock_release (sock_lock);
+			return (DDS_RETCODE_OK);
+		}
+
 	sdp = mds_pool_alloc (&mem_blocks [0]);
 	if (!sdp) {
 		lock_release (sock_lock);
@@ -606,6 +704,22 @@ int sock_fd_add (int fd, short events, RSDATAFCT rx_fct, void *udata, const char
 	sock_update_needed = 1;
 	if (!poll_active)
 		sock_poll_update ();
+
+#ifdef EPOLL_USED
+
+    epoll_add:
+
+	ev.events = events;
+	ev.data.ptr = (void *) sdp;
+	if (epoll_ctl (ep_fd, EPOLL_CTL_ADD, fd, &ev) < 0) {
+		ctrc_printd (SOCK_ID, SK_CTL_ERR, &fd, sizeof (fd));
+		perror ("epoll_ctl(ADD)");
+		lock_release (sock_lock);
+		sock_fd_remove (fd);
+		return (DDS_RETCODE_OUT_OF_RESOURCES);
+	}
+	ctrc_printd (SOCK_ID, SK_CTL_OK, &fd, sizeof (fd));
+#endif
 
 	lock_release (sock_lock);
 	return (DDS_RETCODE_OK);
@@ -635,8 +749,14 @@ void sock_fd_remove (int fd)
 	Sock_t		*sdp;
 
 	lock_take (sock_lock);
+
+	ctrc_printd (SOCK_ID, SK_REM, &fd, sizeof (fd));
+#ifdef EPOLL_USED
+	epoll_ctl (ep_fd, EPOLL_CTL_DEL, fd, (struct epoll_event *) &sdp);
+#endif
 	LIST_FOREACH (sockets, sdp)
 		if (sdp->state >= PendingAdd && sdp->fd == fd) {
+			ctrc_printd (SOCK_ID, SK_PEND_RM, &fd, sizeof (fd));
 			sdp->state = PendingRemove;
 			nfds--;
 			sock_update_needed = 1;
@@ -651,17 +771,33 @@ void sock_fd_remove (int fd)
 
 void sock_fd_event_socket (int fd, short events, int set)
 {
-	Sock_t		*sdp;
+	Sock_t			*sdp;
+#ifdef EPOLL_USED
+	struct epoll_event	ev;
+#endif
+
+	ctrc_begind (SOCK_ID, SK_EV_SOCK, &fd, sizeof (fd));
+	ctrc_contd (&events, sizeof (events));
+	ctrc_contd (&set, sizeof (set));
+	ctrc_endd ();
 
 	lock_take (sock_lock);
 	LIST_FOREACH (sockets, sdp)
 		if (sdp->state >= PendingAdd && sdp->fd == fd) {
+			ctrc_printd (SOCK_ID, SK_EVS_UPD, &fd, sizeof (fd));
 			if (set)
 				sdp->events |= events;
 			else
 				sdp->events &= ~events;
+#ifdef EPOLL_USED
+			ev.events = sdp->events;
+			ev.data.ptr = sdp;
+			if (epoll_ctl (ep_fd, EPOLL_CTL_MOD, fd, &ev) < 0)
+				perror ("epoll_ctl(MOD)");
+#else
 			if (sdp->state == ActiveSocket)
 				fds [sdp->index].events = sdp->events;
+#endif
 			break;
 		}
 	lock_release (sock_lock);
@@ -673,9 +809,14 @@ void sock_fd_fct_socket (int fd, RSDATAFCT fct)
 {
 	Sock_t		*sdp;
 
+	ctrc_begind (SOCK_ID, SK_FCT_SOCK, &fd, sizeof (fd));
+	ctrc_contd (&fct, sizeof (fct));
+	ctrc_endd ();
+
 	lock_take (sock_lock);
 	LIST_FOREACH (sockets, sdp)
 		if (sdp->state >= PendingAdd && sdp->fd == fd) {
+			ctrc_printd (SOCK_ID, SK_FCT_UPD, &fd, sizeof (fd));
 			sdp->fct = fct;
 			break;
 		}
@@ -688,9 +829,14 @@ void sock_fd_udata_socket (int fd, void *udata)
 {
 	Sock_t		*sdp;
 
+	ctrc_begind (SOCK_ID, SK_UDATA_SOCK, &fd, sizeof (fd));
+	ctrc_contd (&udata, sizeof (udata));
+	ctrc_endd ();
+
 	lock_take (sock_lock);
 	LIST_FOREACH (sockets, sdp)
 		if (sdp->state >= PendingAdd && sdp->fd == fd) {
+			ctrc_printd (SOCK_ID, SK_UDATA_UPD, &fd, sizeof (fd));
 			sdp->udata = udata;
 			break;
 		}
@@ -702,29 +848,49 @@ void sock_fd_udata_socket (int fd, void *udata)
 void sock_fd_schedule (void)
 {
 	Sock_t		*sdp;
+#ifdef EPOLL_USED
+	struct epoll_event *ep;
+#else
 	struct pollfd	*iop;
+#endif
 	unsigned	i;
 	RHDATAFCT	fct;
 	int		fd;
 	void		*user;
 	short		events;
 
+	ctrc_printd (SOCK_ID, SK_SCHEDULE, NULL, 0);
 	lock_take (sock_lock);
+#ifdef EPOLL_USED
+	for (i = 0, ep = ep_events; i < (unsigned) n_ready; i++, ep++) {
+		sdp = (Sock_t *) ep->data.ptr;
+		fd = sdp->fd;
+		events = ep->events;
+#else
 	for (i = 0, iop = fds; i < num_fds; i++, iop++)
 		if (iop->revents) {
+			fd = iop->fd;
+			events = iop->revents;
+			iop->revents = 0;
 			sdp = sds [i];
+#endif
+			ctrc_begind (SOCK_ID, SK_SCH_EV, &sdp->fd, sizeof (sdp->fd));
+			ctrc_contd (&events, sizeof (events));
+			ctrc_endd ();
+
 			if (sdp->state == PendingRemove || !sdp->fct)
 				continue;
 
 			fct = sdp->fct;
-			fd = iop->fd;
-			events = iop->revents;
 			user = sdp->udata;
-			iop->revents = 0;
 			lock_release (sock_lock);
 			(*fct) (fd, events, user);
 			lock_take (sock_lock);
 		}
+
+	poll_active = 0;
+	if (sock_update_needed)
+		sock_poll_update ();
 	lock_release (sock_lock);
 }
 
@@ -734,19 +900,23 @@ void sock_fd_schedule (void)
 void sock_fd_poll (unsigned poll_time)
 {
 	Sock_t		*sdp;
-	struct pollfd	*iop;
 	unsigned	i, n;
+#ifdef EPOLL_USED
+	struct epoll_event *ep;
+#else
+	struct pollfd	*iop;
+#endif
 
-	/* There were changes in the pollfd table, apply them now. */
-	if (sock_update_needed)
-		sock_poll_update ();
-
+	ctrc_printd (SOCK_ID, SK_POLL, &poll_time, sizeof (poll_time));
 	poll_active = 1;
-	/*printf ("*"); fflush (stdout);*/
+#ifdef EPOLL_USED
+	n_ready = epoll_wait (ep_fd, ep_events, FD_INC_SIZE, poll_time);
+#else
 	n_ready = poll (fds, num_fds, poll_time);
-	lock_release (poll_lock);
+#endif
+	ctrc_printd (SOCK_ID, SK_POLL_DONE, &n_ready, sizeof (n_ready));
 	if (n_ready < 0) {
-		log_printf (LOG_DEF_ID, 0, "sock_fd_poll: poll() returned error: %s\r\n", strerror (errno));
+		log_printf (SOCK_ID, 0, "sock_fd_poll: poll() returned error: %s\r\n", strerror (errno));
 		poll_active = 0;
 		return;
 	}
@@ -756,11 +926,19 @@ void sock_fd_poll (unsigned poll_time)
 	}
 	lock_take (sock_lock);
 	n = 0;
+#ifdef EPOLL_USED
+	for (i = 0, ep = ep_events; i < (unsigned) n_ready; i++, ep++) {
+		sdp = (Sock_t *) ep->data.ptr;
+
+#else
 	for (i = 0, iop = fds; i < num_fds; i++, iop++) {
 		if (iop->revents) {
 			sdp = sds [i];
+#endif
 			if (sdp->state == PendingRemove || !sdp->fct)
 				continue;
+
+			ctrc_printd (SOCK_ID, SK_POLL_CHK, &i, sizeof (i));
 
 			/*dbg_printf ("sock: %u %d=0x%04x->0x%04x\r\n", i, iop->fd, iop->events, iop->revents);*/
 			dds_lock_ev ();
@@ -768,7 +946,9 @@ void sock_fd_poll (unsigned poll_time)
 			dds_unlock_ev ();
 			n = 1;
 			break;
+#ifndef EPOLL_USED
 		}
+#endif
 	}
 	poll_active = n;
 	lock_release (sock_lock);
@@ -788,7 +968,9 @@ void sock_fd_dump (void)
 			continue;
 
 		dbg_printf ("%d: [%d] %s {%s} -> ", sdp->index, sdp->fd, sdp->name, dbg_poll_event_str (sdp->events));
+#ifndef EPOLL_USED
 		dbg_printf ("{%s} ", dbg_poll_event_str (fds [sdp->index].events));
+#endif
 		dbg_printf ("Rxfct=0x%lx, U=%p\r\n", (unsigned long) sdp->fct, sdp->udata);
 	}
 	lock_release (sock_lock);

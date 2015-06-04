@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -19,6 +19,7 @@
 #ifndef QEO_API_H_
 #define QEO_API_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <qeo/error.h>
@@ -329,6 +330,24 @@ qeo_retcode_t qeo_state_reader_foreach(const qeo_state_reader_t *reader,
  */
 qeo_retcode_t qeo_state_reader_policy_update(const qeo_state_reader_t *reader);
 
+/**
+ * Enable or disable getting notifications of data arriving on a reader when
+ * Qeo has been suspended.
+ *
+ * \param[in] reader The reader for which notifications should be en/disabled.
+ * \param[in] on     Turn notifications on (\c true) or off (\c false).
+ *
+ * \retval ::QEO_OK on success
+ * \retval ::QEO_EINVAL in case of invalid arguments
+ * \retval ::QEO_ENOMEM when out of resources
+ *
+ * \see ::qeo_bgns_register
+ * \see ::qeo_bgns_suspend
+ * \see ::qeo_bgns_resume
+ */
+qeo_retcode_t qeo_state_reader_bgns_notify(qeo_state_reader_t *reader,
+                                           bool on);
+
 /// \}
 
 /* ===[ State change reader ]================================================ */
@@ -434,6 +453,12 @@ void qeo_state_change_reader_close(qeo_state_change_reader_t *reader);
  */
 qeo_retcode_t qeo_state_change_reader_policy_update(const qeo_state_change_reader_t *reader);
 
+/**
+ * \copydoc ::qeo_state_reader_bgns_notify
+ */
+qeo_retcode_t qeo_state_change_reader_bgns_notify(qeo_state_change_reader_t *reader,
+                                                  bool on);
+
 /// \}
 
 /* ===[ State writer ]======================================================= */
@@ -532,7 +557,7 @@ qeo_retcode_t qeo_state_writer_policy_update(const qeo_state_writer_t *writer);
  * \param[in] enum_type The enumeration type to be used for conversion.
  * \param[in] value     The enumeration constant value to be converted.
  * \param[out] name     A preallocated buffer in which the name will be copied.
- * \param[in] len       The size of the buffer.
+ * \param[in] sz        The size of the buffer.
  *
  * \retval ::QEO_OK on success
  * \retval ::QEO_EINVAL when the input arguments are invalid or the value is

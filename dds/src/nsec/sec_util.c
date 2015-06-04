@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -255,7 +255,7 @@ DDS_LongLongSeq *DDS_LongLongSeq__alloc (void)
 {
 	DDS_LongLongSeq *s;
 
-	s = mm_fcts.alloc_ (sizeof (DDS_LongLongSeq));
+	s = Alloc (sizeof (DDS_LongLongSeq));
 	if (!s)
 		return (NULL);
 
@@ -279,7 +279,7 @@ void DDS_LongLongSeq__free (DDS_LongLongSeq *s)
 		return;
 
 	DDS_LongLongSeq__clear (s);
-	mm_fcts.free_ (s);
+	Free (s);
 }
 
 DDS_DataHolder *DDS_DataHolder__alloc (const char *class_id)

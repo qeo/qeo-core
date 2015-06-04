@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="4514" systemVersion="13C64" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" initialViewController="Ciw-sv-boU">
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="3747"/>
+    </dependencies>
+    <scenes>
+        <!--Registration View Controller-->
+        <scene sceneID="75E-pO-yad">
+            <objects>
+                <viewController storyboardIdentifier="RegistationView" id="Ciw-sv-boU" customClass="QEORegistrationViewController" sceneMemberID="viewController">
+                    <layoutGuides>
+                        <viewControllerLayoutGuide type="top" id="mok-Ed-vgB"/>
+                        <viewControllerLayoutGuide type="bottom" id="fyX-xJ-Fsx"/>
+                    </layoutGuides>
+                    <view key="view" contentMode="scaleToFill" id="Itf-hK-4eh">
+                        <rect key="frame" x="0.0" y="0.0" width="320" height="568"/>
+                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                        <subviews>
+                            <label opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Registration" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="GnF-U5-Ady">
+                                <rect key="frame" x="101" y="20" width="119" height="21"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="119" id="yAs-oT-taa"/>
+                                </constraints>
+                                <fontDescription key="fontDescription" type="system" pointSize="17"/>
+                                <color key="textColor" cocoaTouchSystemColor="darkTextColor"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <containerView contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="zdA-SZ-dt1">
+                                <rect key="frame" x="0.0" y="48" width="320" height="520"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="calibratedWhite"/>
+                                <connections>
+                                    <segue destination="O92-vp-dpe" kind="embed" id="TTT-KZ-egn"/>
+                                </connections>
+                            </containerView>
+                        </subviews>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="calibratedWhite"/>
+                        <constraints>
+                            <constraint firstItem="zdA-SZ-dt1" firstAttribute="leading" secondItem="Itf-hK-4eh" secondAttribute="leading" id="BAI-ON-KZx"/>
+                            <constraint firstItem="GnF-U5-Ady" firstAttribute="top" secondItem="mok-Ed-vgB" secondAttribute="bottom" id="PnP-m0-4MV"/>
+                            <constraint firstItem="fyX-xJ-Fsx" firstAttribute="top" secondItem="zdA-SZ-dt1" secondAttribute="bottom" id="QVm-cV-qig"/>
+                            <constraint firstItem="GnF-U5-Ady" firstAttribute="centerX" secondItem="zdA-SZ-dt1" secondAttribute="centerX" id="djj-wS-EPH"/>
+                            <constraint firstAttribute="trailing" secondItem="zdA-SZ-dt1" secondAttribute="trailing" id="glS-1t-ZID"/>
+                            <constraint firstItem="zdA-SZ-dt1" firstAttribute="top" secondItem="GnF-U5-Ady" secondAttribute="bottom" constant="7" id="qXb-cJ-qzB"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="Bil-9g-VJb" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="-265" y="225"/>
+        </scene>
+        <!--Registration View Controller-->
+        <scene sceneID="XsS-4f-os0">
+            <objects>
+                <viewController id="ai2-T0-nr2" customClass="QEOOTCRegistrationViewController" sceneMemberID="viewController">
+                    <layoutGuides>
+                        <viewControllerLayoutGuide type="top" id="kdH-IQ-mBn"/>
+                        <viewControllerLayoutGuide type="bottom" id="yTC-Z1-7Gn"/>
+                    </layoutGuides>
+                    <view key="view" contentMode="scaleToFill" id="Leg-pS-VMa">
+                        <rect key="frame" x="0.0" y="0.0" width="320" height="520"/>
+                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                        <subviews>
+                            <label opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="OTC:" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="NjT-qP-3oS">
+                                <rect key="frame" x="20" y="29" width="40" height="21"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="17"/>
+                                <color key="textColor" cocoaTouchSystemColor="darkTextColor"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <label opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="URL:" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="MsJ-V6-4dJ">
+                                <rect key="frame" x="20" y="104" width="39" height="21"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="17"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="mIL-Os-zWn">
+                                <rect key="frame" x="20" y="193" width="54" height="30"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <state key="normal" title="Validate">
+                                    <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
+                                </state>
+                                <connections>
+                                    <action selector="validationPressed:" destination="ai2-T0-nr2" eventType="touchUpInside" id="SNO-69-dBB"/>
+                                </connections>
+                            </button>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="2XQ-v1-q0U">
+                                <rect key="frame" x="252" y="193" width="48" height="30"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <state key="normal" title="Cancel">
+                                    <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
+                                </state>
+                                <connections>
+                                    <action selector="cancelPressed:" destination="ai2-T0-nr2" eventType="touchUpInside" id="uTy-Xt-dqN"/>
+                                </connections>
+                            </button>
+                            <textField opaque="NO" clipsSubviews="YES" contentMode="scaleToFill" contentHorizontalAlignment="left" contentVerticalAlignment="center" borderStyle="roundedRect" minimumFontSize="17" clearButtonMode="whileEditing" translatesAutoresizingMaskIntoConstraints="NO" id="IBn-9Z-QSV">
+                                <rect key="frame" x="20" y="58" width="280" height="30"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="14"/>
+                                <textInputTraits key="textInputTraits" autocorrectionType="no" keyboardType="numberPad" returnKeyType="send" enablesReturnKeyAutomatically="YES"/>
+                            </textField>
+                            <textField opaque="NO" clipsSubviews="YES" contentMode="scaleToFill" contentHorizontalAlignment="left" contentVerticalAlignment="center" borderStyle="roundedRect" minimumFontSize="17" clearButtonMode="whileEditing" translatesAutoresizingMaskIntoConstraints="NO" id="Gae-IO-5Qb">
+                                <rect key="frame" x="20" y="133" width="280" height="30"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="14"/>
+                                <textInputTraits key="textInputTraits" autocorrectionType="no" returnKeyType="send" enablesReturnKeyAutomatically="YES"/>
+                            </textField>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="UaY-s1-trM">
+                                <rect key="frame" x="95" y="315" width="131" height="30"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <state key="normal" title="Scan QR Code">
+                                    <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
+                                </state>
+                                <connections>
+                                    <action selector="switchToQRCodeRegistration:" destination="ai2-T0-nr2" eventType="touchUpInside" id="yEI-hk-QG9"/>
+                                </connections>
+                            </button>
+                        </subviews>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="calibratedWhite"/>
+                        <constraints>
+                            <constraint firstAttribute="trailing" secondItem="2XQ-v1-q0U" secondAttribute="trailing" constant="20" id="1Vb-gM-WOB"/>
+                            <constraint firstItem="MsJ-V6-4dJ" firstAttribute="leading" secondItem="Leg-pS-VMa" secondAttribute="leading" constant="20" id="Ar3-iW-4O4"/>
+                            <constraint firstAttribute="trailing" secondItem="Gae-IO-5Qb" secondAttribute="trailing" constant="20" id="DfJ-g1-iox"/>
+                            <constraint firstItem="MsJ-V6-4dJ" firstAttribute="top" secondItem="IBn-9Z-QSV" secondAttribute="bottom" constant="16" id="EWP-MK-vNh"/>
+                            <constraint firstItem="UaY-s1-trM" firstAttribute="leading" secondItem="Leg-pS-VMa" secondAttribute="leading" constant="95" id="Ewi-5C-c18"/>
+                            <constraint firstItem="mIL-Os-zWn" firstAttribute="leading" secondItem="Leg-pS-VMa" secondAttribute="leading" constant="20" id="HJf-lr-onr"/>
+                            <constraint firstItem="yTC-Z1-7Gn" firstAttribute="top" secondItem="UaY-s1-trM" secondAttribute="bottom" constant="175" id="IXV-gO-oab"/>
+                            <constraint firstItem="mIL-Os-zWn" firstAttribute="top" secondItem="Gae-IO-5Qb" secondAttribute="bottom" constant="30" id="J4O-pd-Lzz"/>
+                            <constraint firstAttribute="trailing" secondItem="IBn-9Z-QSV" secondAttribute="trailing" constant="20" id="WTy-71-AdL"/>
+                            <constraint firstItem="Gae-IO-5Qb" firstAttribute="leading" secondItem="Leg-pS-VMa" secondAttribute="leading" constant="20" id="bbp-Mz-cVO"/>
+                            <constraint firstItem="IBn-9Z-QSV" firstAttribute="top" secondItem="NjT-qP-3oS" secondAttribute="bottom" constant="8" id="e1o-bf-dIE"/>
+                            <constraint firstItem="UaY-s1-trM" firstAttribute="centerX" secondItem="Gae-IO-5Qb" secondAttribute="centerX" id="fQ9-Dq-T0c"/>
+                            <constraint firstItem="NjT-qP-3oS" firstAttribute="leading" secondItem="Leg-pS-VMa" secondAttribute="leading" constant="20" id="kSL-Ew-qur"/>
+                            <constraint firstItem="IBn-9Z-QSV" firstAttribute="leading" secondItem="Leg-pS-VMa" secondAttribute="leading" constant="20" id="kSw-hM-ZQd"/>
+                            <constraint firstItem="2XQ-v1-q0U" firstAttribute="top" secondItem="Gae-IO-5Qb" secondAttribute="bottom" constant="30" id="nEk-ka-enH"/>
+                            <constraint firstItem="Gae-IO-5Qb" firstAttribute="top" secondItem="MsJ-V6-4dJ" secondAttribute="bottom" constant="8" id="nVp-09-vSg"/>
+                            <constraint firstItem="NjT-qP-3oS" firstAttribute="top" secondItem="kdH-IQ-mBn" secondAttribute="bottom" constant="29" id="qch-XQ-PBY"/>
+                        </constraints>
+                    </view>
+                    <freeformSimulatedSizeMetrics key="simulatedDestinationMetrics"/>
+                    <connections>
+                        <outlet property="otc" destination="IBn-9Z-QSV" id="eLg-YX-wkK"/>
+                        <outlet property="switchToQRCodeButton" destination="UaY-s1-trM" id="b2e-27-u8A"/>
+                        <outlet property="url" destination="Gae-IO-5Qb" id="P5B-MN-Zdd"/>
+                        <outlet property="validateButton" destination="mIL-Os-zWn" id="YbX-gK-9ig"/>
+                    </connections>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="bhc-DI-3dC" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="724" y="-380"/>
+        </scene>
+        <!--Container View Controller-->
+        <scene sceneID="LFW-0a-pBE">
+            <objects>
+                <viewController automaticallyAdjustsScrollViewInsets="NO" id="O92-vp-dpe" customClass="QEOContainerViewController" sceneMemberID="viewController">
+                    <layoutGuides>
+                        <viewControllerLayoutGuide type="top" id="VqM-ol-9dd"/>
+                        <viewControllerLayoutGuide type="bottom" id="fbf-my-uHP"/>
+                    </layoutGuides>
+                    <view key="view" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" id="HLy-vB-oiA">
+                        <rect key="frame" x="0.0" y="0.0" width="320" height="520"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                    </view>
+                    <toolbarItems/>
+                    <freeformSimulatedSizeMetrics key="simulatedDestinationMetrics"/>
+                    <connections>
+                        <segue destination="ai2-T0-nr2" kind="custom" identifier="OTCSegue" customClass="EmptySegue" id="Zyj-nJ-Kd6"/>
+                        <segue destination="ZzU-8g-9wP" kind="custom" identifier="QRCodeSegue" customClass="EmptySegue" id="Kek-Eo-gjW"/>
+                        <segue destination="4nw-Jb-2tL" kind="custom" identifier="SpinnerSegue" customClass="EmptySegue" id="luO-x7-LEQ"/>
+                    </connections>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="UaM-ON-SE4" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="180" y="249"/>
+        </scene>
+        <!--Spinner View Controller-->
+        <scene sceneID="N2g-OU-BdG">
+            <objects>
+                <viewController id="4nw-Jb-2tL" customClass="QEOSpinnerViewController" sceneMemberID="viewController">
+                    <layoutGuides>
+                        <viewControllerLayoutGuide type="top" id="LvZ-1y-dUD"/>
+                        <viewControllerLayoutGuide type="bottom" id="Av7-fd-gtr"/>
+                    </layoutGuides>
+                    <view key="view" contentMode="scaleToFill" id="dmR-Zc-Nph">
+                        <rect key="frame" x="0.0" y="0.0" width="320" height="520"/>
+                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                        <subviews>
+                            <view userInteractionEnabled="NO" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="W0U-62-uaP">
+                                <rect key="frame" x="113" y="213" width="94" height="94"/>
+                                <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                                <subviews>
+                                    <activityIndicatorView opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" animating="YES" style="whiteLarge" translatesAutoresizingMaskIntoConstraints="NO" id="OFu-nl-KwY">
+                                        <rect key="frame" x="29" y="28" width="37" height="37"/>
+                                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                        <constraints>
+                                            <constraint firstAttribute="width" constant="37" id="kWY-hm-B7E"/>
+                                            <constraint firstAttribute="height" constant="37" id="s8T-wM-Cfx"/>
+                                        </constraints>
+                                    </activityIndicatorView>
+                                </subviews>
+                                <color key="backgroundColor" white="0.0" alpha="1" colorSpace="calibratedWhite"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="94" id="9Rq-5d-eqF"/>
+                                    <constraint firstAttribute="height" constant="94" id="LBA-TB-Bxk"/>
+                                    <constraint firstItem="OFu-nl-KwY" firstAttribute="top" secondItem="W0U-62-uaP" secondAttribute="top" constant="28" id="Pfm-ES-8Cf"/>
+                                    <constraint firstItem="OFu-nl-KwY" firstAttribute="centerX" secondItem="W0U-62-uaP" secondAttribute="centerX" id="eEF-L9-hbb"/>
+                                </constraints>
+                            </view>
+                        </subviews>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                        <constraints>
+                            <constraint firstItem="W0U-62-uaP" firstAttribute="centerX" secondItem="dmR-Zc-Nph" secondAttribute="centerX" id="oru-ya-HBJ"/>
+                            <constraint firstItem="W0U-62-uaP" firstAttribute="centerY" secondItem="dmR-Zc-Nph" secondAttribute="centerY" id="uQf-qn-eL7"/>
+                        </constraints>
+                    </view>
+                    <freeformSimulatedSizeMetrics key="simulatedDestinationMetrics"/>
+                    <connections>
+                        <outlet property="spinnerBackground" destination="W0U-62-uaP" id="R5k-Nn-xx4"/>
+                    </connections>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="qZr-UQ-zTc" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="732" y="891"/>
+        </scene>
+        <!--Code Registration View Controller-->
+        <scene sceneID="uLZ-qC-gGG">
+            <objects>
+                <viewController id="ZzU-8g-9wP" customClass="QEOQRCodeRegistrationViewController" sceneMemberID="viewController">
+                    <layoutGuides>
+                        <viewControllerLayoutGuide type="top" id="G9f-SF-dXc"/>
+                        <viewControllerLayoutGuide type="bottom" id="aHc-tv-87Z"/>
+                    </layoutGuides>
+                    <view key="view" contentMode="scaleToFill" id="bIw-By-LKa">
+                        <rect key="frame" x="0.0" y="0.0" width="320" height="520"/>
+                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                        <subviews>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="N1S-Xp-FaH">
+                                <rect key="frame" x="111" y="457" width="114" height="30"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <constraints>
+                                    <constraint firstAttribute="height" constant="30" id="21H-Qn-rjt"/>
+                                    <constraint firstAttribute="width" constant="114" id="dXm-Zl-2lR"/>
+                                </constraints>
+                                <state key="normal" title="Switch to OTC">
+                                    <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
+                                </state>
+                                <connections>
+                                    <action selector="switchToOTCRegistration:" destination="ZzU-8g-9wP" eventType="touchUpInside" id="CHx-sh-Cwh"/>
+                                </connections>
+                            </button>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="My6-3v-Nnl">
+                                <rect key="frame" x="136" y="412" width="48" height="30"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <state key="normal" title="Cancel">
+                                    <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
+                                </state>
+                                <connections>
+                                    <action selector="cancelRegistration:" destination="ZzU-8g-9wP" eventType="touchUpInside" id="nXy-FU-dvr"/>
+                                </connections>
+                            </button>
+                            <label opaque="NO" clipsSubviews="YES" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" verticalCompressionResistancePriority="749" text="Not a valid QR Code" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="hja-VP-QLk">
+                                <rect key="frame" x="73" y="367" width="174" height="21"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="19"/>
+                                <color key="textColor" red="1" green="0.0" blue="0.0" alpha="1" colorSpace="calibratedRGB"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="QdH-ew-BJu">
+                                <rect key="frame" x="20" y="0.0" width="280" height="350"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                                <color key="backgroundColor" white="0.0" alpha="1" colorSpace="calibratedWhite"/>
+                            </view>
+                        </subviews>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="custom" customColorSpace="calibratedWhite"/>
+                        <constraints>
+                            <constraint firstItem="QdH-ew-BJu" firstAttribute="leading" secondItem="bIw-By-LKa" secondAttribute="leading" constant="20" symbolic="YES" id="49H-87-lP3"/>
+                            <constraint firstItem="QdH-ew-BJu" firstAttribute="centerX" secondItem="My6-3v-Nnl" secondAttribute="centerX" id="AZO-WU-7jf"/>
+                            <constraint firstItem="N1S-Xp-FaH" firstAttribute="top" secondItem="My6-3v-Nnl" secondAttribute="bottom" constant="15" id="FK9-9R-4eD"/>
+                            <constraint firstItem="My6-3v-Nnl" firstAttribute="top" secondItem="hja-VP-QLk" secondAttribute="bottom" constant="24" id="Ujb-j3-ZEi"/>
+                            <constraint firstItem="QdH-ew-BJu" firstAttribute="centerX" secondItem="hja-VP-QLk" secondAttribute="centerX" id="XuU-Ih-U5K"/>
+                            <constraint firstItem="N1S-Xp-FaH" firstAttribute="top" secondItem="My6-3v-Nnl" secondAttribute="bottom" constant="15" id="a6p-hM-Vzh"/>
+                            <constraint firstAttribute="trailing" secondItem="N1S-Xp-FaH" secondAttribute="trailing" constant="95" id="cMV-z2-sAo"/>
+                            <constraint firstAttribute="bottom" secondItem="QdH-ew-BJu" secondAttribute="bottom" constant="170" id="dJB-vx-Pvw"/>
+                            <constraint firstItem="hja-VP-QLk" firstAttribute="top" secondItem="QdH-ew-BJu" secondAttribute="bottom" constant="17" id="fhz-gU-y0a"/>
+                            <constraint firstItem="aHc-tv-87Z" firstAttribute="top" secondItem="N1S-Xp-FaH" secondAttribute="bottom" constant="33" id="hue-l8-leh"/>
+                            <constraint firstItem="QdH-ew-BJu" firstAttribute="top" secondItem="G9f-SF-dXc" secondAttribute="bottom" id="qNV-WX-Bgk"/>
+                            <constraint firstAttribute="trailing" secondItem="QdH-ew-BJu" secondAttribute="trailing" constant="20" symbolic="YES" id="tfE-6V-0Ed"/>
+                        </constraints>
+                    </view>
+                    <freeformSimulatedSizeMetrics key="simulatedDestinationMetrics"/>
+                    <connections>
+                        <outlet property="cancelButton" destination="My6-3v-Nnl" id="dFi-ea-sux"/>
+                        <outlet property="invalidQRCodeLabel" destination="hja-VP-QLk" id="pMa-Us-lUc"/>
+                        <outlet property="preview" destination="QdH-ew-BJu" id="45u-4N-vlB"/>
+                        <outlet property="switchToOTCButton" destination="N1S-Xp-FaH" id="542-9d-pFq"/>
+                    </connections>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="Leb-EQ-OZm" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="732" y="249"/>
+        </scene>
+    </scenes>
+    <simulatedMetricsContainer key="defaultSimulatedMetrics">
+        <simulatedStatusBarMetrics key="statusBar"/>
+        <simulatedOrientationMetrics key="orientation"/>
+        <simulatedScreenMetrics key="destination" type="retina4"/>
+    </simulatedMetricsContainer>
+</document>

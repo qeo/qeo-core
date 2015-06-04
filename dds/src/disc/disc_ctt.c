@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -26,6 +26,7 @@
 #endif
 #include "sys.h"
 #include "log.h"
+#include "prof.h"
 #include "error.h"
 #include "dds.h"
 #include "dcps.h"
@@ -37,6 +38,7 @@
 #include "sec_auth.h"
 #include "sec_access.h"
 #include "sec_crypto.h"
+#include "disc_priv.h"
 #include "disc_ep.h"
 #include "disc_psmp.h"
 #include "disc_ctt.h"
@@ -170,6 +172,8 @@ static void ctt_participant_crypto_tokens (
 {
 	Participant_t	*pp;
 
+	prof_start (disc_ctt_ptok);
+
 	pp = participant_lookup (dp, (GuidPrefix_t *) info->message_identity.source_guid);
 	if (!pp)
 		return;
@@ -177,6 +181,8 @@ static void ctt_participant_crypto_tokens (
 	sec_set_remote_participant_tokens (dp->participant.p_crypto,
 					   pp->p_crypto,
 					   &info->message_data);
+
+	prof_stop (disc_ctt_ptok, 1);
 }
 
 /* ctt_data_writer_crypto_tokens -- Handle DataWriter Crypto Tokens. */
@@ -189,6 +195,8 @@ static void ctt_data_writer_crypto_tokens (
 	Endpoint_t		*lep, *rep;
 	EntityId_t		*eidp;
 	DataWriterCrypto_t 	crypto;
+
+	prof_start (disc_ctt_wtok);
 
 	pp = participant_lookup (dp, (GuidPrefix_t *) info->source_endpoint_key);
 	if (!pp)
@@ -215,11 +223,12 @@ static void ctt_data_writer_crypto_tokens (
 						       pp->p_crypto,
 						       eidp,
 						       &info->message_data);
-		return;
 	}
-	sec_set_remote_datawriter_tokens (((Reader_t *) lep)->r_crypto,
-					  crypto,
-					  &info->message_data);
+	else
+		sec_set_remote_datawriter_tokens (((Reader_t *) lep)->r_crypto,
+						  crypto,
+						  &info->message_data);
+	prof_stop (disc_ctt_wtok, 1);
 }
 
 /* ctt_data_reader_crypto_tokens -- Handle DataReader Crypto Tokens. */
@@ -232,6 +241,8 @@ static void ctt_data_reader_crypto_tokens (
 	Endpoint_t		*lep, *rep;
 	EntityId_t		*eidp;
 	DataReaderCrypto_t 	crypto;
+
+	prof_start (disc_ctt_rtok);
 
 	pp = participant_lookup (dp, (GuidPrefix_t *) info->source_endpoint_key);
 	if (!pp)
@@ -258,11 +269,12 @@ static void ctt_data_reader_crypto_tokens (
 						       pp->p_crypto,
 						       eidp,
 						       &info->message_data);
-		return;
 	}
-	sec_set_remote_datareader_tokens (((Writer_t *) lep)->w_crypto,
-					  crypto,
-					  &info->message_data);
+	else
+		sec_set_remote_datareader_tokens (((Writer_t *) lep)->w_crypto,
+						  crypto,
+						  &info->message_data);
+	prof_stop (disc_ctt_rtok, 1);
 }
 
 /* ctt_event -- New participant to participant volatile secure writer message

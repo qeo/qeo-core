@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -182,7 +182,12 @@ int rtps_writer_unregister (Writer_t       *w,
 
 int rtps_stateless_resend (Writer_t *w);
 
-/* Resend changes on a stateless writer. */
+/* Resend all changes on a stateless writer. */
+
+int rtps_stateless_send (Writer_t *w, Participant_t *p, int bcast);
+
+/* Send queued changes in a different mode, i.e. unicast or broadcast, on a
+   stateless writer. */
 
 int rtps_stateless_update (Writer_t *w, GuidPrefix_t *prefix);
 
@@ -319,6 +324,10 @@ void rtps_rx_error (RcvError_t e, unsigned char *cp, size_t len);
 
 /* Signal an RTPS reception error. */
 
+void rtps_update_kinds (Participant_t *pp);
+
+/* Due to locator changes, update the set of locator kinds. */
+
 void rtps_relay_add (Participant_t *pp);
 
 /* Add a local relay to the set of local relays in a domain.
@@ -349,6 +358,18 @@ unsigned rtps_peer_reader_crypto_get (Writer_t *rp, DiscoveredReader_t *dw);
 unsigned rtps_peer_writer_crypto_get (Reader_t *rp, DiscoveredWriter_t *dw);
 
 /* Get a peer writer crypto handle. */
+
+void rtps_participant_init_reply_locators (Participant_t *p);
+
+/* Initialize the handshake reply locators of a discovered participant. */
+
+void rtps_participant_reset_reply_locators (Participant_t *p);
+
+/* Update the handshake reply locators of a discovered participant. */
+
+void rtps_participant_locality_update (Participant_t *p);
+
+/* Locality attribute of a participant changed. */
 
 
 /* 6. Debug functions.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -67,15 +67,15 @@ Type *tsm_create_struct_union (TypeLib                    *lp,
 			       const DDS_TypeSupport_meta **tsm,
 			       unsigned                   *iflags)
 {
-	int				i, nelem, nested, key, mutable;
+	int				i, nelem, nested, key, mutable, index;
 	Type				*tp, *tp2;
 	const DDS_TypeSupport_meta	*stsm = *tsm, *tsm_ori;
 	CDR_TypeCode_t			tc_ori;
-	unsigned			mflags, flags = XTF_EXTENSIBLE;
+	unsigned			mflags, id, flags = XTF_EXTENSIBLE;
 	DDS_ReturnCode_t		ret;
 	static unsigned			anonymous_count = 0;
 	int32_t				member_id, union_label;
-	char				buffer [32];
+	char				*buffer;
 	const char			*name;
 
 	nelem = stsm->nelem;
@@ -84,15 +84,22 @@ Type *tsm_create_struct_union (TypeLib                    *lp,
 
 	nested = (*iflags & IF_TOPLEVEL) == 0;
 	if (nested) {
-		snprintf (buffer, sizeof (buffer), "__%s_%u_%s",
+		name = (stsm->name) ? stsm->name : "_";
+		buffer = xmalloc (strlen (name) + 20);
+		if (!buffer) {
+			xt_lib_release (lp);
+			return (NULL);
+		}
+		sprintf (buffer, "__%s_%u_%s",
 			  (stsm->tc == CDR_TYPECODE_UNION) ? "union" : "struct",
-						anonymous_count++, stsm->name);
+						anonymous_count++, name);
 		name = buffer;
 	}
-	else
+	else {
+		buffer = NULL;
 		name = stsm->name;
-
-	*iflags &= ~IF_TOPLEVEL;
+		*iflags &= ~IF_TOPLEVEL;
+	}
 	if (stsm->tc == CDR_TYPECODE_UNION) {
 		tp = xt_union_type_create (lp,
 					   name,
@@ -113,6 +120,8 @@ Type *tsm_create_struct_union (TypeLib                    *lp,
 		}
 		member_id = 0;
 	}
+	if (buffer)
+		xfree (buffer);
 	mutable = stsm->flags & TSMFLAG_MUTABLE;
 	for (i = 0; i < nelem; i++) {
 		(*tsm)++;
@@ -137,9 +146,21 @@ Type *tsm_create_struct_union (TypeLib                    *lp,
 				xt_type_delete (tp);
 				return (NULL);
 			}
-			*tsm = tsm_ori->tsm;
+			index = xt_lib_lookup (lp, tsm_ori->tsm->name);
+			if (index < 0) {
+				*tsm = tsm_ori->tsm;
+				*iflags |= IF_TOPLEVEL;
+				tp2 = tsm_create_type (lp, tsm, iflags);
+			}
+			else {
+				id = lp->types [index];
+				tp2 = xt_type_ptr (lp->scope, id);
+				xt_type_ref (tp2);
+			}
 		}
-		tp2 = tsm_create_type (lp, tsm, iflags);
+		else
+			tp2 = tsm_create_type (lp, tsm, iflags);
+
 		if (!tp2) {
 			xt_type_delete (tp);
 			return (NULL);
@@ -201,28 +222,49 @@ Type *tsm_create_struct_union (TypeLib                    *lp,
 }
 
 static Type *tsm_create_enum (TypeLib                    *lp,
-			      const DDS_TypeSupport_meta **tsm)
+			      const DDS_TypeSupport_meta **tsm,
+			      unsigned                   *iflags)
 {
-	int			i, nelem = (*tsm)->nelem;
+	int			i, nested, nelem;
 	Type			*tp;
 	DDS_ReturnCode_t	ret;
 	static unsigned		anonymous_count = 0;
-	char			buffer [32];
-	unsigned		flags = XTF_NESTED;
+	unsigned		flags = 0;
+	char			*buffer;
+	const char		*name;
 
-	if (!nelem) {
-		xt_lib_release (lp);
+	nelem = (*tsm)->nelem;
+	if (!nelem)
 		return (NULL);
+
+	nested = (*iflags & IF_TOPLEVEL) == 0;
+	if (nested) {
+		name = ((*tsm)->name) ? (*tsm)->name : "_";
+		buffer = xmalloc (strlen (name) + 20);
+		if (!buffer) {
+			xt_lib_release (lp);
+			return (NULL);
+		}
+		sprintf (buffer, "__enum_%u_%s",
+					anonymous_count++, name);
+		name = buffer;
 	}
-	snprintf (buffer, sizeof (buffer), "__enum_%u_%s",
-					anonymous_count++, (*tsm)->name);
-	tp = xt_enum_type_create (lp, buffer, 32, nelem);
+	else {
+		buffer = NULL;
+		name = (*tsm)->name;
+		*iflags &= ~IF_TOPLEVEL;
+	}
+	tp = xt_enum_type_create (lp, name, 32, nelem);
 	if (!tp) {
 		xt_lib_release (lp);
 		return (NULL);
 	}
+	if (buffer)
+		xfree (buffer);
 	if (((*tsm)->flags & TSMFLAG_MUTABLE) != 0)
 		flags |= XTF_MUTABLE;
+	if (nested)
+		flags |= XTF_NESTED;
 	for (i = 0; i < nelem; i++) {
 		(*tsm)++;
 
@@ -438,7 +480,7 @@ static Type *tsm_create_type (TypeLib                    *lp,
 
 		/* Enumeration types are translated to X-Types enums now. */
 		case CDR_TYPECODE_ENUM:
-			tp = tsm_create_enum (lp, tsm);
+			tp = tsm_create_enum (lp, tsm, iflags);
 			break;
 
 		/* Sequences: */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -21,6 +21,11 @@
 
 #include <qeo/types.h>
 #include "qeo_types.h"
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
 
 typedef struct {
@@ -53,6 +58,9 @@ typedef struct {
 } org_qeo_dynamic_qdm_test_TypeWithStructs_t;
 extern const DDS_TypeSupport_meta org_qeo_dynamic_qdm_test_TypeWithStructs_type[];
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* QDM_TYPEWITHSTRUCTS_H_ */
 

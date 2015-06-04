@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -272,6 +272,32 @@ void *sl_search (const Skiplist_t *l, const void *data, LISTEQF eqf)
 	return (DATA_PTR (q, l->data_size));
 }
 
+/* sl_next -- Search the first element with higher key data. */
+
+void *sl_next (const Skiplist_t *l, const void *data, LISTEQF eqf)
+{
+	int		k, res = 1;
+	SLNode_t	*p, *q;
+
+	if (!l->length)
+		return (NULL);
+
+	p = (SLNode_t *) &l->header;
+	k = l->level;
+	do {
+		while (q = p->next [k],
+		       q && (res = eqf (DATA_PTR (q, l->data_size), data)) < 0)
+			p = q;
+	}
+	while (--k >= 0);
+	if (q && !res)
+		q = q->next [0];
+	if (!q)
+		return (NULL);
+
+	return (DATA_PTR (q, l->data_size));
+}
+
 #ifdef _WIN32
 #define INLINE
 #else
@@ -456,7 +482,7 @@ void sl_walk (Skiplist_t *lp, VISITF fct, void *arg)
 
 /* Returns the first element in the list or NULL if empty. */
 
-void *sl_head (Skiplist_t *lp)
+void *sl_head (const Skiplist_t *lp)
 {
 	return (lp->length ? DATA_PTR (lp->header [0], lp->data_size) : NULL);
 }

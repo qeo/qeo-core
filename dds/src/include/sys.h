@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -235,7 +235,8 @@ const char *sys_scope_str (Scope_t scope);
 unsigned sys_own_ipv4_addr (unsigned char *addr,
 			    size_t        max,
 			    Scope_t       min_scope,
-			    Scope_t       max_scope);
+			    Scope_t       max_scope,
+			    int           log);
 
 /* Get a list of local IPv4 addresses in addr [].  The total size of the address
    array (in bytes) should be specified in max.  The function returns the number
@@ -255,7 +256,8 @@ Scope_t sys_ipv6_scope (const unsigned char *addr);
 unsigned sys_own_ipv6_addr (unsigned char *addr,
 			    size_t        max,
 			    Scope_t       min_scope,
-			    Scope_t       max_scope);
+			    Scope_t       max_scope,
+			    int           log);
 
 /* Get a list of local IPv6 addresses in addr [].  The total size of the address
    array (in bytes) should be specified in max.  The function returns the number
@@ -294,6 +296,8 @@ Ticks_t sys_getticks (void);
 
 /* Get the difference between two tick values as a number of ticks. */
 
+#define	FRACTS_PER_TICK	(~0UL / TMR_UNIT_MS)
+
 #ifndef FTIME_STRUCT
 
 typedef int64_t FTime_t;	/* Fractionalized time can be used directly in
@@ -301,7 +305,7 @@ typedef int64_t FTime_t;	/* Fractionalized time can be used directly in
 
 #define FTIME_SET(ft,s,ns) (ft) = ((int64_t) (s) << 32) | (((int64_t) (ns) << 32) / 1000000000)
 #define	FTIME_SETF(ft,s,f) (ft) = ((int64_t) (s) << 32) | (f)
-#define	FTIME_SETT(ft,t)   (ft) = (((int64_t) (t) / TICKS_PER_SEC) << 32) | (((uint64_t) TMR_UNIT_MS << 32) / 1000)
+#define FTIME_SETT(ft,t)   (ft) = (((int64_t) (t) / TICKS_PER_SEC) << 32) | (((uint64_t) (t) % TICKS_PER_SEC) * FRACTS_PER_TICK)
 #define	FTIME_CLR(ft)	   (ft) = 0ULL;
 
 #define FTIME_SEC(t)	(int32_t) ((t) >> 32)
@@ -314,9 +318,9 @@ typedef int64_t FTime_t;	/* Fractionalized time can be used directly in
 #define	FTIME_EQ(t1,t2)	(t1) == (t2)
 #define	FTIME_GT(t1,t2)	(t1) > (t2)
 #define	FTIME_ZERO(t)	(!t)
-#define	FTIME_TICKS(t)	(Ticks_t) ((t) / (0x100000000ULL / TICKS_PER_SEC))
+#define FTIME_TICKS(t)	(Ticks_t) ((t) / (0x100000000ULL / TICKS_PER_SEC))
 
-#else /* FTIME_STRUCT		** Fractionalized time, not usable directly. */
+#else /* FTIME_STRUCT		** Fractionalized time (NTP), not usable directly. */
 
 typedef struct ftime_st {
 	int32_t		seconds;	/* Time in seconds. */
@@ -324,8 +328,7 @@ typedef struct ftime_st {
 } FTime_t;
 
 #define FTIME_SET(ft,s,ns) (ft).seconds = (s); (ft).fraction = ((uint64_t) (ns) << 32) / 1000000000
-#define	FTIME_SETF(ft,s,f) (ft).seconds = (s); (ft).fraction = (f)
-#define	FTIME_SETT(ft,t)   (ft).seconds = (t) * TICKS_PER_SEC; (ft).fraction = ((uint64_t) TMR_UNIT_MS << 32) / 1000
+#define FTIME_SETT(ft,t)   (ft).seconds = (t) / TICKS_PER_SEC; (ft).fraction = ((uint64_t) (t) % TICKS_PER_SEC) * FRACTS_PER_TICK
 #define	FTIME_CLR(ft)	   (ft).seconds = 0; (ft).fraction = 0U;
 
 #define FTIME_SEC(t)	(t).seconds
@@ -381,19 +384,31 @@ typedef struct time_st {
 
 void sys_getftime (FTime_t *time);
 
-/* Get the system time in seconds/fractions. */
+/* Get the current time in NTP seconds/fractions. */
 
 void sys_gettime (Time_t *time);
 
-/* Get the system time in seconds/nanoseconds. */
+/* Get the current time in system seconds/nanoseconds. */
 
-void time2ftime (Time_t *t, FTime_t *ft);
+void time2ftime (const Time_t *t, FTime_t *ft);
 
-/* Convert a timestamp in seconds/nanoseconds to seconds/fractions. */
+/* Convert a timestamp in system seconds/nanoseconds to NTP seconds/fractions. */
 
-void ftime2time (FTime_t *ft, Time_t *t);
+void ftime2time (const FTime_t *ft, Time_t *t);
 
-/* Convert a timestamp in seconds/fractions to seconds/nanoseconds. */
+/* Convert a timestamp in NTP seconds/fractions to system seconds/nanoseconds. */
+
+void ftime_set_time (FTime_t *ft, int32_t sec, uint32_t fract);
+
+/* Store an NTP timestamp from the given seconds/fractions. */
+
+void ftime_add_ticks (FTime_t *ft, Ticks_t t);
+
+/* Add a ticks delta to an NTP seconds/fractions timestamp. */
+
+int64_t ftime_delta (FTime_t *ft1, FTime_t *ft2);
+
+/* Return the time delta between 2 timestamps. */
 
 #endif /* !__sys_h_ */
 

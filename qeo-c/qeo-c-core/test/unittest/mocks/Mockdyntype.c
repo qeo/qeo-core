@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -320,7 +320,10 @@ qeo_retcode_t qeocore_enum_value_to_string(const DDS_TypeSupport_meta* enum_tsm,
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_enum_tsm), (void*)(enum_tsm), sizeof(DDS_TypeSupport_meta), cmock_line, "Function 'qeocore_enum_value_to_string' called with unexpected value for argument 'enum_tsm'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_enum_type), (void*)(enum_type), sizeof(qeocore_type_t), cmock_line, "Function 'qeocore_enum_value_to_string' called with unexpected value for argument 'enum_type'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_value), (void*)(&value), sizeof(qeo_enum_value_t), cmock_line, "Function 'qeocore_enum_value_to_string' called with unexpected value for argument 'value'.");
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'qeocore_enum_value_to_string' called with unexpected value for argument 'name'.");
+  if (cmock_call_instance->Expected_name == NULL)
+    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'qeocore_enum_value_to_string' called with unexpected value for argument 'name'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'qeocore_enum_value_to_string' called with unexpected value for argument 'name'."); }
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(&cmock_call_instance->Expected_sz), (void*)(&sz), sizeof(size_t), cmock_line, "Function 'qeocore_enum_value_to_string' called with unexpected value for argument 'sz'.");
   return cmock_call_instance->ReturnVal;
 }
@@ -381,7 +384,10 @@ qeo_retcode_t qeocore_enum_string_to_value(const DDS_TypeSupport_meta* enum_tsm,
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_enum_tsm), (void*)(enum_tsm), sizeof(DDS_TypeSupport_meta), cmock_line, "Function 'qeocore_enum_string_to_value' called with unexpected value for argument 'enum_tsm'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_enum_type), (void*)(enum_type), sizeof(qeocore_type_t), cmock_line, "Function 'qeocore_enum_string_to_value' called with unexpected value for argument 'enum_type'.");
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'qeocore_enum_string_to_value' called with unexpected value for argument 'name'.");
+  if (cmock_call_instance->Expected_name == NULL)
+    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'qeocore_enum_string_to_value' called with unexpected value for argument 'name'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'qeocore_enum_string_to_value' called with unexpected value for argument 'name'."); }
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_value), (void*)(value), sizeof(qeo_enum_value_t), cmock_line, "Function 'qeocore_enum_string_to_value' called with unexpected value for argument 'value'.");
   return cmock_call_instance->ReturnVal;
 }
@@ -441,7 +447,10 @@ qeocore_type_t* qeocore_type_register_tsm(const qeo_factory_t* factory, const DD
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'qeocore_type_register_tsm' called with unexpected value for argument 'factory'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_tsm), (void*)(tsm), sizeof(DDS_TypeSupport_meta), cmock_line, "Function 'qeocore_type_register_tsm' called with unexpected value for argument 'tsm'.");
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'qeocore_type_register_tsm' called with unexpected value for argument 'name'.");
+  if (cmock_call_instance->Expected_name == NULL)
+    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'qeocore_type_register_tsm' called with unexpected value for argument 'name'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'qeocore_type_register_tsm' called with unexpected value for argument 'name'."); }
   return cmock_call_instance->ReturnVal;
 }
 
@@ -499,7 +508,10 @@ qeo_retcode_t qeocore_type_register(const qeo_factory_t* factory, qeocore_type_t
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'qeocore_type_register' called with unexpected value for argument 'factory'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_type), (void*)(type), sizeof(qeocore_type_t), cmock_line, "Function 'qeocore_type_register' called with unexpected value for argument 'type'.");
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'qeocore_type_register' called with unexpected value for argument 'name'.");
+  if (cmock_call_instance->Expected_name == NULL)
+    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'qeocore_type_register' called with unexpected value for argument 'name'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'qeocore_type_register' called with unexpected value for argument 'name'."); }
   return cmock_call_instance->ReturnVal;
 }
 
@@ -556,7 +568,10 @@ qeo_retcode_t qeocore_type_get_member_id(const qeocore_type_t* type, const char*
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeocore_type_get_member_id' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_type), (void*)(type), sizeof(qeocore_type_t), cmock_line, "Function 'qeocore_type_get_member_id' called with unexpected value for argument 'type'.");
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'qeocore_type_get_member_id' called with unexpected value for argument 'name'.");
+  if (cmock_call_instance->Expected_name == NULL)
+    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'qeocore_type_get_member_id' called with unexpected value for argument 'name'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'qeocore_type_get_member_id' called with unexpected value for argument 'name'."); }
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_id), (void*)(id), sizeof(qeocore_member_id_t), cmock_line, "Function 'qeocore_type_get_member_id' called with unexpected value for argument 'id'.");
   return cmock_call_instance->ReturnVal;
 }
@@ -819,7 +834,10 @@ qeocore_type_t* qeocore_type_enum_new(const char* name, const qeocore_enum_const
   }
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeocore_type_enum_new' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'qeocore_type_enum_new' called with unexpected value for argument 'name'.");
+  if (cmock_call_instance->Expected_name == NULL)
+    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'qeocore_type_enum_new' called with unexpected value for argument 'name'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'qeocore_type_enum_new' called with unexpected value for argument 'name'."); }
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_values), (void*)(values), sizeof(qeocore_enum_constants_t), cmock_line, "Function 'qeocore_type_enum_new' called with unexpected value for argument 'values'.");
   return cmock_call_instance->ReturnVal;
 }
@@ -875,7 +893,10 @@ qeocore_type_t* qeocore_type_struct_new(const char* name)
   }
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'qeocore_type_struct_new' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'qeocore_type_struct_new' called with unexpected value for argument 'name'.");
+  if (cmock_call_instance->Expected_name == NULL)
+    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'qeocore_type_struct_new' called with unexpected value for argument 'name'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'qeocore_type_struct_new' called with unexpected value for argument 'name'."); }
   return cmock_call_instance->ReturnVal;
 }
 
@@ -931,7 +952,10 @@ qeo_retcode_t qeocore_type_struct_add(qeocore_type_t* container, qeocore_type_t*
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_container), (void*)(container), sizeof(qeocore_type_t), cmock_line, "Function 'qeocore_type_struct_add' called with unexpected value for argument 'container'.");
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_member), (void*)(member), sizeof(qeocore_type_t), cmock_line, "Function 'qeocore_type_struct_add' called with unexpected value for argument 'member'.");
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_name, name, cmock_line, "Function 'qeocore_type_struct_add' called with unexpected value for argument 'name'.");
+  if (cmock_call_instance->Expected_name == NULL)
+    { UNITY_TEST_ASSERT_NULL(name, cmock_line, "Expected NULL. Function 'qeocore_type_struct_add' called with unexpected value for argument 'name'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_name, name, 1, cmock_line, "Function 'qeocore_type_struct_add' called with unexpected value for argument 'name'."); }
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_id), (void*)(id), sizeof(qeocore_member_id_t), cmock_line, "Function 'qeocore_type_struct_add' called with unexpected value for argument 'id'.");
   UNITY_TEST_ASSERT_EQUAL_HEX32(cmock_call_instance->Expected_flags, flags, cmock_line, "Function 'qeocore_type_struct_add' called with unexpected value for argument 'flags'.");
   return cmock_call_instance->ReturnVal;

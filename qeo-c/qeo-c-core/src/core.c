@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -34,6 +34,7 @@
 
 #include <qeo/log.h>
 
+#include <qeocore/config.h>
 #include "core.h"
 #include "config.h"
 #include "forwarder.h"
@@ -90,7 +91,6 @@ static void factory_unlock(qeo_factory_t *factory);
 #ifndef NDEBUG
 static bool is_valid_factory(qeo_factory_t *factory);
 #endif
-static qeocore_domain_id_t get_domain_id_closed(void);
 #define FACTORY_IS_SECURE(f) (f->domain_id != core_get_domain_id_open())
 static void qeo_security_status(qeo_security_hndl   qeo_sec,
                                 qeo_security_state  status);
@@ -159,7 +159,7 @@ static bool is_valid_factory(qeo_factory_t *factory)
 }
 #endif
 
-static qeocore_domain_id_t get_domain_id_closed(void)
+qeocore_domain_id_t core_get_domain_id_closed(void)
 {
     qeocore_domain_id_t id = QEOCORE_DEFAULT_DOMAIN;
 #if defined(DEBUG) || defined(qeo_c_core_COVERAGE)
@@ -240,7 +240,7 @@ static qeo_factory_t *create_factory(const qeo_identity_t *id)
         factory->cond = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
 
         if (id == QEO_IDENTITY_DEFAULT) {
-            factory->domain_id = get_domain_id_closed();
+            factory->domain_id = core_get_domain_id_closed();
         } else if (id == QEO_IDENTITY_OPEN ) {
             factory->domain_id = core_get_domain_id_open();
             if (factory->domain_id != QEOCORE_OPEN_DOMAIN) {
@@ -319,6 +319,9 @@ static void destroy_factory(qeo_factory_t *factory)
         }
     }
 
+    if (NULL != factory->local_port) {
+        free(factory->local_port);
+    }
     free(factory);
 
     if (--_factory_allocs == 0) {
@@ -565,7 +568,7 @@ static void on_qeo_security_authenticated(qeo_security_hndl qeo_sec, qeo_factory
         /* Enable forwarding logic (client or server)  */
         if (QEO_OK != fwd_init_post_auth(factory)) {
             qeo_log_e("Failed to initialize forwarding logic");
-            if (factory->flags.is_forwarder) {
+            if (factory->flags.is_server) {
                 success = false; /* fatal */
             }
         }
@@ -601,11 +604,23 @@ static void policy_update_cb(qeo_security_policy_hndl secpol)
 
 qeo_factory_t *qeocore_factory_new(const qeo_identity_t *id)
 {
+    qeo_factory_t* factory = NULL;
+
     if (id != QEO_IDENTITY_DEFAULT && id != QEO_IDENTITY_OPEN) {
         return NULL;
     }
+    factory = create_factory(id);
+    if (NULL != factory) {
+        factory->flags.forwarding_enabled = (qeocore_parameter_get_number("FWD_DISABLE_FORWARDING") == 0 ? 1 : 0);
+        if (!factory->flags.forwarding_enabled) {
+            qeocore_parameter_set("DISABLE_LOCATION_SERVICE", "1");
+        }
+        factory->flags.bgns_enabled = (qeocore_parameter_get_number("FWD_DISABLE_BGNS") == 0 ? 1 : 0);
+        qeo_log_i("Forwarding %s, bgns %s!", factory->flags.forwarding_enabled ? "enabled" : "disabled",
+                  factory->flags.bgns_enabled ? "enabled" : "disabled");
+    }
 
-    return create_factory(id);
+    return factory;
 }
 
 void qeocore_factory_close(qeo_factory_t *factory)
@@ -623,7 +638,8 @@ void qeocore_factory_close(qeo_factory_t *factory)
     }
 }
 
-qeo_retcode_t qeocore_factory_init(qeo_factory_t *factory, const qeocore_factory_listener_t *listener)
+qeo_retcode_t qeocore_factory_init(qeo_factory_t *factory,
+                                   const qeocore_factory_listener_t *listener)
 {
     qeo_retcode_t rc = QEO_OK;
 
@@ -750,16 +766,53 @@ qeo_retcode_t qeocore_factory_set_tcp_server(qeo_factory_t  *factory,
     return rc;
 }
 
-qeo_retcode_t qeocore_factory_set_local_tcp_port(qeo_factory_t *factory,
-                                                 const char *local_port)
+static qeo_retcode_t update_dds_param(const char * param, const char * value)
+{
+    DDS_ReturnCode_t ddsrc = DDS_RETCODE_OK;
+    char oldValue[64];
+    const char * rc;
+    rc = DDS_parameter_get(param, oldValue, 64);
+    if (rc != NULL && strcmp(oldValue, value) == 0) {
+        qeo_log_i("%s already configured to %s", param, value);
+    }
+    else {
+        qeo_log_i("Set %s server to %s", param, value);
+        ddsrc = DDS_parameter_set(param, value);
+        qeo_log_dds_rc("DDS_parameter_set", ddsrc);
+    }
+    return ddsrc_to_qeorc(ddsrc);
+}
+
+qeo_retcode_t qeocore_factory_set_bgns(qeo_factory_t  *factory,
+                                       const char     *bgns_server,
+                                       const char     *bgns_port)
+{
+    qeo_retcode_t rc = QEO_OK;
+
+    if (NULL == getenv("TDDS_BGNS_DOMAIN")) {
+        char domain[4] = "";
+        sprintf(domain, "%d", factory->domain_id);
+        rc = update_dds_param("BGNS_DOMAIN", domain);
+    }
+    if ((NULL == getenv("TDDS_BGNS_SERVER")) && (NULL != bgns_server)) {
+        /* set DDS BGNS_TCP_SERVER to value from SMS if not overridden */
+        rc = update_dds_param("BGNS_SERVER", bgns_server);
+    }
+    if ((NULL == getenv("TDDS_BGNS_PORT")) && (NULL != bgns_port)) {
+        rc = update_dds_param("BGNS_PORT", bgns_port);
+    }
+    return rc;
+}
+
+qeo_retcode_t qeocore_factory_set_local_tcp_port(qeo_factory_t *factory)
 {
     DDS_ReturnCode_t ddsrc = DDS_RETCODE_OK;
 
-    VALIDATE_NON_NULL(local_port);
+    VALIDATE_NON_NULL(factory->local_port);
     if (NULL == getenv("TDDS_TCP_PORT")) {
         /* set DDS TCP_SERVER to value from SMS if not overridden */
-        qeo_log_i("Set TCP port to %s", local_port);
-        ddsrc = DDS_parameter_set("TCP_PORT", local_port);
+        qeo_log_i("Set TCP port to %s", factory->local_port);
+        ddsrc = DDS_parameter_set("TCP_PORT", factory->local_port);
         qeo_log_dds_rc("DDS_parameter_set TCP_PORT", ddsrc);
     }
     return ddsrc_to_qeorc(ddsrc);
@@ -768,17 +821,15 @@ qeo_retcode_t qeocore_factory_set_local_tcp_port(qeo_factory_t *factory,
 qeo_retcode_t core_factory_set_tcp_server_no_lock(qeo_factory_t  *factory,
                                                   const char     *tcp_server)
 {
-    DDS_ReturnCode_t ddsrc = DDS_RETCODE_OK;
+    qeo_retcode_t rc = QEO_OK;
 
     VALIDATE_NON_NULL(tcp_server);
     if (NULL == getenv("TDDS_TCP_SERVER")) {
         /* set DDS TCP_SERVER to value from SMS if not overridden */
-        qeo_log_i("Set TCP server to %s", tcp_server);
-        ddsrc = DDS_parameter_set("TCP_SERVER", tcp_server);
-        qeo_log_dds_rc("DDS_parameter_set TCP_SERVER", ddsrc);
+        rc = update_dds_param("TCP_SERVER", tcp_server);
     }
 
-    return ddsrc_to_qeorc(ddsrc);
+    return rc;
 }
 
 qeo_retcode_t qeocore_factory_set_user_data(qeo_factory_t *factory,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -76,6 +76,7 @@ START_TEST(test_state_api_inargs)
     fail_unless(QEO_EINVAL == qeo_state_reader_foreach(r, NULL, 0));
     qeo_state_reader_close(NULL); /* don't crash */
     fail_unless(QEO_EINVAL == qeo_state_reader_policy_update(NULL));
+    fail_unless(QEO_EINVAL == qeo_state_reader_bgns_notify(NULL, true));
     /* change reader */
     fail_unless(NULL == qeo_factory_create_state_change_reader(NULL, &tsm, &rcbs2, 0));
     fail_unless(NULL == qeo_factory_create_state_change_reader(f, NULL, &rcbs2, 0));
@@ -83,6 +84,7 @@ START_TEST(test_state_api_inargs)
     fail_unless(NULL == qeo_factory_create_state_change_reader(f, &tsm, &rcbs2, 0)); /* on_data non-NULL */
     qeo_state_change_reader_close(NULL); /* don't crash */
     fail_unless(QEO_EINVAL == qeo_state_change_reader_policy_update(NULL));
+    fail_unless(QEO_EINVAL == qeo_state_change_reader_bgns_notify(NULL, true));
     /* writer */
     fail_unless(NULL == qeo_factory_create_state_writer(NULL, &tsm, NULL, 0));
     fail_unless(NULL == qeo_factory_create_state_writer(f, NULL, &wcbs, 0));

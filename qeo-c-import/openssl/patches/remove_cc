@@ -1,8 +1,6 @@
-diff --git a/Makefile.org b/Makefile.org
-index c92806f..734efba 100644
 --- a/Makefile.org
 +++ b/Makefile.org
-@@ -302,7 +302,7 @@ libcrypto$(SHLIB_EXT): libcrypto.a fips_premain_dso$(EXE_EXT)
+@@ -303,7 +303,7 @@
  			FIPSLD_CC="$(CC)"; CC=$(FIPSDIR)/bin/fipsld; \
  			export CC FIPSLD_CC FIPSLD_LIBCRYPTO; \
  		fi; \

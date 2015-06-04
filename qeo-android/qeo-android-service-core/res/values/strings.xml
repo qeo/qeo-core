@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="realmlist_error_msg">Failed to get list of realms!!!.</string>
+    <string name="userlist_error_msg">Failed to get users for selected Realm.!!!.</string>
+    <string name="devicelist_error_msg">Failed to get devices for selected Realm.!!!.</string>
+    <string name="add_realm_progress_broadcast">Add Realm Progressing</string>
+    <string name="add_realm_error_msg">Failed to create new realm!!!.</string>
+    <string name="add_user_error_msg">Failed to add user!!.</string>
+
+</resources>

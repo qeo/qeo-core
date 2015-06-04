@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -31,7 +31,7 @@ void slw_be_alive (WRITER *wp, GuidPrefix_t *prefix);
 
 /* Update Participant Liveliness. */
 
-int be_send_data (RemReader_t *rrp, DiscoveredReader_t *dest);
+int be_send_data (RemReader_t *rrp, DiscoveredReader_t *dest, int bcast);
 
 /* Send data directly (used by both Stateless and Stateful Best-Effort
    writer state machines). */

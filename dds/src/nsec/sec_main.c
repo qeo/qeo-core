@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -636,6 +636,7 @@ static int topic_reevaluate (Skiplist_t *list, void *np, void *arg)
 	ARG_NOT_USED (list)
 
 	tp = *tpp;
+	log_printf (SEC_ID, 0, "SEC_MAIN: reevaluate %s!\r\n", str_ptr (tp->name));
 	if ((tp->entity.flags & EF_BUILTIN) == 0 &&
 	    !nmatch (rp->topic_name, str_ptr (tp->name), 0)) {
 		lock_take (tp->lock);

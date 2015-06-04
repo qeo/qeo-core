@@ -1,0 +1,213 @@
+//project for testing backwards compatiblity between qeo-service and qeo-library
+//this it NOT a sub-project from qeo-android as it need to rely on qeo-android and qeo-android-service as binary dependencies
+
+import java.util.regex.Matcher
+import java.util.regex.Pattern
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactory.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactDownloader.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidInstallerTools.gradle'
+version = qeoVersion
+
+ext.adb = new File(System.env.ANDROID_HOME ?: "/ANDROID_HOME/NOT/DEFINED/", "platform-tools${File.separator}adb");
+if (!adb.isFile()) {
+        throw new GradleException("ANDROID_HOME is not correct, can't find ${adb}")
+}
+
+//list all versions of the qeo-android library here that need to be tested
+//This is a list of all old versions of the qeo-android library that should still work with the current version of the qeo-android-service.
+//The service is assumed always to be possible to update so always equal or newer than the library.
+def testVersions = ["1.0.0-SNAPSHOT", "1.0.2-SNAPSHOT", "1.0.3-SNAPSHOT", "1.0.4-SNAPSHOT"]
+if (!testVersions.contains(qeoVersion)) {
+    //if this error gets hit, the latest version should be added to the array above
+    //this is here to ensure this array is kept up-to-date
+    throw new GradleException("Latest Qeo version is not yet tested, please add it.")
+}
+
+//list of tests that are to be ignored for specific versions. This only only to be used in exceptional cases
+def skipTests = ["1.0.0-SNAPSHOT":
+    [
+        "testEventNotAllowed", "testStateNotAllowed" //tests that test topics in the open domain. This is allowed now.
+    ]]
+
+
+def testConfigs = [:]
+
+testVersions.each { ver ->
+    def name = "test_" + ver.replaceAll("-SNAPSHOT", "").replaceAll("\\.", "_")
+    logger.info "creating configuration ${name}"
+    configurations.create(name)
+    testConfigs.put(name, ver)
+}
+
+uninstallApk {
+    packages = ["org.qeo.android.service", "org.qeo.android.library.test", "org.qeo.android.library.test.test"]
+}
+
+installExtraApk {
+    dependsOn uninstallApk, artifactDownload
+    afterEvaluate {
+        File service = null
+        project.configurations.download.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            if (artifact.name == "qeo-android-service") {
+                assert service == null
+                service = artifact.file
+            }
+        }
+        assert service != null
+        files = [service]
+    }
+}
+
+installCertFile {
+    dependsOn installExtraApk
+    afterEvaluate {
+        jarFile = null
+        project.configurations.download.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            if (artifact.name == "qeo-java") {
+                assert jarFile == null
+                jarFile = artifact.file
+            }
+        }
+        assert jarFile != null
+    }
+}
+
+//class to process outputstream while printing it.
+class StreamWithPrint extends ByteArrayOutputStream
+{
+    StringBuilder builder = new StringBuilder();
+    boolean resultFound = false;
+    boolean failed = false;
+    boolean failureAllowed = true;
+    boolean failedFound = false;
+    final String version;
+    Pattern TestFailedPattern = Pattern.compile("^Failure in (\\S+):.*");
+    def skipTestList;
+
+    StreamWithPrint(String version, def skipTestList) {
+        this.version = version;
+        this.skipTestList = skipTestList;
+    }
+
+    private void checkResult(String line)
+    {
+        if (line.startsWith("FAILURES!!!")) {
+            if (!failureAllowed) {
+                failed = true;
+            }
+            if (failedFound) {
+                resultFound = true;
+            }
+        }
+        else if (line.startsWith("OK (")) {
+            resultFound = true;
+        }
+        else {
+            line = line.replaceAll("\n", "").replaceAll("\r", "");
+            Matcher m = TestFailedPattern.matcher(line);
+            if (m.matches()) {
+                failedFound = true;
+                String name = m.group(1);
+                if (skipTestList != null) {
+                    if (skipTestList.contains(name)) {
+                        System.out.println("** This test is ignored for this version");
+                    }
+                    else {
+                        failureAllowed = false;
+                    }
+                }
+                else {
+                    failureAllowed = false;
+                }
+            }
+        }
+
+    }
+
+    private void checkPrint()
+    {
+        String[] tmp = builder.toString().split("\n");
+        if (tmp.length > 1) {
+            for (int i = 0; i < tmp.length - 1; ++i) {
+                checkResult(tmp[i]);
+            }
+            builder = new StringBuilder(tmp[tmp.length - 1]);
+        }
+    }
+
+    void    write(byte[] b, int off, int len) {
+        super.write(b, off, len);
+        builder.append(new String(b, off, len));    
+        checkPrint();
+    }
+}
+
+task check() {
+    //dummy
+    description "Execute all checks"
+}
+
+testConfigs.each{ k, v ->
+    //create a test task for each configuration
+    task "${k}"() {
+        dependsOn getConnectedDevices
+        dependsOn installCertFile
+        doFirst {
+            if (project.connectedDevices.isEmpty()) {
+                throw new GradleException("No connected devices found")
+            }
+        }
+        doLast {
+            //cleanup
+            project.connectedDevices.each { device ->
+                exec {
+                    executable = adb
+                    args = ["-s", device, "uninstall", "org.qeo.android.library.test"]
+                }
+                exec {
+                    executable = adb
+                    args = ["-s", device, "uninstall", "org.qeo.android.library.test.test"]
+                }
+            }
+            //installing
+            configurations.getByName(k).resolvedConfiguration.resolvedArtifacts.each { artifact ->
+                logger.lifecycle "installing ${artifact.file}"
+                project.connectedDevices.each { device ->
+                    exec {
+                        executable = adb
+                        args = ["-s", device, "install", artifact.file]
+                    }
+                }
+            }
+            //executing
+            project.connectedDevices.each { device ->
+                logger.lifecycle("Starting tests on device ${device}")
+                new StreamWithPrint(v, skipTests[v]).withStream { out ->
+                    exec {
+                        executable = adb
+                        args = ["-s", device, "shell", "am", "instrument", "-w", "org.qeo.android.library.test.test/android.test.InstrumentationTestRunner"]
+                        standardOutput = out
+                    }
+                    boolean resultFound = out.resultFound
+                    boolean failed = out.failed
+                    assert resultFound
+                    assert !failed
+                }
+            }
+        }
+    }
+    tasks.check.dependsOn(tasks.findByPath(k))
+}
+
+
+dependencies {
+    download group: qeoGroup, version: qeoVersion, name: "qeo-android-service", classifier: "unittest", ext: "apk"
+    testConfigs.each{ k, v ->
+        //add dependencies for the tests to each configuration
+        add(k, "${qeoGroup}:qeo-android-tests:${v}:tests@apk")
+        add(k, "${qeoGroup}:qeo-android-tests:${v}:testprogram@apk")
+    }
+    download group: qeoGroup, version: qeoVersion, name: 'qeo-java', classifier: 'testlib', ext: "jar"
+}
+

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -277,15 +277,17 @@ typedef struct rtps_nofif_data_st {
 
 #define	RME_HDRSIZE	(sizeof (RME) - MAX_ELEMENT_DATA)
 
-#define	RME_SWAP	1		/* Data needs to be swapped. */
-#define	RME_CONTAINED	2		/* Not separately allocated. */
-#define	RME_HEADER	4		/* Header is used if set. */
-#define	RME_NOTIFY	8		/* Notify function should be called.
+#define	RME_SWAP	0x01		/* Data needs to be swapped. */
+#define	RME_CONTAINED	0x02		/* Not separately allocated. */
+#define	RME_HEADER	0x04		/* Header is used if set. */
+#define	RME_NOTIFY	0x08		/* Notify function should be called.
 					   NOTIF_DATA is stored in d []. */
-#define	RME_MCAST	16		/* Message requires multicast.
+#define	RME_MCAST	0x10		/* Message requires multicast.
 					   Valid in first element only! */
-#define	RME_USER	32		/* User data - idem. */
-#define	RME_TRACE	64		/* Trace message - idem. */
+#define	RME_BCAST	0x20		/* Message requires broadcast.
+					   Valid in first element only! */
+#define	RME_USER	0x40		/* User data - idem. */
+#define	RME_TRACE	0x80		/* Trace message - idem. */
 
 struct rtps_msg_element_buf_st { /* 64-bit: 160(32+128), 32-bit: 116(20+96). */
 	RME		*next;		/* Next element. */
@@ -312,6 +314,7 @@ struct rtps_msg_buf_st {
 struct rtps_msg_ref_st {
 	RMREF		*next;		/* Next message reference. */
 	RMBUF		*message;	/* Message pointer. */
+	Ticks_t		ticks;		/* Timestamp. */
 };
 
 extern size_t		rtps_max_msg_size;	/* RTPS maximum message size. */

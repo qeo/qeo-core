@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -911,6 +911,17 @@ Type *xt_type_ptr (unsigned scope, unsigned id)
 	tp = DOMAIN_TYPE (lp->domain, id);
 	lock_release (xt_lock);
 	return (tp);
+}
+
+Type *xt_type_lookup (TypeLib *lp, const char *name)
+{
+	int	index;
+
+	index = xt_lib_lookup (lp, name);
+	if (index < 0)
+		return (NULL);
+
+	return (xt_type_ptr (lp->scope, lp->types [index]));
 }
 
 /* xt_domain_ptr -- Convert a scope index to a type domain. */
@@ -7773,7 +7784,7 @@ DDS_TypeObject DDS_TypeObject_create_from_key (DDS_DomainParticipant p,
 		lock_release (dp->lock);
 		return (NULL);
 	}
-	ep = endpoint_lookup (pp, (EntityId_t *) &key->value [2]);
+	ep = endpoint_lookup (pp, (EntityId_t *) &key->value [DDS_BUILTIN_TOPIC_SIZE_NATIVE - 1]);
 	if (ep)
 		top = ep_type_obj_create (ep, NULL);
 	else
@@ -7867,7 +7878,7 @@ void xt_data_free (const Type *tp, void *sample_data, int ptr)
 			char			**spp = (char **) data;
 
 			if (!stp->bound && *spp)
-				mm_fcts.free_ (*spp);
+				Free (*spp);
 			break;
 		}
 		case DDS_STRUCTURE_TYPE: {
@@ -7938,7 +7949,7 @@ void xt_data_free (const Type *tp, void *sample_data, int ptr)
 			break;
 	}
 	if (ptr)
-		mm_fcts.free_ (data);
+		Free (data);
 }
 
 int xt_data_copy (const Type *tp,
@@ -7964,7 +7975,7 @@ int xt_data_copy (const Type *tp,
 			*((const void **) dst_data) = sdata;
 			return (DDS_RETCODE_OK);
 		}
-		ddata = mm_fcts.alloc_ (size);
+		ddata = Alloc (size);
 		*((void **) dst_data) = ddata;
 		if (!ddata)
 			return (DDS_RETCODE_OUT_OF_RESOURCES);
@@ -8067,7 +8078,7 @@ int xt_data_copy (const Type *tp,
 			if (!stp->bound)
 				if (*spp) {
 					n = strlen (*spp) + 1;
-					*dpp = mm_fcts.alloc_ (n);
+					*dpp = Alloc (n);
 					if (!*dpp) {
 						error = DDS_RETCODE_OUT_OF_RESOURCES;
 						break;

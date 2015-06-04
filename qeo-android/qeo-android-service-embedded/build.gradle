@@ -1,0 +1,66 @@
+
+//For generating findbugs HTML report execute with "gradle -PfindbugsHtml=true"
+ext.androidLibrary = true
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/checkstyle.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/findbugs.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/dependencyWriter.gradle'
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidApklib.gradle'
+
+android {
+    publishNonDefault true
+    lintOptions {
+        ignoreWarnings false
+        disable "RtlHardcoded" //we don't support any other languages anyway
+        disable "GradleOverrides" //warnings about overridden fields in manifest. Eclipse needs them.
+        disable "UnusedIds" //unused id's are really not a big deal and are required for relativelayouts
+        disable "UnusedAttribute" //Attributes not supported on newer apis are normal
+    }
+}
+
+android.noDeviceTests = true //no device tests for this project
+
+dependencies {
+    releaseCompile  project(path:':qeo-android-service-core')
+    debugCompile    project(path:':qeo-android-service-core', configuration: "debug")
+
+    //actionbarsherlock
+    compile ('com.actionbarsherlock:actionbarsherlock:4.4.0@aar') {
+        transitive = true
+        exclude (group: "com.google.android") //conflicts with support-v4 from gradle
+    }
+    compile 'com.google.android.gms:play-services-plus:7.0.0'
+}
+
+dependencyList {
+    dependencies.add(configurations.releaseCompile)
+    ignore.add("org.qeo:qeo-android-service-core")
+}
+apklibCopyEclipseLibs {
+    configs.add(configurations.releaseCompile)
+}
+
+task zipDependencyList(type: Zip) {
+    dependsOn(dependencyList)
+    from dependencyList.out
+    classifier "metadata"
+}
+
+task jarAndroidSources(type: Jar) {
+    classifier = 'sources'
+    from "src"
+}
+
+artifacts {
+    archives zipDependencyList
+    archives jarAndroidSources //publish sources
+
+    if (!System.env.JENKINS_URL) {
+        //if not on jenkins, also publish a dummy file as the default archive.
+        //this is needed as a maven repo requires the default archive to be set.
+        //this is not required on artifactory, hence this is not needed when building on jenkins
+        archives file: file("build.gradle")
+    }
+}
+

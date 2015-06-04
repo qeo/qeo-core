@@ -1,0 +1,69 @@
+ifneq ($($(qeo-tsm-to-dynamic_INCLUDED)),1)
+
+override COMPONENT := technicolor.middleware.core.qeo-tsm-to-dynamic
+
+qeo-tsm-to-dynamic_INCLUDES := api/headers 
+qeo-tsm-to-dynamic_CFLAGS   := -std=gnu99
+qeo-tsm-to-dynamic_LIBS     := -lqeotsmtodyn 
+
+qeo-tsm-to-dynamic_PARTS_INSTALL      := \
+	libqeotsmtodyn.so@$$(libdir/)libqeotsmtodyn.so:755
+qeo-tsm-to-dynamic_ELEM_INSTALL       := 
+
+qeo-tsm-to-dynamic_TEST_PARTS         :=
+qeo-tsm-to-dynamic_TEST_PARTS_INSTALL := \
+	libuttsmtodyn.so@$$(libdir/)unittests/libuttsmtodyn.so:755
+qeo-tsm-to-dynamic_TEST_ELEM_INSTALL  := \
+	test/script/qeo_test_run.sh@$$(bindir/)qeo_test_run.sh:755 \
+	test/script/addon-valgrind.source@$$(bindir/)addon-valgrind.source:644 \
+	test/script/valgrind.supp@$$(bindir/)valgrind.supp:644 \
+	d:$$(datadir/)/home.qeo \
+	test/data/home.qeo/*@$$(datadir/)/home.qeo
+qeo-tsm-to-dynamic_TEST_RUN           := $$(bindir/)qeo_test_run.sh
+
+
+qeo-tsm-to-dynamic_DEPS               := qeo-c-core qeo-c-util uthash
+
+qeo-tsm-to-dynamic_TEST_DEPS          := unittest-check 
+
+include $(projectdir/)build/Makefile_component_top
+
+qeo-tsm-to-dynamic.LIBRARIES := libqeotsmtodyn
+
+qeo-tsm-to-dynamic.libqeotsmtodyn_LDADD         := $(qeo-c-core_LIBS)
+qeo-tsm-to-dynamic.libqeotsmtodyn_LOCALDEFINES  := $(qeo-tsm-to-dynamic_CFLAGS) -Wall -Werror
+qeo-tsm-to-dynamic.libqeotsmtodyn_LOCALINCLUDES := src/ $(qeo-tsm-to-dynamic_INCLUDES) $(qeo-c-core_INCLUDES) $(qeo-c-util_INCLUDES) $(uthash_INCLUDES)
+qeo-tsm-to-dynamic.libqeotsmtodyn_SRCS          := $(addprefix src/, tsm-to-dynamic.c)
+
+
+### Test programs ###
+
+### Unit test libraries ###
+
+qeo-tsm-to-dynamic.LIBRARIES += libuttsmtodyn 
+
+qeo-tsm-to-dynamic.libuttsmtodyn_SRCS          := $(addprefix libqeotsmtodyn:src/, tsm-to-dynamic.c) \
+                                $(addprefix test/unittest/suite_main/, test.c) \
+                                $(addprefix test/unittest/suite_main/, qeo_types.c) \
+                                $(addprefix test/unittest/suite_main/, QSimpleChat_ChatMessage.c) \
+                                $(addprefix test/unittest/suite_main/, QNote_Wall.c) \
+                                $(addprefix test/unittest/suite_main/, qeo_DeviceInfo.c) \
+                                $(addprefix test/unittest/suite_main/, myenum.c) \
+                                $(addprefix test/unittest/suite_main/, cwifi.c)
+qeo-tsm-to-dynamic.libuttsmtodyn_LOCALINCLUDES := src $(qeo-tsm-to-dynamic_INCLUDES) $(unittest-check_INCLUDES) $(qeo-c-core_INCLUDES) $(uthash_INCLUDES)
+qeo-tsm-to-dynamic.libuttsmtodyn_LOCALDEFINES  := $(qeo-tsm-to-dynamic_CFLAGS) -Wall -Werror
+qeo-tsm-to-dynamic.libuttsmtodyn_LDADD         := $(unittest-check_LIBS) -L$(qeo-tsm-to-dynamic_PREFIX) $(qeo-c-core_LIBS)
+qeo-tsm-to-dynamic.libuttsmtodyn_LDDEPS        := libqeotsmtodyn.so
+ifeq ($(E), HOSTDARWIN)
+qeo-tsm-to-dynamic.libuttsmtodyn_LDFLAGS       := -Wl, -undefined dynamic_lookup  
+endif
+
+
+
+
+include $(projectdir/)build/Makefile_component_bot
+
+endif
+
+# Vim Modeline, used to enable folds on this Makefile
+# vim: foldmethod=marker foldmarker=##<,##> :

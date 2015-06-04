@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -344,9 +344,10 @@ static unsigned vtc_generate (unsigned char *tcp, Type *tp, unsigned *ofs, int e
 
 		case VTC_STRUCT:
 			stp = (StructureType *) tp;
-			sp = str_ptr (tp->name);
-			if (!sp || (sp [0] == '_' && sp [1] == '_'))
+			if (tp->nested)
 				sp = "struct";
+			else
+				sp = str_ptr (tp->name);
 			pofs = *ofs;
 			*ofs += 2; /* Leave room for total size. */
 			if (ext) {
@@ -396,9 +397,10 @@ static unsigned vtc_generate (unsigned char *tcp, Type *tp, unsigned *ofs, int e
 
 		case VTC_UNION:
 			utp = (UnionType *) tp;
-			sp = str_ptr (tp->name);
-			if (!sp || (sp [0] == '_' && sp [1] == '_'))
+			if (tp->nested)
 				sp = "union";
+			else
+				sp = str_ptr (tp->name);
 			pofs = *ofs;
 			*ofs += 2;
 			if (ext) {
@@ -601,426 +603,6 @@ unsigned char *vtc_create (const TypeSupport_t *ts)
 	return (tcp);
 }
 
-#define	MAX_LABELS	16	/* If more labels: allocate. */
-
-#define	GUINT16(vtc,ofs) *((uint16_t *) (&vtc [ofs])); (ofs) += 2
-#define	GUINT32(vtc,ofs) *((uint32_t *) (&vtc [ofs])); (ofs) += 4
-#define	GSTR(s,l,vtc,ofs) ALIGN (ofs, 4); l = GUINT32(vtc,ofs); \
-			  s= (char *) &vtc [ofs]; (ofs) += l
-
-/* vtc_create_type -- Create a new local type from vendor typecode data. */
-
-static Type *vtc_create_type (TypeLib       *lp,
-			      unsigned char *vtc,
-			      unsigned      *ofs,
-			      int           *dynamic,
-			      int           ext)
-{
-	Type		*tp, *etp, *disc_tp;
-	char		*sp, *msp;
-	unsigned	i, j, f, max_labels, member_id;
-	Extensibility_t	extensible;
-	uint32_t	tc, slen, mslen, nmembers, num, nlabels;
-	int		ptr, key, top_level = (*ofs == 0);
-	uint16_t	bits;
-	int32_t		*lbp, *nlbp, *ip, def_index, labels [MAX_LABELS];
-	DDS_BoundSeq	bseq;
-	uint32_t	bound [9];
-	char		buffer [32];
-	static unsigned	anon_count = 0;
-
-	ALIGN (*ofs, 4);
-	tc = GUINT32 (vtc, *ofs);
-	tc &= 0x7fffffff;
-	*ofs += 2;	/* Skip type size. */
-	switch (tc) {
-		case VTC_SHORT:
-			tp = xt_primitive_type (DDS_INT_16_TYPE);
-			break;
-		case VTC_LONG:
-			tp = xt_primitive_type (DDS_INT_32_TYPE);
-			break;
-		case VTC_USHORT:
-			tp = xt_primitive_type (DDS_UINT_16_TYPE);
-			break;
-		case VTC_ULONG:
-			tp = xt_primitive_type (DDS_UINT_32_TYPE);
-			break;
-		case VTC_FLOAT:
-			tp = xt_primitive_type (DDS_FLOAT_32_TYPE);
-			break;
-		case VTC_DOUBLE:
-			tp = xt_primitive_type (DDS_FLOAT_64_TYPE);
-			break;
-		case VTC_BOOLEAN:
-			tp = xt_primitive_type (DDS_BOOLEAN_TYPE);
-			break;
-		case VTC_CHAR:
-			tp = xt_primitive_type (DDS_CHAR_8_TYPE);
-			break;
-		case VTC_OCTET:
-			tp = xt_primitive_type (DDS_BYTE_TYPE);
-			break;
-		case VTC_LONGLONG:
-			tp = xt_primitive_type (DDS_INT_64_TYPE);
-			break;
-		case VTC_ULONGLONG:
-			tp = xt_primitive_type (DDS_UINT_64_TYPE);
-			break;
-		case VTC_LONGDOUBLE:
-			tp = xt_primitive_type (DDS_FLOAT_128_TYPE);
-			break;
-		case VTC_WCHAR:
-			tp = xt_primitive_type (DDS_CHAR_32_TYPE);
-			break;
-
-		case VTC_STRUCT:
-			if (ext) {
-				bits = GUINT16 (vtc, *ofs);
-				extensible = ((bits & NRE_EXT_M) >> NRE_EXT_S) - 1;
-			}
-			else
-				extensible = EXTENSIBLE;
-			GSTR (sp, slen, vtc, *ofs);
-			if (!top_level && !strcmp (sp, "struct")) {
-				snprintf (buffer, sizeof (buffer), "__struct_%u", anon_count++);
-				sp = buffer;
-			}
-			ALIGN (*ofs, 4);
-			nmembers = GUINT32 (vtc, *ofs);
-			tp = xt_struct_type_create (lp, sp, nmembers, 0);
-			if (!tp)
-				return (NULL);
-
-			if (!top_level || ext) {
-				f = extensible;
-				if (!top_level)
-					f |= XTF_NESTED;
-				xt_type_flags_modify (tp, XTF_EXT_MASK | XTF_NESTED, f);
-			}
-			for (i = 0; i < nmembers; i++) {
-				*ofs += 2;	/* Skip member size. */
-				if (ext) {
-					member_id = GUINT16 (vtc, *ofs);
-					member_id <<= 16;
-				}
-				else
-					member_id = i;
-				GSTR (msp, mslen, vtc, *ofs);
-				ptr = vtc [(*ofs)++];
-				ALIGN (*ofs, 2);
-				bits = GUINT16 (vtc, *ofs);
-				if (ext)
-					member_id |= bits;
-				else if (bits != 0xffff)
-					warn_printf ("vtc_create_type: unknown bits combination!");
-
-				key = vtc [(*ofs)++];
-				etp = vtc_create_type (lp, vtc, ofs, dynamic, ext);
-				if (!etp) {
-					xt_type_delete (tp);
-					return (NULL);
-				}
-				if (xt_struct_type_member_set (tp, i, msp,
-							       member_id, etp, 0)) {
-					xt_type_delete (etp);
-					xt_type_delete (tp);
-					return (NULL);
-				}
-				xt_type_delete (etp);
-				if (ptr || key) {
-					f = 0;
-					if ((ptr & 1) != 0) {
-						f |= XMF_SHAREABLE;
-						*dynamic = 1;
-					}
-					if (ext) {
-						if ((ptr & 2) != 0)
-							f |= XMF_MUST_UNDERSTAND;
-						if ((ptr & 4) != 0)
-							f |= XMF_OPTIONAL;
-					}
-					if (key)
-						f |= XMF_KEY;
-					xt_type_member_flags_modify (tp, i, 
-								     XMF_ALL, f);
-				}
-			}
-			break;
-
-		case VTC_UNION:
-			if (ext) {
-				bits = GUINT16 (vtc, *ofs);
-				extensible = ((bits & NRE_EXT_M) >> NRE_EXT_S) - 1;
-			}
-			else
-				extensible = EXTENSIBLE;
-			GSTR (sp, slen, vtc, *ofs);
-			if (!top_level && !strcmp (sp, "union")) {
-				snprintf (buffer, sizeof (buffer), "__union_%u", anon_count++);
-				sp = buffer;
-			}
-			ALIGN (*ofs, 4);
-			def_index = (int32_t) GUINT32 (vtc, *ofs);
-			disc_tp = vtc_create_type (lp, vtc, ofs, dynamic, ext);
-			if (!disc_tp)
-				return (NULL);
-
-			ALIGN (*ofs, 4);
-			nmembers = GUINT32 (vtc, *ofs);
-			tp = xt_union_type_create (lp, sp, disc_tp, nmembers, 0);
-			if (!tp) {
-				xt_type_delete (disc_tp);
-				return (NULL);
-			}
-			xt_type_delete (disc_tp);
-			if (!top_level || extensible) {
-				f = extensible;
-				if (!top_level)
-					f |= XTF_NESTED;
-				xt_type_flags_modify (tp, XTF_EXT_MASK | XTF_NESTED, f);
-			}
-			max_labels = 0;
-			lbp = NULL;
-			for (i = 0; i < nmembers; i++) {
-				*ofs += 2;	/* Skip member size. */
-				if (ext) {
-					member_id = GUINT32 (vtc, *ofs);
-				}
-				else
-					member_id = i + 1;
-				GSTR (msp, mslen, vtc, *ofs);
-				ptr = vtc [(*ofs)++];
-				ALIGN (*ofs, 4);
-				nlabels = GUINT32 (vtc, *ofs);
-				if (nlabels > MAX_LABELS) {
-					if (nlabels > max_labels) {
-						if (max_labels)
-							nlbp = xrealloc (lbp, 
-								sizeof (int32_t) * nlabels);
-						else
-							nlbp = xmalloc (sizeof (int32_t) * nlabels);
-						if (!nlbp) {
-							xt_type_delete (tp);
-							xfree (lbp);
-							return (NULL);
-						}
-						max_labels = nlabels;
-						lbp = nlbp;
-					}
-					ip = lbp;
-				}
-				else if (nlabels)
-					ip = labels;
-				else
-					ip = NULL;
-
-				for (j = 0; j < nlabels; j++) {
-					ip [j] = (int32_t) GUINT32 (vtc, *ofs);
-				}
-				etp = vtc_create_type (lp, vtc, ofs, dynamic, ext);
-				if (!etp)
-					goto cleanup;
-
-				if (xt_union_type_member_set (tp, i + 1, nlabels,
-							  ip, msp,
-							  member_id, etp, 
-							  (int) i == def_index,
-							  0)) {
-					xt_type_delete (etp);
-
-				    cleanup:
-					xt_type_delete (tp);
-					if (lbp)
-						xfree (lbp);
-					return (NULL);
-				}
-				xt_type_delete (etp);
-				if (ptr) {
-					f = 0;
-					if ((ptr & 1) != 0) {
-						f |= XMF_SHAREABLE;
-						*dynamic = 1;
-					}
-					if (ext) {
-						if ((ptr & 2) != 0)
-							f |= XMF_MUST_UNDERSTAND;
-						if ((ptr & 4) != 0)
-							f |= XMF_OPTIONAL;
-					}
-					xt_type_member_flags_modify (tp, i, 
-								     XMF_ALL, f);
-				}
-			}
-			if (lbp)
-				xfree (lbp);
-			break;
-
-		case VTC_ENUM:
-			GSTR (sp, slen, vtc, *ofs);
-			ALIGN (*ofs, 4);
-			nmembers = GUINT32 (vtc, *ofs);
-			if (!nmembers)
-				return (0);
-
-			tp = xt_enum_type_create (lp, sp, 32, nmembers);
-			if (!tp)
-				return (NULL);
-
-			for (i = 0; i < nmembers; i++) {
-				*ofs += 2;	/* Skip member size. */
-				GSTR (msp, mslen, vtc, *ofs);
-				ALIGN (*ofs, 4);
-				num = GUINT32 (vtc, *ofs);
-				if (xt_enum_type_const_set (tp, i, msp, num)) {
-					xt_type_delete (tp);
-					return (NULL);
-				}
-			}
-			break;
-
-		case VTC_STRING:
-		case VTC_WSTRING:
-			ALIGN (*ofs, 4);
-			slen = GUINT32 (vtc, *ofs);
-			tp = xt_string_type_create (lp, slen, 
-				   (tc == VTC_STRING) ? DDS_CHAR_8_TYPE :
-							DDS_CHAR_32_TYPE);
-			if (!tp)
-				return (NULL);
-
-			if (!slen)
-				*dynamic = 1;
-			break;
-
-		case VTC_SEQUENCE:
-			ALIGN (*ofs, 4);
-			slen = GUINT32 (vtc, *ofs);
-			etp = vtc_create_type (lp, vtc, ofs, dynamic, ext);
-			if (!etp)
-				return (NULL);
-
-			tp = xt_sequence_type_create (lp, slen, etp, 0);
-			if (!tp) {
-				xt_type_delete (etp);
-				return (NULL);
-			}
-			*dynamic = 1;
-			break;
-
-		case VTC_ARRAY:
-			ALIGN (*ofs, 4);
-			num = GUINT32 (vtc, *ofs);
-			if (!num || num > 9)
-				return (NULL);
-
-			for (i = 0; i < num; i++) {
-				bound [i] = GUINT32 (vtc, *ofs);
-			}
-			etp = vtc_create_type (lp, vtc, ofs, dynamic, ext);
-			if (!etp)
-				return (NULL);
-
-			DDS_SEQ_INIT (bseq);
-			bseq._length = bseq._maximum = num;
-			bseq._buffer = bound;
-			tp = xt_array_type_create (lp, &bseq, etp, 0);
-			if (!tp) {
-				xt_type_delete (etp);
-				return (NULL);
-			}
-			break;
-
-		default:
-			return (NULL);
-	}
-	return (tp);
-}
-
-/* vtc_type -- Create a local type representation from vendor-specific typecode
-	       data. */
-
-TypeSupport_t *vtc_type (TypeLib *lp, unsigned char *vtc)
-{
-	Type		*tp;
-	TypeSupport_t	*dds_ts;
-	unsigned	ofs;
-	char		*name, *cp;
-	uint32_t	name_len;
-	size_t		size;
-	int		keys, fksize, dkeys, dynamic;
-	uint16_t	ext;
-	DDS_ReturnCode_t error;
-
-	ofs = 0;
-	dynamic = 0;
-	memcpy (&ext, vtc + 6, 2);
-	tp = vtc_create_type (lp, vtc, &ofs, &dynamic, (ext >> NRE_EXT_S) != 0);
-	if (!tp)
-		return (NULL);
-
-	xt_type_finalize (tp, &size, &keys, &fksize, &dkeys, NULL);
-	ofs = 8;
-	GSTR (name, name_len, vtc, ofs);
-	dds_ts = xmalloc (sizeof (TypeSupport_t) + name_len);
-	if (!dds_ts) {
-		xt_type_delete (tp);
-		return (NULL);
-	}
-	memset (dds_ts, 0, sizeof (TypeSupport_t));
-	cp = (char *) (dds_ts + 1);
-	memcpy (cp, name, name_len);
-	dds_ts->ts_name = cp;
-	dds_ts->ts_keys = keys;
-	dds_ts->ts_dynamic = dynamic;
-	dds_ts->ts_origin = TSO_Typecode;
-	dds_ts->ts_length = size;
-	if (dds_ts->ts_keys)
-		dds_ts->ts_fksize = fksize;
-	dds_ts->ts_prefer = MODE_CDR;
-	dds_ts->ts_cdr = tp;
-	if (keys && !dkeys)
-		dds_ts->ts_mkeysize = cdr_marshalled_size (4, NULL, tp, 0, 
-							   1, 1, &error);
-	dds_ts->ts_users = 1;
-	return (dds_ts);
-}
-
-/* vtc_free -- Free typecode data. */
-
-void vtc_free (unsigned char *vtc)
-{
-	VTC_Header_t	*p = (VTC_Header_t *) vtc;
-
-	if ((p->nrefs_ext & NRE_NREFS) <= 1)
-		xfree (p);
-	else
-		p->nrefs_ext--;
-}
-
-/* vtc_delete -- Delete typesupport data that was created from typecode. */
-
-void vtc_delete (TypeSupport_t *ts)
-{
-	if (ts->ts_origin != TSO_Typecode)
-		return;
-
-	switch (ts->ts_prefer) {
-		case MODE_V_TC:
-			vtc_free ((unsigned char *) ts->ts_vtc);
-			ts->ts_vtc = NULL;
-			break;
-		case MODE_CDR:
-			xt_type_delete (ts->ts_cdr);
-			ts->ts_cdr = NULL;
-			break;
-		default:
-			warn_printf ("vtc_delete: incorrect type encoding!");
-			return;
-	}
-	xfree (ts);
-}
-
 /* label_match -- Check if there is a label match between an existing union
 		  member (*ump) and the union member we're validating (*ip, 
 		  n). */
@@ -1041,6 +623,13 @@ static int label_match (UnionMember *ump, int32_t *ip, unsigned n)
 	}
 	return (0);
 }
+
+#define	MAX_LABELS	16	/* If more labels: allocate. */
+
+#define	GUINT16(vtc,ofs) *((uint16_t *) (&vtc [ofs])); (ofs) += 2
+#define	GUINT32(vtc,ofs) *((uint32_t *) (&vtc [ofs])); (ofs) += 4
+#define	GSTR(s,l,vtc,ofs) ALIGN (ofs, 4); l = GUINT32(vtc,ofs); \
+			  s= (char *) &vtc [ofs]; (ofs) += l
 
 /* vtc_equal_type -- Compare a real local type with vendor typecode for either
 		     equality (strict == 1) or compatibility (strict == 0). */
@@ -1443,6 +1032,474 @@ static int vtc_equal_type (Type                *tp,
 	return (rc);
 }
 
+/* vtc_create_type -- Create a new local type from vendor typecode data. */
+
+static Type *vtc_create_type (TypeLib       *lp,
+			      unsigned char *vtc,
+			      unsigned      *ofs,
+			      int           *dynamic,
+			      int           ext)
+{
+	Type		*tp, *etp, *disc_tp;
+	char		*sp, *msp;
+	unsigned	i, j, f, max_labels, member_id, nofs, sofs;
+	Extensibility_t	extensible;
+	uint32_t	tc, slen, mslen, nmembers, num, nlabels;
+	int		ptr, key, nested, same, top_level = (*ofs == 0);
+	uint16_t	bits;
+	int32_t		*lbp, *nlbp, *ip, def_index, labels [MAX_LABELS];
+	DDS_BoundSeq	bseq;
+	uint32_t	bound [9];
+	char		buffer [32];
+	static unsigned	anon_count = 0;
+
+	ALIGN (*ofs, 4);
+	sofs = *ofs;
+	tc = GUINT32 (vtc, *ofs);
+	tc &= 0x7fffffff;
+	i = GUINT16 (vtc, *ofs);
+	nofs = *ofs + i;
+	switch (tc) {
+		case VTC_SHORT:
+			tp = xt_primitive_type (DDS_INT_16_TYPE);
+			break;
+		case VTC_LONG:
+			tp = xt_primitive_type (DDS_INT_32_TYPE);
+			break;
+		case VTC_USHORT:
+			tp = xt_primitive_type (DDS_UINT_16_TYPE);
+			break;
+		case VTC_ULONG:
+			tp = xt_primitive_type (DDS_UINT_32_TYPE);
+			break;
+		case VTC_FLOAT:
+			tp = xt_primitive_type (DDS_FLOAT_32_TYPE);
+			break;
+		case VTC_DOUBLE:
+			tp = xt_primitive_type (DDS_FLOAT_64_TYPE);
+			break;
+		case VTC_BOOLEAN:
+			tp = xt_primitive_type (DDS_BOOLEAN_TYPE);
+			break;
+		case VTC_CHAR:
+			tp = xt_primitive_type (DDS_CHAR_8_TYPE);
+			break;
+		case VTC_OCTET:
+			tp = xt_primitive_type (DDS_BYTE_TYPE);
+			break;
+		case VTC_LONGLONG:
+			tp = xt_primitive_type (DDS_INT_64_TYPE);
+			break;
+		case VTC_ULONGLONG:
+			tp = xt_primitive_type (DDS_UINT_64_TYPE);
+			break;
+		case VTC_LONGDOUBLE:
+			tp = xt_primitive_type (DDS_FLOAT_128_TYPE);
+			break;
+		case VTC_WCHAR:
+			tp = xt_primitive_type (DDS_CHAR_32_TYPE);
+			break;
+
+		case VTC_STRUCT:
+			if (ext) {
+				bits = GUINT16 (vtc, *ofs);
+				extensible = ((bits & NRE_EXT_M) >> NRE_EXT_S) - 1;
+			}
+			else
+				extensible = EXTENSIBLE;
+			GSTR (sp, slen, vtc, *ofs);
+			nested = (!top_level && !strcmp (sp, "struct"));
+			if (nested) {
+				snprintf (buffer, sizeof (buffer), "__struct_%u", anon_count++);
+				sp = buffer;
+			}
+			else if ((tp = xt_type_lookup (lp, sp)) != NULL) {
+
+				/* Check if type already created && verify if equal then! */
+				if (vtc_equal_type (tp, vtc, &sofs, 0, &same, ext)) {
+					*ofs = nofs;
+					xt_type_ref (tp);
+					return (tp);
+				}
+				return (NULL);
+			}
+			ALIGN (*ofs, 4);
+			nmembers = GUINT32 (vtc, *ofs);
+			tp = xt_struct_type_create (lp, sp, nmembers, 0);
+			if (!tp)
+				return (NULL);
+
+			if (ext || nested) {
+				f = extensible;
+				if (nested)
+					f |= XTF_NESTED;
+				xt_type_flags_modify (tp, XTF_EXT_MASK | XTF_NESTED, f);
+			}
+			for (i = 0; i < nmembers; i++) {
+				*ofs += 2;	/* Skip member size. */
+				if (ext) {
+					member_id = GUINT16 (vtc, *ofs);
+					member_id <<= 16;
+				}
+				else
+					member_id = i;
+				GSTR (msp, mslen, vtc, *ofs);
+				ptr = vtc [(*ofs)++];
+				ALIGN (*ofs, 2);
+				bits = GUINT16 (vtc, *ofs);
+				if (ext)
+					member_id |= bits;
+				else if (bits != 0xffff)
+					warn_printf ("vtc_create_type: unknown bits combination!");
+
+				key = vtc [(*ofs)++];
+				etp = vtc_create_type (lp, vtc, ofs, dynamic, ext);
+				if (!etp) {
+					xt_type_delete (tp);
+					return (NULL);
+				}
+				if (xt_struct_type_member_set (tp, i, msp,
+							       member_id, etp, 0)) {
+					xt_type_delete (etp);
+					xt_type_delete (tp);
+					return (NULL);
+				}
+				xt_type_delete (etp);
+				if (ptr || key) {
+					f = 0;
+					if ((ptr & 1) != 0) {
+						f |= XMF_SHAREABLE;
+						*dynamic = 1;
+					}
+					if (ext) {
+						if ((ptr & 2) != 0)
+							f |= XMF_MUST_UNDERSTAND;
+						if ((ptr & 4) != 0)
+							f |= XMF_OPTIONAL;
+					}
+					if (key)
+						f |= XMF_KEY;
+					xt_type_member_flags_modify (tp, i, 
+								     XMF_ALL, f);
+				}
+			}
+			break;
+
+		case VTC_UNION:
+			if (ext) {
+				bits = GUINT16 (vtc, *ofs);
+				extensible = ((bits & NRE_EXT_M) >> NRE_EXT_S) - 1;
+			}
+			else
+				extensible = EXTENSIBLE;
+			GSTR (sp, slen, vtc, *ofs);
+			nested = (!top_level && !strcmp (sp, "union"));
+			if (nested) {
+				snprintf (buffer, sizeof (buffer), "__union_%u", anon_count++);
+				sp = buffer;
+			}
+			else if ((tp = xt_type_lookup (lp, sp)) != NULL) {
+
+				/* Check if type already created && verify if equal then! */
+				if (vtc_equal_type (tp, vtc, &sofs, 0, &same, ext)) {
+					*ofs = nofs;
+					xt_type_ref (tp);
+					return (tp);
+				}
+				return (NULL);
+			}
+			ALIGN (*ofs, 4);
+			def_index = (int32_t) GUINT32 (vtc, *ofs);
+			disc_tp = vtc_create_type (lp, vtc, ofs, dynamic, ext);
+			if (!disc_tp)
+				return (NULL);
+
+			ALIGN (*ofs, 4);
+			nmembers = GUINT32 (vtc, *ofs);
+			tp = xt_union_type_create (lp, sp, disc_tp, nmembers, 0);
+			if (!tp) {
+				xt_type_delete (disc_tp);
+				return (NULL);
+			}
+			xt_type_delete (disc_tp);
+			if (ext || nested) {
+				f = extensible;
+				if (nested)
+					f |= XTF_NESTED;
+				xt_type_flags_modify (tp, XTF_EXT_MASK | XTF_NESTED, f);
+			}
+			max_labels = 0;
+			lbp = NULL;
+			for (i = 0; i < nmembers; i++) {
+				*ofs += 2;	/* Skip member size. */
+				if (ext) {
+					member_id = GUINT32 (vtc, *ofs);
+				}
+				else
+					member_id = i + 1;
+				GSTR (msp, mslen, vtc, *ofs);
+				ptr = vtc [(*ofs)++];
+				ALIGN (*ofs, 4);
+				nlabels = GUINT32 (vtc, *ofs);
+				if (nlabels > MAX_LABELS) {
+					if (nlabels > max_labels) {
+						if (max_labels)
+							nlbp = xrealloc (lbp, 
+								sizeof (int32_t) * nlabels);
+						else
+							nlbp = xmalloc (sizeof (int32_t) * nlabels);
+						if (!nlbp) {
+							xt_type_delete (tp);
+							xfree (lbp);
+							return (NULL);
+						}
+						max_labels = nlabels;
+						lbp = nlbp;
+					}
+					ip = lbp;
+				}
+				else if (nlabels)
+					ip = labels;
+				else
+					ip = NULL;
+
+				for (j = 0; j < nlabels; j++) {
+					ip [j] = (int32_t) GUINT32 (vtc, *ofs);
+				}
+				etp = vtc_create_type (lp, vtc, ofs, dynamic, ext);
+				if (!etp)
+					goto cleanup;
+
+				if (xt_union_type_member_set (tp, i + 1, nlabels,
+							  ip, msp,
+							  member_id, etp, 
+							  (int) i == def_index,
+							  0)) {
+					xt_type_delete (etp);
+
+				    cleanup:
+					xt_type_delete (tp);
+					if (lbp)
+						xfree (lbp);
+					return (NULL);
+				}
+				xt_type_delete (etp);
+				if (ptr) {
+					f = 0;
+					if ((ptr & 1) != 0) {
+						f |= XMF_SHAREABLE;
+						*dynamic = 1;
+					}
+					if (ext) {
+						if ((ptr & 2) != 0)
+							f |= XMF_MUST_UNDERSTAND;
+						if ((ptr & 4) != 0)
+							f |= XMF_OPTIONAL;
+					}
+					xt_type_member_flags_modify (tp, i, 
+								     XMF_ALL, f);
+				}
+			}
+			if (lbp)
+				xfree (lbp);
+			break;
+
+		case VTC_ENUM:
+			GSTR (sp, slen, vtc, *ofs);
+			if (!strcmp (sp, "enum")) {
+
+				/* Check if type already created && verify if equal then! */
+				if ((tp = xt_type_lookup (lp, sp)) != NULL) {
+					if (vtc_equal_type (tp, vtc, &sofs, 0, &same, ext)) {
+						*ofs = nofs;
+						xt_type_ref (tp);
+						return (tp);
+					}
+					return (NULL);
+				}
+			}
+			ALIGN (*ofs, 4);
+			nmembers = GUINT32 (vtc, *ofs);
+			if (!nmembers)
+				return (0);
+
+			tp = xt_enum_type_create (lp, sp, 32, nmembers);
+			if (!tp)
+				return (NULL);
+
+			for (i = 0; i < nmembers; i++) {
+				*ofs += 2;	/* Skip member size. */
+				GSTR (msp, mslen, vtc, *ofs);
+				ALIGN (*ofs, 4);
+				num = GUINT32 (vtc, *ofs);
+				if (xt_enum_type_const_set (tp, i, msp, num)) {
+					xt_type_delete (tp);
+					return (NULL);
+				}
+			}
+			break;
+
+		case VTC_STRING:
+		case VTC_WSTRING:
+			ALIGN (*ofs, 4);
+			slen = GUINT32 (vtc, *ofs);
+			tp = xt_string_type_create (lp, slen, 
+				   (tc == VTC_STRING) ? DDS_CHAR_8_TYPE :
+							DDS_CHAR_32_TYPE);
+			if (!tp)
+				return (NULL);
+
+			if (!slen)
+				*dynamic = 1;
+			break;
+
+		case VTC_SEQUENCE:
+			ALIGN (*ofs, 4);
+			slen = GUINT32 (vtc, *ofs);
+			etp = vtc_create_type (lp, vtc, ofs, dynamic, ext);
+			if (!etp)
+				return (NULL);
+
+			tp = xt_sequence_type_create (lp, slen, etp, 0);
+			if (!tp) {
+				xt_type_delete (etp);
+				return (NULL);
+			}
+			*dynamic = 1;
+			break;
+
+		case VTC_ARRAY:
+			ALIGN (*ofs, 4);
+			num = GUINT32 (vtc, *ofs);
+			if (!num || num > 9)
+				return (NULL);
+
+			for (i = 0; i < num; i++) {
+				bound [i] = GUINT32 (vtc, *ofs);
+			}
+			etp = vtc_create_type (lp, vtc, ofs, dynamic, ext);
+			if (!etp)
+				return (NULL);
+
+			DDS_SEQ_INIT (bseq);
+			bseq._length = bseq._maximum = num;
+			bseq._buffer = bound;
+			tp = xt_array_type_create (lp, &bseq, etp, 0);
+			if (!tp) {
+				xt_type_delete (etp);
+				return (NULL);
+			}
+			break;
+
+		default:
+			return (NULL);
+	}
+	return (tp);
+}
+
+/* vtc_type -- Create a local type representation from vendor-specific typecode
+	       data. */
+
+TypeSupport_t *vtc_type (TypeLib *lp, unsigned char *vtc)
+{
+	Type		*tp;
+	StructureType	*stp;
+	UnionType	*utp;
+	TypeSupport_t	*dds_ts;
+	unsigned	ofs;
+	char		*name, *cp;
+	uint32_t	name_len;
+	size_t		size;
+	int		keys, fksize, dkeys, dynamic;
+	uint16_t	ext;
+	DDS_ReturnCode_t error;
+
+	ofs = 0;
+	dynamic = 0;
+	memcpy (&ext, vtc + 6, 2);
+	tp = vtc_create_type (lp, vtc, &ofs, &dynamic, (ext >> NRE_EXT_S) != 0);
+	if (!tp)
+		return (NULL);
+
+	xt_type_finalize (tp, &size, &keys, &fksize, &dkeys, NULL);
+	if (tp->kind == DDS_STRUCTURE_TYPE) {
+		stp = (StructureType *) tp;
+		stp->keys = (keys != 0);
+		stp->fksize = fksize;
+		stp->dkeys = dkeys;
+		stp->dynamic = dynamic;
+	}
+	else if (tp->kind == DDS_UNION_TYPE) {
+		utp = (UnionType *) tp;
+		utp->keys = (keys != 0);
+		utp->fksize = fksize;
+		utp->dkeys = dkeys;
+		utp->dynamic = dynamic;
+	}
+	ofs = 8;
+	GSTR (name, name_len, vtc, ofs);
+	dds_ts = xmalloc (sizeof (TypeSupport_t) + name_len);
+	if (!dds_ts) {
+		xt_type_delete (tp);
+		return (NULL);
+	}
+	memset (dds_ts, 0, sizeof (TypeSupport_t));
+	cp = (char *) (dds_ts + 1);
+	memcpy (cp, name, name_len);
+	dds_ts->ts_name = cp;
+	dds_ts->ts_keys = keys;
+	dds_ts->ts_dynamic = dynamic;
+	dds_ts->ts_origin = TSO_Typecode;
+	dds_ts->ts_length = size;
+	if (dds_ts->ts_keys)
+		dds_ts->ts_fksize = fksize;
+	dds_ts->ts_prefer = MODE_CDR;
+	dds_ts->ts_cdr = tp;
+	if (keys && !dkeys)
+		dds_ts->ts_mkeysize = cdr_marshalled_size (CDR_DOFS, NULL, tp, 0, 
+							   1, 1, &error);
+	dds_ts->ts_users = 1;
+	return (dds_ts);
+}
+
+/* vtc_free -- Free typecode data. */
+
+void vtc_free (unsigned char *vtc)
+{
+	VTC_Header_t	*p = (VTC_Header_t *) vtc;
+
+	if ((p->nrefs_ext & NRE_NREFS) <= 1)
+		xfree (p);
+	else
+		p->nrefs_ext--;
+}
+
+/* vtc_delete -- Delete typesupport data that was created from typecode. */
+
+void vtc_delete (TypeSupport_t *ts)
+{
+	if (ts->ts_origin != TSO_Typecode)
+		return;
+
+	if (--ts->ts_users)
+		return;
+
+	switch (ts->ts_prefer) {
+		case MODE_V_TC:
+			vtc_free ((unsigned char *) ts->ts_vtc);
+			ts->ts_vtc = NULL;
+			break;
+		case MODE_CDR:
+			xt_type_delete (ts->ts_cdr);
+			ts->ts_cdr = NULL;
+			break;
+		default:
+			warn_printf ("vtc_delete: incorrect type encoding!");
+			return;
+	}
+	xfree (ts);
+}
+
 /* vtc_equal -- Compare two typecode types for equality. */
 
 int vtc_equal (const unsigned char *vtc1, const unsigned char *vtc2)
@@ -1551,3 +1608,4 @@ int vtc_compatible (TypeSupport_t *ts, const unsigned char *vtc, int *same)
 }
 
 #endif
+

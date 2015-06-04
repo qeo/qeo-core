@@ -1,0 +1,52 @@
+
+//run unit tests with embedded service
+
+
+//execute with "-PserviceClassifier=debug" to use debug service
+//execute with "-PserviceClassifier=release" to use release service (notice you'll have to accept the manifest manually)
+
+apply from: (System.properties['qeoGradleHelper'] ?: '') + '/android.gradle'
+
+def testsRoot = project(":qeo-android-tests")
+android {
+    sourceSets {
+        main {
+            manifest {
+                srcFile testsRoot.file('AndroidManifest.xml')
+            }
+            java {
+                srcDirs = [testsRoot.file("src")]
+            }
+            assets {
+                srcDirs = [testsRoot.file("assets")]
+            }
+        }
+
+        androidTest.setRoot(testsRoot.file('instrumentTest').absolutePath)
+    }
+}
+
+installCertFile {
+    qeoServiceName = "org.qeo.android.library.test"
+}
+afterEvaluate {
+    installCertFile.dependsOn installDebug
+    project.tasks.connectedAndroidTest.dependsOn(installCertFile) //install certificates before tests
+    project.tasks.singleTest.dependsOn(installCertFile) //install certificates before tests
+}
+
+dependencies {
+    compile project(':qeo-android')
+    if (project.hasProperty("serviceClassifier") && project.getProperty("serviceClassifier") == "debug") {
+        //use debug version
+        compile    project(path:':qeo-android-service-embedded', configuration: "debug")
+    }
+    else {
+        //use release version
+        compile project(':qeo-android-service-embedded')
+    }
+    androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'tests', ext: "jar"
+    androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'testlib', ext: "jar"
+}
+
+

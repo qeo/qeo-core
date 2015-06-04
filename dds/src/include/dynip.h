@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -63,6 +63,10 @@ void di_dump (void);
 unsigned di_ipv6_intf (unsigned char *addr);
 
 /* Return an IPv6 interface index from an IPv6 address. */
+
+void di_check (void);
+
+/* Check if IP addresses have changed. */
 
 #endif /* !__dynip_h_ */
 

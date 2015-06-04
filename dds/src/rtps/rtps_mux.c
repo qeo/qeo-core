@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -34,6 +34,7 @@
 #ifdef DDS_FORWARD
 #include "rtps_fwd.h"
 #endif
+#include "rtps_msg.h"
 #ifdef DDS_TCP
 #include "ri_tcp.h"
 #endif
@@ -684,11 +685,12 @@ void db_log_data (DB *dbp, unsigned char *data, size_t ofs, size_t length)
 
 /* rtps_log_message -- Log a single message. */
 
-void rtps_log_message (unsigned id,
-		       unsigned level,
-		       RMBUF    *mp,
-		       char     dir,
-		       int      data)
+void rtps_log_message (unsigned    id,
+		       unsigned    level,
+		       const RMBUF *mp,
+		       char        dir,
+		       int         data,
+		       const char  *extra)
 {
 	RME		*mep;
 	unsigned	i;
@@ -706,13 +708,18 @@ void rtps_log_message (unsigned id,
 	}
 
 	/* Dump message header. */
-	log_printf (id, level, "RTPS: %c - %4lu: ", dir, (unsigned long) mp->size);
-	log_printf (id, level, "%s - v%u.%u, vendor=%u.%u\r\n", 
-		guid_prefix_str (&mp->header.guid_prefix, buf),
-		mp->header.version [0], 
-		mp->header.version [1], 
-		mp->header.vendor_id [0], 
-		mp->header.vendor_id [1]);
+	if (!extra)
+		log_printf (id, level, "RTPS: ");
+	log_printf (id, level, "%c - %4lu: %s %s\r\n", dir, (unsigned long) mp->size, 
+					(extra) ? extra : "",
+					guid_prefix_str (&mp->header.guid_prefix, buf));
+# if 0	/* Not very useful: */
+	log_printf (id, level, " - v%u.%u, vendor=%u.%u\r\n", 
+				mp->header.version [0], 
+				mp->header.version [1], 
+				mp->header.vendor_id [0], 
+				mp->header.vendor_id [1]);
+# endif
 
 	/* Dump submessages. */
 	for (mep = mp->first; mep; mep = mep->next) {
@@ -751,6 +758,27 @@ void rtps_log_message (unsigned id,
 				log_printf (id, level, "E");
 			if (mep->header.length)
 				switch (mep->header.id) {
+					case ST_INFO_TS: {
+						InfoTimestampSMsg *tp, tp_data;
+						FTime_t		  ft;
+						uint32_t	  t;
+
+						if (mep->header.length != mep->length ||
+						    mep->header.length != sizeof (InfoTimestampSMsg))
+							goto dump_data;
+
+						tp = (InfoTimestampSMsg *) mep->data;
+						if ((mep->flags & RME_SWAP) != 0) {
+							tp_data = *tp;
+							tp = &tp_data;
+							SWAP_TS (*tp, t);
+						}
+						log_printf (id, level, "\t");
+						ftime_set_time (&ft, tp->seconds, tp->fraction);
+						log_print_time (id, level, &ft);
+						log_printf (id, level, "\r\n");
+						continue;
+					}
 					case ST_INFO_SRC: {
 						InfoSourceSMsg *ip;
 
@@ -800,7 +828,11 @@ void rtps_log_message (unsigned id,
 						unsigned	i, n;
 
 						if (mep->header.length != mep->length ||
-						    mep->header.length < MIN_ACKNACK_SIZE ||
+						    mep->header.length < MIN_ACKNACK_SIZE
+#ifdef RTPS_EMPTY_ACKNACK
+										  - 4
+#endif
+										      ||
 						    mep->header.length > MAX_ACKNACK_SIZE)
 							goto dump_data;
 
@@ -906,16 +938,16 @@ void rtps_log_message (unsigned id,
 
 /* rtps_log_messages -- Log a list of messages. */
 
-void rtps_log_messages (unsigned id,
-		        unsigned level,
-		        RMBUF    *msgs,
-			char     dir,
-			int      data)
+void rtps_log_messages (unsigned    id,
+		        unsigned    level,
+		        const RMBUF *msgs,
+			char        dir,
+			int         data)
 {
-	RMBUF	*msg;
+	const RMBUF	*msg;
 
 	for (msg = msgs; msg; msg = msg->next)
-		rtps_log_message (id, level, msg, dir, data);
+		rtps_log_message (id, level, msg, dir, data, NULL);
 }
 
 #endif

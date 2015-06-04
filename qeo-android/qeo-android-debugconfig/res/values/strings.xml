@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">QDebugConfig</string>
+    <string name="hello_world">Hello world!</string>
+    <string name="menu_settings">Settings</string>
+    
+    <string name="loglevel_prompt">Choose a level</string>
+ 
+    <string-array name="loglevel_arrays">   
+        <item>ALL</item>
+        <item>FINEST</item>
+        <item>FINER</item>
+        <item>FINE</item>
+        <item>CONFIG</item>
+        <item>INFO</item>
+        <item>WARNING</item>
+        <item>SEVERE</item>
+        <item>OFF</item>
+    </string-array>
+    
+</resources>

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -1443,26 +1443,6 @@ int sedp_unmatch_peer_endpoint (Skiplist_t *list, void *node, void *arg)
 	}
 	return (1);
 }
-
-# if 0
-/* sedp_topic_free -- Free a previously created topic. */
-
-static int sedp_topic_free (Skiplist_t *list, void *node, void *arg)
-{
-	Topic_t		*tp, **tpp = (Topic_t **) node;
-	Participant_t	*pp = (Participant_t *) arg;
-
-	ARG_NOT_USED (list)
-
-	tp = *tpp;
-	lock_take (tp->lock);
-	/*log_printf (DISC_ID, 0, "sedp_topic_free (%s)!\r\n", str_ptr (tp->name));*/
-	if (pp->p_domain->builtin_readers [BT_Topic])
-		user_topic_notify_delete (tp, tp->entity.handle);
-	topic_delete (pp, tp, NULL, NULL);
-	return (1);
-}
-# endif
 
 #endif
 

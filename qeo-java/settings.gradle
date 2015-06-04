@@ -1,0 +1,18 @@
+include 'qeo-java-core', 'qeo-java', 'qeo-java-json', "qeo-java-forwarder"
+rootProject.name = 'qeo-java-root'
+
+//Logic for building everything from source in development
+if (!System.env.JENKINS_URL) {
+	//don't enable this logic in jenkins
+	
+	//define own sourcepaths
+	if (System.properties['qeo.src.qeo-java']) {
+		logger.debug("qeo-java source path set to: " + System.properties['qeo.src.qeo-android'])
+		File root = new File(System.properties['qeo.src.qeo-java']);
+		project(':qeo-java-core').projectDir = new File(root, "qeo-java-core")
+		project(':qeo-java').projectDir = new File(root, "qeo-java")
+		project(':qeo-java-json').projectDir = new File(root, "qeo-java-json")
+	}
+}
+
+

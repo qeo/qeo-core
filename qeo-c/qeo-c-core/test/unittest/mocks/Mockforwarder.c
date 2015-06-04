@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -250,7 +250,10 @@ qeo_retcode_t fwd_server_reconfig(qeo_factory_t* factory, const char* ip_address
   UNITY_TEST_ASSERT_NOT_NULL(cmock_call_instance, cmock_line, "Function 'fwd_server_reconfig' called more times than expected.");
   cmock_line = cmock_call_instance->LineNumber;
   UNITY_TEST_ASSERT_EQUAL_MEMORY((void*)(cmock_call_instance->Expected_factory), (void*)(factory), sizeof(qeo_factory_t), cmock_line, "Function 'fwd_server_reconfig' called with unexpected value for argument 'factory'.");
-  UNITY_TEST_ASSERT_EQUAL_STRING(cmock_call_instance->Expected_ip_address, ip_address, cmock_line, "Function 'fwd_server_reconfig' called with unexpected value for argument 'ip_address'.");
+  if (cmock_call_instance->Expected_ip_address == NULL)
+    { UNITY_TEST_ASSERT_NULL(ip_address, cmock_line, "Expected NULL. Function 'fwd_server_reconfig' called with unexpected value for argument 'ip_address'."); }
+  else
+    { UNITY_TEST_ASSERT_EQUAL_INT8_ARRAY(cmock_call_instance->Expected_ip_address, ip_address, 1, cmock_line, "Function 'fwd_server_reconfig' called with unexpected value for argument 'ip_address'."); }
   UNITY_TEST_ASSERT_EQUAL_INT(cmock_call_instance->Expected_port, port, cmock_line, "Function 'fwd_server_reconfig' called with unexpected value for argument 'port'.");
   return cmock_call_instance->ReturnVal;
 }

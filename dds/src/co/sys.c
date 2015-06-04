@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -173,11 +173,11 @@ char *sys_osrelease (char *buf, size_t length)
 
 	struct utsname un;
 
-	if (uname(&un) < 0)
+	if (uname (&un) < 0)
 		return (NULL);
 
-	snprintf(buf, length, "%s", un.release);
-	return buf;
+	snprintf (buf, length, "%s", un.release);
+	return (buf);
 #else
 #include <unistd.h>
 #if defined (NetBSD) || defined (__FreeBSD__) || defined (__OpenBSD__)
@@ -311,7 +311,8 @@ const char *sys_scope_str (Scope_t scope)
 unsigned sys_own_ipv4_addr (unsigned char *addr,
 			    size_t        max,
 			    Scope_t       min_scope,
-			    Scope_t       max_scope)
+			    Scope_t       max_scope,
+			    int           log)
 {
 	int			s, i;
 	unsigned		naddr = 0;
@@ -351,10 +352,12 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 	}
 	closesocket (s);
 	return (naddr);
+
 #elif defined(__APPLE__)
-	struct ifaddrs		*ifa = NULL, *ifp;
-    struct in_addr      *ina;
-	int			rc;
+	struct ifaddrs	*ifa = NULL, *ifp;
+	struct in_addr	*ina;
+	int		rc;
+
 	rc = getifaddrs (&ifa);
 	if (rc) {
 		perror ("getifaddrs");
@@ -373,7 +376,8 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 			continue;
 
 #ifdef FILT_VMWARE
-		if (!memcmp (r->ifr_name, "vmnet", 5))
+		if (!memcmp (r->ifr_name, "vmnet", 5) ||
+		    !memcmp (r->ifr_name, "vboxnet", 7))
 			continue;
 #endif
 #ifndef CDR_ONLY
@@ -383,11 +387,13 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 				continue;
 		}
 #endif
-		if (!naddr)
-			log_printf (LOG_DEF_ID, 0, "IP interfaces:\r\n");
-		log_printf (LOG_DEF_ID, 0, "    %-8s : %s\r\n",
-					ifp->ifa_name,
-					inet_ntoa (*ina));
+		if (log) {
+			if (!naddr)
+				log_printf (LOG_DEF_ID, 0, "IP interfaces:\r\n");
+			log_printf (LOG_DEF_ID, 0, "    %-8s : %s\r\n",
+						ifp->ifa_name,
+						inet_ntoa (*ina));
+		}
 		memcpy (addr, ina, 4);
 		memcpy (addr + OWN_IPV4_SCOPE_OFS, &scope, 4);
 		addr += OWN_IPV4_SIZE;
@@ -396,6 +402,7 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 	}
 	freeifaddrs (ifa);
 	return (naddr);
+
 #else
 	struct ifconf		ifc;
 	struct ifreq		*ifr, *r;
@@ -417,7 +424,7 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 		exit (2);
 	}
 
-	if ((ifr = mm_fcts.alloc_ (ifc.ifc_len)) == NULL) {
+	if ((ifr = Alloc (ifc.ifc_len)) == NULL) {
 		perror ("malloc");
 		exit (3);
 	}
@@ -440,7 +447,8 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 			continue;
 
 #ifdef FILT_VMWARE
-		if (!memcmp (r->ifr_name, "vmnet", 5))
+		if (!memcmp (r->ifr_name, "vmnet", 5) ||
+		    !memcmp (r->ifr_name, "vboxnet", 7))
 			continue;
 #endif
 #ifndef CDR_ONLY
@@ -450,18 +458,20 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 				continue;
 		}
 #endif
-		if (!naddr)
-			log_printf (LOG_DEF_ID, 0, "IP interfaces:\r\n");
-		log_printf (LOG_DEF_ID, 0, "    %-8s : %s\r\n",
-					r->ifr_name,
-					inet_ntoa (in4->sin_addr));
+		if (log) {
+			if (!naddr)
+				log_printf (LOG_DEF_ID, 0, "IP interfaces:\r\n");
+			log_printf (LOG_DEF_ID, 0, "    %-8s : %s\r\n",
+						r->ifr_name,
+						inet_ntoa (in4->sin_addr));
+		}
 		memcpy (addr, &in4->sin_addr, 4);
 		memcpy (addr + OWN_IPV4_SCOPE_OFS, &scope, 4);
 		addr += OWN_IPV4_SIZE;
 		max -= OWN_IPV4_SIZE;
 		++naddr;
 	}
-	mm_fcts.free_ (ifr);
+	Free (ifr);
 	return (naddr);
 #endif
 }
@@ -527,7 +537,8 @@ Scope_t sys_ipv6_scope (const unsigned char *addr)
 unsigned sys_own_ipv6_addr (unsigned char *addr,
 			    size_t        max,
 			    Scope_t       min_scope,
-			    Scope_t       max_scope)
+			    Scope_t       max_scope,
+			    int           log)
 {
 #ifdef _WIN32
 	int			s, i;
@@ -589,7 +600,8 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 			return (naddr);
 
 #ifdef FILT_VMWARE
-		if (!memcmp (ifp->ifa_name, "vmnet", 5))
+		if (!memcmp (ifp->ifa_name, "vmnet", 5) ||
+		    !memcmp (ifp->ifa_name, "vboxnet", 7))
 			continue;
 #endif
 		if ((ifp->ifa_flags & IFF_UP) == 0)
@@ -606,14 +618,17 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 			if (!slist_match (intfs, ifp->ifa_name, ':'))
 				continue;
 		}
-		if (!naddr)
-			log_printf (LOG_DEF_ID, 0, "IPv6 interfaces:\r\n");
+		if (log) {
+			if (!naddr)
+				log_printf (LOG_DEF_ID, 0, "IPv6 interfaces:\r\n");
 
-		log_printf (LOG_DEF_ID, 0, "    %-8s : %s\r\n",
-					ifp->ifa_name,
-					inet_ntop (AF_INET6, p, buf, sizeof (buf)));
+			log_printf (LOG_DEF_ID, 0, "    %-8s : %s\r\n",
+						ifp->ifa_name,
+						inet_ntop (AF_INET6, p, buf, sizeof (buf)));
+		}
 		memcpy (addr, p, 16);
-		log_printf (LOG_DEF_ID, 0, " - scope_id = %u\r\n", ap->sin6_scope_id);
+		if (log)
+			log_printf (LOG_DEF_ID, 0, " - scope_id = %u\r\n", ap->sin6_scope_id);
 		memcpy (addr + OWN_IPV6_SCOPE_ID_OFS, &ap->sin6_scope_id, 4);
 		memcpy (addr + OWN_IPV6_SCOPE_OFS, &scope, 4);
 		addr += OWN_IPV6_SIZE;
@@ -642,9 +657,12 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 	while (res) {
 		if (res->ai_family == AF_INET6) {
 			ip = res->ai_addr;
-			log_printf (LOG_DEF_ID, 0, "    %-8s : %s\r\n",
-				res->ai_canonname,
-				inet_ntop (ip->sa_family, ip->sa_data, addrstr, INET6_ADDRSTRLEN));
+			if (log)
+				if (!naddr)
+					log_printf (LOG_DEF_ID, 0, "IPv6 interfaces:\r\n");
+				log_printf (LOG_DEF_ID, 0, "    %-8s : %s\r\n",
+					    res->ai_canonname,
+					    inet_ntop (ip->sa_family, ip->sa_data, addrstr, INET6_ADDRSTRLEN));
 			if (max >= 16) {
 				memcpy (addr, ip->sa_data, 16);
 				addr += 16;
@@ -687,17 +705,19 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 	}
 
 	numif = ifconf.ifc_len / sizeof (ifr[0]);
-	printf("interfaces = %d:\n", numif);
+	if (log)
+		log_printf (LOG_DEF_ID, 0, "interfaces = %d:\r\n", numif);
 	for (i = 0; i < numif; i++) {
-		struct sockaddr_in *s_in = (struct sockaddr_in *) &ifr[i].ifr_addr;
+		struct sockaddr_in *s_in = (struct sockaddr_in *) &ifr [i].ifr_addr;
 
 		if (!inet_ntop (s_in->sin_family, &s_in->sin_addr, ip, sizeof (ip))) {
 			perror ("inet_ntop");
 			return 0;
 		}
-		printf("%s - %s\n", ifr[i].ifr_name, ip);
+		if (log)
+			log_printf (LOG_DEF_ID, 0, "%s - %s\n", ifr [i].ifr_name, ip);
 	}
-	close(s);
+	close (s);
 # if 0
 #ifdef _WIN32
 	/* Get list of addresses. */
@@ -727,7 +747,7 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 		exit (2);
 	}
 
-	if ((ifr = mm_fcts.alloc_ (ifc.ifc_len)) == NULL) {
+	if ((ifr = Alloc (ifc.ifc_len)) == NULL) {
 		perror ("malloc");
 		exit (3);
 	}
@@ -739,13 +759,13 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 	}
 	close (s);
 
-	if (max > 16)
+	if (log && max > 16)
 		log_printf (LOG_DEF_ID, 0, "IPv6 interfaces:\r\n");
 
 	numif = ifc.ifc_len / sizeof (struct ifreq);
 	for (i = 0, r = ifr; i < numif; i++, r++) {
 		in6 = (struct sockaddr_in6 *) &r->ifr_addr;
-		if (max > 16)
+		if (log && max > 16)
 			log_printf (LOG_DEF_ID, 0, "    %-8s : %s\r\n",
 					r->ifr_name,
 					inet_ntop (in6->sin6_family,
@@ -757,7 +777,8 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 		    	continue; 
 
 #ifdef FILT_VMWARE
-		if (!memcmp (r->ifr_name, "vmnet", 5))
+		if (!memcmp (r->ifr_name, "vmnet", 5) ||
+		    !memcmp (r->ifr_name, "vboxnet", 7))
 			continue;
 #endif */
 		addr += 16;
@@ -766,7 +787,7 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 		if (max < 16)
 			break;
 	}
-	mm_fcts.free_ (ifr);
+	Free (ifr);
 	return (naddr);
 #endif /* !_WIN32 */
 # endif /* 0 */
@@ -828,20 +849,24 @@ Ticks_t sys_getticks (void)
 	t = (Ticks_t) (ts.tv_sec * TICKS_PER_SEC + 
 				    ts.tv_nsec / (TMR_UNIT_MS * 1000 * 1000));
 	atomic_set_l (sys_ticks_last, t);
+	/*log_printf (LOG_DEF_ID, 0, "<STL:%lu>\r\n", sys_ticks_last);*/
 	return (t);
 }
 
-/* sys_getftime -- Get the system time in seconds/fractions. */
+/* sys_getftime -- Get the NTP timestamp in seconds/fractions. */
 
 void sys_getftime (FTime_t *time)
 {
 	struct timespec	ts;
+	Time_t		t;
 
 	clock_gettime (CLOCK_REALTIME, &ts);
-	FTIME_SET (*time, ts.tv_sec, ts.tv_nsec);
+	t.seconds = ts.tv_sec;
+	t.nanos = ts.tv_nsec;
+	time2ftime (&t, time);
 }
 
-/* sys_gettime -- Get the system time in seconds/nanoseconds. */
+/* sys_gettime -- Get a system timestamp in seconds/nanoseconds. */
 
 void sys_gettime (Time_t *time)
 {
@@ -852,21 +877,73 @@ void sys_gettime (Time_t *time)
 	time->nanos = ts.tv_nsec;
 }
 
-/* time2ftime -- Convert a timestamp in seconds/nanoseconds to seconds/
-		 fractions. */
+/* NTP times in seconds: */
+#define	MSB0_BASE_TIME	2085978496L	/* 7-Feb-2036 @ 06:28:16 UTC */
+#define	MSB1_BASE_TIME	-2208988800L	/* 1-Jan-1900 @ 01:00:00 UTC */
 
-void time2ftime (Time_t *t, FTime_t *ft)
+/* NTP seconds adjust: */
+#define	NTP_SECONDS(s)	((s < MSB0_BASE_TIME) ?	/* < February 2036? */ \
+				((s) - MSB1_BASE_TIME) | (int) 0x80000000L : \
+				(s) - MSB0_BASE_TIME)
+
+/* time2ftime -- Convert a timestamp in system seconds/nanoseconds (1970..) to
+		 NTP seconds/fractions (1900..). */
+
+void time2ftime (const Time_t *t, FTime_t *ft)
 {
-	FTIME_SET (*ft, t->seconds, t->nanos);
+	FTIME_SET (*ft, NTP_SECONDS (t->seconds), t->nanos);
 }
 
-/* ftime2time -- Convert a timestamp in seconds/fractions to seconds/
-		 nanoseconds. */
+/* ftime2time -- Convert a timestamp in NTP seconds/fractions (1900..) to
+		 system seconds/nanoseconds (1970..). */
 
-void ftime2time (FTime_t *ft, Time_t *t)
+void ftime2time (const FTime_t *ft, Time_t *t)
 {
-	t->seconds = FTIME_SEC (*ft);
+	int	sec = FTIME_SEC (*ft);
+
+	if (sec < 0)
+		t->seconds = MSB0_BASE_TIME + sec;
+	else
+		t->seconds = MSB1_BASE_TIME + sec;
 	t->nanos = FTIME_FRACT (*ft);
+}
+
+#define	ETERNITY	(50 * 3600 * 24 * 365)	/* 40 years :-) */
+
+void ftime_set_time (FTime_t *ft, int32_t sec, uint32_t fract)
+{
+	int32_t	s_start = FTIME_SEC (sys_startup_time);
+
+	/* Check if old (incorrect) timestamp, and adjust if so. */
+	if (sec > s_start && sec - s_start > ETERNITY)
+		FTIME_SETF (*ft, NTP_SECONDS (sec), fract);
+	else
+		FTIME_SETF (*ft, sec, fract);
+}
+
+/* ftime_add_ticks -- Add a ticks delta to an NTP seconds/fractions time. */
+
+void ftime_add_ticks (FTime_t *ft, Ticks_t t)
+{
+	FTime_t	tt;
+
+	FTIME_SETT (tt, t);	/* Delta FTime -> not absolute! */
+	FTIME_ADD (*ft, tt);
+}
+
+/* ftime_delta -- Get the time delta between 2 timestamps in *res. */
+
+int64_t ftime_delta (FTime_t *ft1, FTime_t *ft2)
+{
+#ifdef FTIME_STRUCT
+	int64_t		f1, f2;
+
+	f1 = ((int64_t) *ft1->seconds << 32) | ft1->fraction;
+	f2 = ((int64_t) *ft2->seconds << 32) | ft2->fraction;
+	return (f1 - f2);
+#else
+	return (*ft1 - *ft2);
+#endif
 }
 
 #ifdef STANDALONE

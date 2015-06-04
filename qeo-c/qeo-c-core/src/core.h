@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - Qeo LLC
+ * Copyright (c) 2015 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -89,11 +89,16 @@ typedef struct qeo_forwarder_s {
     } u;
 } forwarder_t;
 
+typedef struct qeo_flags_s {
+    unsigned initialized : 1;
+    unsigned is_server : 1;
+    unsigned bgns_enabled : 1;
+    unsigned forwarding_enabled : 1;
+} flags_t;
+
 struct qeo_factory_s {
-    struct {
-        unsigned initialized : 1;
-        unsigned is_forwarder : 1;
-    } flags;
+    flags_t flags;
+    char* local_port;
     pthread_mutex_t mutex;
     pthread_cond_t  cond;
     bool ready_to_destroy;
@@ -103,7 +108,7 @@ struct qeo_factory_s {
     qeo_security_policy_hndl qeo_pol;
     qeo_identity_t qeo_id;
     DDS_DomainParticipant dp;
-    uintptr_t      userdata;
+    uintptr_t userdata;
     forwarder_t fwd;
     qeocore_writer_t *deviceinfo_writer;
 };
@@ -159,6 +164,7 @@ struct qeocore_reader_s {
         unsigned ignore_dispose : 1;
         unsigned notify_only : 1;
         unsigned close_requested : 1;
+        unsigned notify_wakeup : 1;
     } flags;
     qeocore_reader_listener_t listener;
 };
@@ -284,5 +290,6 @@ qeo_retcode_t core_factory_set_tcp_server_no_lock(qeo_factory_t  *factory,
                                                   const char     *tcp_server);
 
 qeocore_domain_id_t core_get_domain_id_open(void);
+qeocore_domain_id_t core_get_domain_id_closed(void);
 
 #endif /* CORE_H_ */

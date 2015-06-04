@@ -1,0 +1,30 @@
+
+<FindBugsFilter>
+
+	<!-- This code performs an unchecked cast of the return value of a method. -->
+	<Match>
+		<Method returns="void" name="onCreate" params="android.os.Bundle" />
+		<Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE"/>
+	</Match>
+	<Match>
+		<Method returns="android.view.View" name="onCreateView" params="android.view.LayoutInflater,android.view.ViewGroup,android.os.Bundle" />
+		<Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE"/>
+	</Match>
+	<Match>
+		<Method returns="void" name="onAttach" params="android.app.Activity" />
+		<Bug pattern="BC_UNCONFIRMED_CAST"/>
+	</Match>
+
+	<!-- This field is never initialized within any constructor, and is therefore could be null after the object is constructed. -->
+  <Match>
+      <Field type="android.os.Handler" name="mHandler" />
+      <Bug pattern="UWF_FIELD_NOT_INITIALIZED_IN_CONSTRUCTOR"/>
+  </Match>
+  <!-- This code constructs a File object using a hard coded to an absolute pathname -->
+  <Match>
+      <Class name="org.qeo.android.service.DeviceInfoAndroid"/>
+      <Bug pattern="DMI_HARDCODED_ABSOLUTE_FILENAME"/>
+  </Match>
+
+</FindBugsFilter>
+
