@@ -1355,6 +1355,7 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 	uint16_t	ui16;
 #if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
 	size_t		ofs;
+	DB		*raw_dbp = NULL;
 #endif
 	const TypeSupport_t *ts;
 	unsigned char	data [sizeof (DataSMsg)];
@@ -1426,6 +1427,8 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 			rp = (Reader_t *) rxp->domain->participant.
 					p_builtin_ep [EPB_PARTICIPANT_SL_R];
 			if (rxp->peer && 
+			    rxp->domain->security &&
+			    (rxp->domain->participant.p_sec_caps & SECC_NATIVE_SEC) != 0 &&
 			    reply_update_needed (rxp->peer->p_uc_dreply,
 						 rxp->peer->p_ir_locs,
 						 rxp))
@@ -1655,6 +1658,7 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 			warn_printf ("submsg_rx_data: out of memory for data buffer!\r\n");
 			goto cleanup2;
 		}
+		new_key = 1;
 		cp->c_db = dbp;
 		cp->c_data = dbp->data;
 		memcpy (dbp->data, walk.data, cp->c_length);
@@ -1690,7 +1694,10 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 
 		if (cp->c_length) {	/* Real sample data decrypted now. */
 			cp->c_length = length;
-			cp->c_db = dbp;
+			if (cp->c_db != dbp) {
+				raw_dbp = cp->c_db;
+				cp->c_db = dbp;
+			}
 			cp->c_data = dbp->data + ofs;
 			dbp = NULL;
 		}
@@ -1865,6 +1872,9 @@ static void submsg_rx_data (RECEIVER *rxp, RME *mep)
 
     cleanup2:
 #if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
+	if (raw_dbp)
+		db_free_data (raw_dbp);
+
 	if (dbp)
 		db_free_data (dbp); 
 #endif

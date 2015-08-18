@@ -205,7 +205,7 @@ public class ChatActivity
         }
     }
 
-    /** Defines callbacks for service binding, passed to bindService() */
+    /** Defines callbacks for service binding, passed to bindService(). */
     private final ServiceConnection mConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName className, IBinder service)

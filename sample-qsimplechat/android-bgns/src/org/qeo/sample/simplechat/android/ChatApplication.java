@@ -19,10 +19,14 @@ import android.app.Application;
 import org.qeo.android.service.QeoDefaults;
 import org.qeo.android.service.ui.QeoDefaultsUI;
 
+/**
+ * Application class of this project.
+ */
 public class ChatApplication extends Application
 {
     @Override
-    public void onCreate() {
+    public void onCreate()
+    {
         super.onCreate();
         QeoDefaults.setRemoteRegistrationServiceAvailable(true);
         QeoDefaults.setRemoteRegistrationListenerAvailable(true);

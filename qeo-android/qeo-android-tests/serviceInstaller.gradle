@@ -91,6 +91,9 @@ afterEvaluate {
     if (!System.properties['qeo.noServiceInstall']) {
         //don't uninstall/reinstall service if this property is set
         project.tasks.connectedAndroidTest.dependsOn(installCertFile) //install certificates before tests
+        if (project.tasks.findByName("connectedAndroidTestDebug") != null) {
+            project.tasks.getByName("connectedAndroidTestDebug").dependsOn(installCertFile)
+        }
         project.tasks.singleTest.dependsOn(installCertFile) //install certificates before tests
     }
 }

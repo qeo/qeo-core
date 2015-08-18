@@ -78,7 +78,7 @@ static DDS_ReturnCode_t get_certificate_chain (unsigned char  *data,
 
 	/* Create a new BIO with the certificate data */
  	if (!(bio = BIO_new_mem_buf ((void *) data, length))) {
-		sk_X509_free (*cert_chain);
+		sk_X509_pop_free (*cert_chain, X509_free);
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
 	while ((ptr = PEM_read_bio_X509 (bio, NULL, NULL, NULL)) != NULL) {
@@ -270,6 +270,7 @@ static DDS_ReturnCode_t sp_sys_validate_certificate (unsigned char *certificate,
 	/* get the untrusted certificate chain */
 	if ((ret = get_certificate_chain (certificate, len, &chain))) {
 		X509_free (cert);
+		log_printf (SEC_ID, 0, "sp_sys_validate_certificate: chain error!\r\n");
 		return (ret);
 	}
 
@@ -277,6 +278,7 @@ static DDS_ReturnCode_t sp_sys_validate_certificate (unsigned char *certificate,
 	if ((ret = get_certificate_chain (ca, ca_len, &ca_chain))) {
 		X509_free (cert);
 		sk_X509_pop_free (chain, X509_free);
+		log_printf (SEC_ID, 0, "sp_sys_validate_certificate: ca_chain error!\r\n");
 		return (ret);
 	}
 
@@ -285,6 +287,7 @@ static DDS_ReturnCode_t sp_sys_validate_certificate (unsigned char *certificate,
 		X509_free (cert);
 		sk_X509_pop_free (chain, X509_free);
 		sk_X509_pop_free (ca_chain, X509_free);
+		log_printf (SEC_ID, 0, "sp_sys_validate_certificate: out of resources (ca_store)!\r\n");
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
 
@@ -296,6 +299,7 @@ static DDS_ReturnCode_t sp_sys_validate_certificate (unsigned char *certificate,
 	X509_STORE_free (store);
 	sk_X509_pop_free (chain, X509_free);
 	sk_X509_pop_free (ca_chain, X509_free);
+	ERR_remove_thread_state (NULL);
 	return (ret);
 }
 

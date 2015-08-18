@@ -14,6 +14,7 @@
 
 package org.qeo.android.service;
 
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.qeo.android.internal.NoProguard;
@@ -57,6 +58,7 @@ public final class ServiceApplication
     private static Application sApp;
     private static AppProperties sProperties;
     private static boolean sIsInit = false;
+    private static Boolean sIsEmbedded = null;
 
     private ServiceApplication()
     {
@@ -131,6 +133,28 @@ public final class ServiceApplication
             throw new IllegalStateException("No <meta-data/> entry defined in the manifest with the value " + key);
         }
         return result;
+    }
+
+    /**
+     * Check if the service is running as an embedded service or standalone.
+     * @return true for embedded, false for standalone.
+     */
+    public static synchronized boolean isEmbeddedService()
+    {
+        if (sIsEmbedded == null) {
+            try {
+                ApplicationInfo ai = sApp.getPackageManager().getApplicationInfo(sApp.getPackageName(),
+                    PackageManager.GET_META_DATA);
+                Bundle bundle = ai.metaData;
+                sIsEmbedded = !bundle.getBoolean("org.qeo.service.standalone", false);
+            }
+            catch (PackageManager.NameNotFoundException e) {
+                LOG.log(Level.WARNING, "Name not found", e);
+                sIsEmbedded = false;
+            }
+            LOG.fine("Running as embedded service? " + sIsEmbedded);
+        }
+        return sIsEmbedded;
     }
 
     /**

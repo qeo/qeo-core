@@ -121,8 +121,10 @@ dependencies {
     debugCompile    project(path:':qeo-android-service-embedded', configuration: "debug")
     unittestCompile project(path:':qeo-android-service-embedded')
 
-    androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'jnitests', ext: "jar"
-    androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'testlib', ext: "jar"
+    debugCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'jnitests'
+    debugCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'testlib'
+    //androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'jnitests'
+    //androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'testlib'
 
     downloadUnzip group: project.javaGroup, name: 'qeo-java',         version: project.javaVersion, classifier: 'native-android-symbols', ext: "jar"
     downloadUnzip group: project.javaGroup, name: 'qeo-java',         version: project.javaVersion, classifier: 'native-android-gdb', ext: "jar"

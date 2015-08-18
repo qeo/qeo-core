@@ -49,8 +49,8 @@ task getAssets() {
 
 afterEvaluate {
     tasks.mergeDebugAssets.dependsOn(getAssets)
-    tasks.assembleDebugTest.dependsOn(getAssets)
-    tasks.compileDebugTestJava.dependsOn(getAssets)
+    tasks.assembleDebugAndroidTest.dependsOn(getAssets)
+    tasks.compileDebugAndroidTestJava.dependsOn(getAssets)
 }
 
 dependencies {

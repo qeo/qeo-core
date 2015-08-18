@@ -23,7 +23,9 @@
         <meta-data
             android:name="org.qeo.rest.qeo.client.id"
             />
-
+        <meta-data
+            android:name="org.qeo.service.standalone"
+            />
 
         <service
             android:name="org.qeo.android.service.QeoService"

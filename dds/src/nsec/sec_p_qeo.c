@@ -51,7 +51,7 @@ PolicyList_t policy_list;
 Timer_t      tmr_policy;
 static int   list_init = 0;
 
-void qeo_receive_policy_version (GuidPrefix_t guid_prefix,
+void qeo_receive_policy_version (GuidPrefix_t *guid_prefix,
 				 uint64_t     version,
 				 int          type);
 
@@ -65,27 +65,33 @@ static void init_policy_list (void)
 	list_init = 1;
 }
 
-static Policy_t *get_policy_node (GuidPrefix_t guid_prefix)
+static Policy_t *get_policy_node (GuidPrefix_t *guid_prefix)
 {
 	Policy_t *node;
 
+	if (!list_init)
+		return (NULL);
+
 	LIST_FOREACH (policy_list, node)
-		if (!memcmp (&node->guid_prefix, &guid_prefix, sizeof (GuidPrefix_t)))
+		if (!memcmp (&node->guid_prefix, guid_prefix, sizeof (GuidPrefix_t)))
 			return (node);
 	return (NULL);
 }
 
-static Policy_t *add_policy_node (GuidPrefix_t guid_prefix,
+static Policy_t *add_policy_node (GuidPrefix_t *guid_prefix,
 				  uint64_t     version)
 {
 	Policy_t *node;
-	
+
+	if (!list_init)
+		return (NULL);
+
 	if (!(node = get_policy_node (guid_prefix))) {
 		if (!(node = Alloc (sizeof (Policy_t))))
 			return (NULL);
 
 		else {
-			memcpy (&node->guid_prefix, &guid_prefix, sizeof (GuidPrefix_t));
+			memcpy (&node->guid_prefix, guid_prefix, sizeof (GuidPrefix_t));
 			node->version = version;
 			node->update_cnt = 1;
 			LIST_ADD_HEAD (policy_list, *node);
@@ -94,12 +100,20 @@ static Policy_t *add_policy_node (GuidPrefix_t guid_prefix,
 	return (node);
 }
 
-static void remove_policy_node (Policy_t *node)
+void DDS_Security_free_policy_node (GuidPrefix_t *guid_prefix)
 {
+	Policy_t *node;
+
+	if (!list_init)
+		return;
+
+	lock_take (pol_lock);
+	node = get_policy_node (guid_prefix);
 	if (node) {
 		LIST_REMOVE (policy_list, *node);
 		Free (node);
 	}
+	lock_release (pol_lock);
 }
 
 void dump_policy_version_list (void)
@@ -232,20 +246,18 @@ void DDS_Security_qeo_write_policy_version (void)
 	tmr_start (&tmr_policy, fastrandn (TICKS_PER_SEC * 2), 0, qeo_policy_update_to);
 }
 
-void qeo_receive_policy_version (GuidPrefix_t guid_prefix,
+void qeo_receive_policy_version (GuidPrefix_t *guid_prefix,
 				 uint64_t     version,
 				 int          type)
 {
 	char buf [32];
 	Policy_t *node;
 
-     	log_printf (SEC_ID, 0, "SEC_P_QEO: received a new policy state [%llu] [type:%d] from %s \r\n", (unsigned long long) version, type, guid_prefix_str ((GuidPrefix_t *) &guid_prefix, buf));
+     	log_printf (SEC_ID, 0, "SEC_P_QEO: received a new policy state [%llu] [type:%d] from %s \r\n", (unsigned long long) version, type, guid_prefix_str ((GuidPrefix_t *) guid_prefix, buf));
 
-	if (type == 2) /* DELETE */ {
-		lock_take  (pol_lock);
-		remove_policy_node (get_policy_node (guid_prefix));
-		lock_release (pol_lock);
-	}
+	if (type == 2) /* DELETE */
+		DDS_Security_free_policy_node (guid_prefix);
+
 	else if (type == 1) /* UPDATE */ {
 		lock_take (pol_lock);
 		node = add_policy_node (guid_prefix, version);

@@ -413,6 +413,7 @@ static void psmp_handshake_request (IpspHandshake_t *p)
 {
 	DDS_ReturnCode_t	error;
 
+
 #ifdef PSMP_TRACE_HS
 	log_printf (SEC_ID, 0, "psmp_handshake_request: %p\r\n", (void *) p);
 #endif
@@ -946,6 +947,8 @@ void psmp_handshake_wait (Domain_t      *dp,
 	psmp_state_i (p, IHSS_W_REQ);
 	if (!rehandshake) {
 		p->tx_hs_token = psmp_hs_init_token ();
+		log_printf (SEC_ID, 0, "PSMP-wait: participant=%p, tx_hs_token = %p\r\n", 
+					(void *) pp, (void *) p->tx_hs_token);
 		p->retries = MAX_WHS_RETRIES;
 		p->backoff = 0;
 		p->tx_seqnr = psmp_seqnr++;

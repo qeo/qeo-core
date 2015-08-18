@@ -59,8 +59,25 @@ int crypto_data_init (unsigned min, unsigned max)
 		handle_final (handles);
 		return (DDS_RETCODE_OUT_OF_RESOURCES);
 	}
+	memset (crypto, 0, (cur_handles + 1) * sizeof (CryptoData_t *));
 	sec_crypt_alloc = (cur_handles + 1) * sizeof (CryptoData_t *);
 	return (DDS_RETCODE_OK);
+}
+
+void crypto_data_final (void)
+{
+	Crypto_t	h;
+
+	if (!crypto)
+		return;
+
+	for (h = 1; h <= cur_handles; h++)
+		if ((*crypto) [h])
+			crypto_release (h);
+
+	handle_final (handles);
+	xfree (crypto);
+	crypto = NULL;
 }
 
 /* crypto_create -- Create a new crypto handle for a crypto context, and return
@@ -102,6 +119,7 @@ CryptoData_t *crypto_create (const SEC_CRYPTO *plugin,
 			fatal_printf ("Crypto: can't extend crypto table!");
 			return (NULL);
 		}
+		memset (&(*crypto) [cur_handles + 1], 0, n * sizeof (CryptoData_t *));
 		cur_handles += n;
 		sec_crypt_alloc += n * sizeof (CryptoData_t *);
 	}

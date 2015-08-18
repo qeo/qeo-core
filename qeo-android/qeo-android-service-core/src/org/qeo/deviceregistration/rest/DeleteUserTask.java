@@ -23,7 +23,8 @@ import com.google.api.client.http.HttpMethods;
 import com.google.api.client.http.HttpResponse;
 
 /**
- * AsyncTask to delete a user.
+ * AsyncTask to delete a user.<br>
+ * It will return true if the action completed successfully.
  */
 public class DeleteUserTask extends RestTask<Boolean>
 {
@@ -32,6 +33,7 @@ public class DeleteUserTask extends RestTask<Boolean>
 
     /**
      * Create an instance.
+     *
      * @param userId The user id to be deleted.
      */
     public DeleteUserTask(long userId)
@@ -46,16 +48,13 @@ public class DeleteUserTask extends RestTask<Boolean>
             HttpResponse response = exec(HttpMethods.DELETE, "/" + Users.URL + "/" + mUserId, null);
             if (!response.isSuccessStatusCode()) {
                 LOG.severe("Error deleting user " + mUserId + ": " + response.parseAsString());
-                return true;
+                return false;
             }
             LOG.fine("Delete completed");
         }
         catch (Exception e) {
             LOG.log(Level.WARNING, "exception", e);
         }
-
-        return false;
+        return true;
     }
-
-
 }

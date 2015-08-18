@@ -31,20 +31,14 @@ installCertFile {
 }
 afterEvaluate {
     installCertFile.dependsOn installDebug
+    project.tasks.connectedAndroidTestDebug.dependsOn(installCertFile)
     project.tasks.connectedAndroidTest.dependsOn(installCertFile) //install certificates before tests
     project.tasks.singleTest.dependsOn(installCertFile) //install certificates before tests
 }
 
 dependencies {
     compile project(':qeo-android')
-    if (project.hasProperty("serviceClassifier") && project.getProperty("serviceClassifier") == "debug") {
-        //use debug version
-        compile    project(path:':qeo-android-service-embedded', configuration: "debug")
-    }
-    else {
-        //use release version
-        compile project(':qeo-android-service-embedded')
-    }
+    compile project(':qeo-android-service-embedded')
     androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'tests', ext: "jar"
     androidTestCompile group: project.javaGroup, name: 'qeo-java', version: project.javaVersion, classifier: 'testlib', ext: "jar"
 }

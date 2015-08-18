@@ -507,6 +507,7 @@ TopicHandle_t DDS_SP_add_topic (ParticipantHandle_t participant_handle,
 		tp->topic.name = NULL; /* name == '*' */
 		tp->topic.mode = TA_ALL;
 	        tp->topic.index = ++topic_counter;
+		log_printf ("MSP: add topic (%d, 0, %d);\r\n", participant_handle, tp->topic.index);
 		tp->topic.blacklist = 0;
 		p->ntopics++;
 
@@ -528,6 +529,7 @@ TopicHandle_t DDS_SP_add_topic (ParticipantHandle_t participant_handle,
 		dtp->name = NULL; /* name == '*' */
 		dtp->mode = TA_ALL;
 		dtp->index = ++topic_counter;
+		log_printf ("MSP: add topic (0, %d, %d);\r\n", participant_handle, tp->topic.index);
 		dtp->blacklist = 0;
 		d->ntopics++;
 
@@ -548,16 +550,19 @@ DDS_ReturnCode_t DDS_SP_remove_topic (ParticipantHandle_t participant_handle,
 
 	/* log_printf (SEC_ID, 0, "MSP: Remove topic access\r\n"); */
 
+	log_printf (SEC_ID, 0, "MSP: remove topic (%d, %d, %d);\r\n", participant_handle, domain_handle, topic_id);
 	if (participant_handle > 0) {
 		if (!(p = id_handles [participant_handle]))
 			return (DDS_RETCODE_BAD_PARAMETER);
 		
 		LIST_FOREACH (p->topics, tp)
 			if (tp->topic.index == topic_id) {
-				free(tp->topic.name);
+				if (tp->topic.name)
+					free(tp->topic.name);
 				LIST_REMOVE (p->topics, *tp);
 				free (tp);
 				p->ntopics--;
+				log_printf (SEC_ID, 0, "MSP: removed from participant!\r\n");
 				break;
 			}
 	} 
@@ -567,10 +572,12 @@ DDS_ReturnCode_t DDS_SP_remove_topic (ParticipantHandle_t participant_handle,
 
 		LIST_FOREACH (d->topics, dtp) {
 			if (dtp->index == topic_id) {
-				free (dtp->name);
+				if (dtp->topic.name)
+					free (dtp->name);
 				LIST_REMOVE (d->topics, *dtp);
 				free (dtp);
 				d->ntopics--;
+				log_printf (SEC_ID, 0, "MSP: removed from domain!\r\n");
 				break;
 			}
 		}

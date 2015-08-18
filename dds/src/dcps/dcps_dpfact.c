@@ -98,8 +98,7 @@ DDS_DomainParticipant DDS_DomainParticipantFactory_create_participant (
 
 #ifdef DDS_SECURITY
 #ifdef DDS_NATIVE_SECURITY
-	if (!local_identity)
-		authenticate_participant (&prefix);
+	authenticate_participant (&prefix);
 #endif
 
 	/* Check if security policy allows us to join the domain! */
@@ -140,11 +139,11 @@ DDS_DomainParticipant DDS_DomainParticipantFactory_create_participant (
 	dp->participant.p_sec_caps = sec_caps;
 	dp->participant.p_sec_locs = NULL;
 #ifdef DDS_SECURITY
+	dp->participant.p_id = local_identity;
 	dp->participant.p_id_tokens = dp->participant.p_p_tokens = NULL;
 #endif
 	if (secure) {
 #ifdef DDS_NATIVE_SECURITY
-		dp->participant.p_id = local_identity;
 		dp->participant.p_id_tokens = sec_get_identity_tokens (local_identity,
 							 (sec_caps & 0xffff) | 
 							    (sec_caps >> 16),

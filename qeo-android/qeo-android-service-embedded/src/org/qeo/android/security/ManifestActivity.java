@@ -17,7 +17,7 @@ package org.qeo.android.security;
 import java.util.logging.Logger;
 
 import org.qeo.android.security.ManifestDialog.ManifestDialogCallbacks;
-import org.qeo.android.service.ApplicationSecurity;
+import org.qeo.android.service.ApplicationSecurityStandalone;
 
 import android.content.Intent;
 import android.os.Bundle;
@@ -47,7 +47,7 @@ public class ManifestActivity
     {
         super.onStart();
         Bundle args = getIntent().getExtras();
-        mUid = args.getInt(ApplicationSecurity.INTENT_EXTRA_UID);
+        mUid = args.getInt(ApplicationSecurityStandalone.INTENT_EXTRA_UID);
 
         mDialog = new ManifestDialog();
 
@@ -73,10 +73,10 @@ public class ManifestActivity
     {
         if (mDialog != null) {
             // only send the notification once
-            Intent intent = new Intent(ApplicationSecurity.ACTION_MANIFEST_DIALOG_FINISHED);
+            Intent intent = new Intent(ApplicationSecurityStandalone.ACTION_MANIFEST_DIALOG_FINISHED);
 
-            intent.putExtra(ApplicationSecurity.INTENT_EXTRA_UID, mUid);
-            intent.putExtra(ApplicationSecurity.INTENT_EXTRA_RESULT, result);
+            intent.putExtra(ApplicationSecurityStandalone.INTENT_EXTRA_UID, mUid);
+            intent.putExtra(ApplicationSecurityStandalone.INTENT_EXTRA_RESULT, result);
             LOG.fine("notifyService: " + mUid + ": " + result);
             LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
             finish();

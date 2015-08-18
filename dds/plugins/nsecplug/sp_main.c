@@ -30,6 +30,13 @@
 #include "error.h"
 #include "log.h"
 
+#ifndef DDS_SP_SIMULATE_SIGN
+static void sp_policy_final (void)
+{
+	sp_sys_final ();
+}
+#endif
+
 static DDS_ReturnCode_t sp_policy_init (void)
 {
 	/* Add the openssl plugin for certificates */
@@ -41,6 +48,7 @@ static DDS_ReturnCode_t sp_policy_init (void)
 	sp_sec_cert_add ();
 	/* Add the openssl plugin for crypto */
 	sp_sec_crypto_add ();
+	atexit (sp_policy_final);
 #endif
 
 	return (DDS_RETCODE_OK);

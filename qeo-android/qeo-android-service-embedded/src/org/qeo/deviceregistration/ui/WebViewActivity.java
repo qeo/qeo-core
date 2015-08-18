@@ -35,7 +35,11 @@ import android.content.IntentFilter;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
 import android.support.v4.content.LocalBroadcastManager;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
 
+import com.actionbarsherlock.app.SherlockFragment;
 import com.actionbarsherlock.app.SherlockFragmentActivity;
 import com.actionbarsherlock.view.Window;
 
@@ -57,7 +61,6 @@ public class WebViewActivity
 
     private static final Logger LOG = Logger.getLogger("WebViewActivity");
     /** OAuth code that will be set as result of this activity. */
-    public static final String INTENT_EXTRA_OAUTH_CODE = "oauthCode";
     private LocalBroadcastManager mLbm;
     private boolean mStartedFromExternalAppp;
     private boolean mIsConfigChange;
@@ -81,7 +84,14 @@ public class WebViewActivity
             if (googlePlusId.isEmpty()) {
                 //google openId connect disabled. Skip to regular openid login screen
                 LOG.warning("Google+ login disabled.");
-                fragment = new WebviewFragment();
+                String clientId = ServiceApplication.getMetaData(ServiceApplication.META_DATA_QEO_CLIENT_ID);
+                if (clientId == null || clientId.isEmpty()) {
+                    LOG.warning("Webview login disabled.");
+                    fragment = new RemoteRegFragment();
+                }
+                else {
+                    fragment = new WebviewFragment();
+                }
             }
             else {
                 fragment = new GplusFragment();
@@ -372,5 +382,25 @@ public class WebViewActivity
                 throw new IllegalStateException("unhandled action: " + action);
             }
         }
+    }
+
+    /**
+     * Class to show remote registration information.
+     */
+    public static class RemoteRegFragment
+        extends SherlockFragment
+    {
+        @Override
+        public void onCreate(Bundle savedInstanceState)
+        {
+            super.onCreate(savedInstanceState);
+        }
+
+        @Override
+        public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState)
+        {
+            return inflater.inflate(R.layout.fragment_remote_reg, container, false);
+        }
+
     }
 }

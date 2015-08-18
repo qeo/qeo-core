@@ -488,7 +488,7 @@ static MSTopic_t *lookup_topic (MSDomain_t      *dp,
 			continue;
 
 		if (!up->topic.name) {
-			log_printf (SEC_ID, 0, " Participant Topic rule for \'%s\' (matched with *)\r\n", topic_name);
+			log_printf (SEC_ID, 0, "Participant Topic rule for \'%s\' (matched with *)\r\n", topic_name);
 			if (!up->topic.blacklist)
 				return (&up->topic);
 			else
@@ -496,7 +496,7 @@ static MSTopic_t *lookup_topic (MSDomain_t      *dp,
 		}
 		else if (strchr (up->topic.name, '*')) {
 			if (!nmatch (up->topic.name, topic_name, 0)) {
-				log_printf (SEC_ID, 0, " Participant Topic rule for \'%s\' (matched with %s)\r\n", topic_name, up->topic.name);
+				log_printf (SEC_ID, 0, "Participant Topic rule for \'%s\' (matched with %s)\r\n", topic_name, up->topic.name);
 				if (!up->topic.blacklist)
 					return (&up->topic);
 				else
@@ -504,7 +504,7 @@ static MSTopic_t *lookup_topic (MSDomain_t      *dp,
 			}
 		}
 		else if (!strcmp (up->topic.name, topic_name)) {
-			log_printf (SEC_ID, 0, " Participant Topic rule for \'%s' (exact match)\r\n", topic_name);
+			log_printf (SEC_ID, 0, "Participant Topic rule for \'%s' (exact match)\r\n", topic_name);
 			if (!up->topic.blacklist)
 				return (&up->topic);
 			else
@@ -525,7 +525,7 @@ static MSTopic_t *lookup_topic (MSDomain_t      *dp,
 
 		else if (strchr (tp->name, '*')) {
 			if (!nmatch (tp->name, topic_name, 0)) {
-				log_printf (SEC_ID, 0, " Domain Topic rule for \'%s\' (matched with %s)\r\n", topic_name, tp->name);
+				log_printf (SEC_ID, 0, "Domain Topic rule for \'%s\' (matched with %s)\r\n", topic_name, tp->name);
 				if (!tp->blacklist)
 					return (tp);
 				else
@@ -533,18 +533,20 @@ static MSTopic_t *lookup_topic (MSDomain_t      *dp,
 			}
 		}
 		else if (!strcmp (tp->name, topic_name)) {
-			log_printf (SEC_ID, 0, " Domain Topic rule for \'%s\' (exact match)\r\n", topic_name);
-			if (!tp->blacklist)
+			log_printf (SEC_ID, 0, "Domain Topic rule for \'%s\' (exact match)\r\n", topic_name);
+			if (!tp->blacklist) {
+				log_printf (SEC_ID, 0, "\r\n");
 				return (tp);
+			}
 			else
 				goto blacklist;
 		}
 	}
-	log_printf (SEC_ID, 0, " No Topic rule found\r\n");
+	log_printf (SEC_ID, 0, "No Topic rule found!\r\n");
        	return (NULL);
 
  blacklist:
-	log_printf (SEC_ID, 0, " (Blacklisted) \r\n");
+	log_printf (SEC_ID, 0, "Topic is blacklisted!\r\n");
 	return (NULL);
 }
 
@@ -570,7 +572,7 @@ static MSPartition_t *lookup_partition (MSDomain_t      *dp,
 			continue;
 		
 		if (!up->partition.name) {
-			log_printf (SEC_ID, 0, " Participant Partition rule for \'%s\' (matched with *)\r\n", partition_name);
+			log_printf (SEC_ID, 0, "Participant Partition rule for \'%s\' (matched with *)\r\n", partition_name);
 			if (!up->partition.blacklist)
 				return (&up->partition);
 			else
@@ -579,7 +581,7 @@ static MSPartition_t *lookup_partition (MSDomain_t      *dp,
 
 		else if (strchr (up->partition.name, '*')) {
 			if (!nmatch (up->partition.name, partition_name, 0)) {
-				log_printf (SEC_ID, 0, " Participant Partition rule for \'%s\' (matched with %s)\r\n", partition_name, up->partition.name);
+				log_printf (SEC_ID, 0, "Participant Partition rule for \'%s\' (matched with %s)\r\n", partition_name, up->partition.name);
 				if (!up->partition.blacklist)
 					return (&up->partition);
 				else
@@ -587,7 +589,7 @@ static MSPartition_t *lookup_partition (MSDomain_t      *dp,
 			}
 		}
 		else if (!strcmp (up->partition.name, partition_name)) {
-			log_printf (SEC_ID, 0, " Participant Partition rule for \'%s\' (exact match)\r\n", partition_name);
+			log_printf (SEC_ID, 0, "Participant Partition rule for \'%s\' (exact match)\r\n", partition_name);
 			if (!up->partition.blacklist)
 				return (&up->partition);
 			else
@@ -602,7 +604,7 @@ static MSPartition_t *lookup_partition (MSDomain_t      *dp,
 		
 		if (!tp->name)
 			if (!tp->blacklist) {
-				log_printf (SEC_ID, 0, " Domain Partition rule for \'%s\' (matched with *)\r\n", partition_name);
+				log_printf (SEC_ID, 0, "Domain Partition rule for \'%s\' (matched with *)\r\n", partition_name);
 				return (tp);
 			}
 			else
@@ -610,7 +612,7 @@ static MSPartition_t *lookup_partition (MSDomain_t      *dp,
 
 		else if (strchr (tp->name, '*')) {
 			if (!nmatch (tp->name, partition_name, 0)) {
-				log_printf (SEC_ID, 0, " Domain Partition rule for \'%s\' (matched with %s)\r\n", partition_name, tp->name);
+				log_printf (SEC_ID, 0, "Domain Partition rule for \'%s\' (matched with %s)\r\n", partition_name, tp->name);
 				if (!tp->blacklist)
 					return (tp);
 				else
@@ -618,17 +620,17 @@ static MSPartition_t *lookup_partition (MSDomain_t      *dp,
 			}
 		}
 		else if (!strcmp (tp->name, partition_name)) {
-			log_printf (SEC_ID, 0, " Domain Partition rule for \'%s\' (exact match)\r\n", partition_name);
+			log_printf (SEC_ID, 0, "Domain Partition rule for \'%s\' (exact match)\r\n", partition_name);
 			if (!tp->blacklist)
 				return (tp);
 			else
 				goto blacklist;
 		}
 	}
-	log_printf (SEC_ID, 0, " No Partition rule found for \'%s\'\r\n", partition_name);
+	log_printf (SEC_ID, 0, "No Partition rule found for \'%s\'\r\n", partition_name);
 	return (NULL);
  blacklist:
-	log_printf (SEC_ID, 0, " (Blacklisted) \r\n");
+	log_printf (SEC_ID, 0, "Partition is blacklisted!\r\n");
 	return (NULL);
 }
 
@@ -813,10 +815,10 @@ DDS_ReturnCode_t sp_check_create_topic (PermissionsHandle_t perm,
 	}
 	tp = lookup_topic (dp, ip, topic_name);
 	if (!tp || (tp->mode & TA_CREATE) == 0) {
-		log_printf (SEC_ID, 0, "--> denied.\r\n");
+		log_printf (SEC_ID, 0, "  --> access denied.\r\n");
 		return (DDS_RETCODE_NOT_ALLOWED_BY_SEC);
 	}
-	log_printf (SEC_ID, 0, "--> accepted.\r\n");
+	log_printf (SEC_ID, 0, "  --> access allowed.\r\n");
 	return (DDS_RETCODE_OK);
 }
 
@@ -843,7 +845,7 @@ DDS_ReturnCode_t sp_check_create_writer (PermissionsHandle_t     perm,
 	log_printf (SEC_ID, 0, "SP_ACCESS: DataWriter('%s') create request by local participant -> ", topic_name);
 	
 	if (perm == 1) {
-		log_printf (SEC_ID, 0, "unsecure domain -> accepted\r\n");
+		log_printf (SEC_ID, 0, "unsecure domain -> allowed\r\n");
 		return (DDS_RETCODE_OK);
 	}
 	
@@ -879,10 +881,10 @@ DDS_ReturnCode_t sp_check_create_writer (PermissionsHandle_t     perm,
 		*secure |= DDS_SECA_PAYLOAD_PROTECTED;
 	if (tp->submsg_enc || tp->payload_enc)
 		*secure |= (tp->crypto_mode << DDS_SECA_ENCRYPTION_SHIFT);
-	log_printf (SEC_ID, 0, "--> accepted.\r\n");
+	log_printf (SEC_ID, 0, "  --> access allowed.\r\n");
 	return (DDS_RETCODE_OK);
  denied:
-	log_printf (SEC_ID, 0, "--> denied.\r\n");
+	log_printf (SEC_ID, 0, "  --> access denied.\r\n");
 	return (DDS_RETCODE_NOT_ALLOWED_BY_SEC);
 }
 
@@ -909,7 +911,7 @@ DDS_ReturnCode_t sp_check_create_reader (PermissionsHandle_t     perm,
 	log_printf (SEC_ID, 0, "SP_ACCESS: DataReader('%s') create request by local participant -> ", topic_name);
 
 	if (perm == 1) {
-		log_printf (SEC_ID, 0, "unsecure domain -> accepted\r\n");
+		log_printf (SEC_ID, 0, "unsecure domain -> allowed\r\n");
 		return (DDS_RETCODE_OK);
 	}
 
@@ -946,10 +948,10 @@ DDS_ReturnCode_t sp_check_create_reader (PermissionsHandle_t     perm,
 		*secure |= DDS_SECA_PAYLOAD_PROTECTED;
 	if (tp->submsg_enc || tp->payload_enc)
 		*secure |= (tp->crypto_mode << DDS_SECA_ENCRYPTION_SHIFT);
-	log_printf (SEC_ID, 0, "--> accepted.\r\n");
+	log_printf (SEC_ID, 0, "  --> access allowed.\r\n");
 	return (DDS_RETCODE_OK);
  denied:
-	log_printf (SEC_ID, 0, "--> denied.\r\n");
+	log_printf (SEC_ID, 0, "  --> access denied.\r\n");
 	return (DDS_RETCODE_NOT_ALLOWED_BY_SEC);
 }
 
@@ -968,7 +970,7 @@ DDS_ReturnCode_t sp_check_peer_participant (PermissionsHandle_t perm,
 	log_printf (SEC_ID, 0, "SP_ACCESS: Check if peer participant is allowed [%d] -> ", perm);
 	
 	if (perm == 1) {
-		log_printf (SEC_ID, 0, "unsecure domain -> accepted\r\n");
+		log_printf (SEC_ID, 0, "unsecure domain -> allowed\r\n");
 		return (DDS_RETCODE_OK);
 	}
 	ret = sp_perm_pars (perm, &dp, &ip);
@@ -976,7 +978,7 @@ DDS_ReturnCode_t sp_check_peer_participant (PermissionsHandle_t perm,
 		log_printf (SEC_ID, 0, "error.\r\n");
 		return (ret);
 	}
-	log_printf (SEC_ID, 0, "--> accepted.\r\n");
+	log_printf (SEC_ID, 0, "  --> allowed.\r\n");
 	return (DDS_RETCODE_OK);
 }
 
@@ -1008,10 +1010,10 @@ DDS_ReturnCode_t sp_check_peer_topic (PermissionsHandle_t      perm,
 	}
 	tp = lookup_topic (dp, ip, topic_name);
 	if (!tp || (tp->mode & TA_CREATE) == 0) {
-		log_printf (SEC_ID, 0, "--> denied.\r\n");
+		log_printf (SEC_ID, 0, "  --> access denied.\r\n");
 		return (DDS_RETCODE_NOT_ALLOWED_BY_SEC);
 	}
-	log_printf (SEC_ID, 0, "--> accepted.\r\n");
+	log_printf (SEC_ID, 0, "  --> access allowed.\r\n");
 	return (DDS_RETCODE_OK);
 }
 
@@ -1037,7 +1039,7 @@ DDS_ReturnCode_t sp_check_peer_writer (PermissionsHandle_t      perm,
 	log_printf (SEC_ID, 0, "SP_ACCESS: DataWriter('%s') create request by peer participant -> ", topic_name);
 
 	if (perm == 1) {
-		log_printf (SEC_ID, 0, "unsecure domain -> accepted\r\n");
+		log_printf (SEC_ID, 0, "unsecure domain -> allowed\r\n");
 		return (DDS_RETCODE_OK);
 	}
 
@@ -1062,10 +1064,10 @@ DDS_ReturnCode_t sp_check_peer_writer (PermissionsHandle_t      perm,
 				goto denied;
 		}
 	}
-	log_printf (SEC_ID, 0, "--> accepted.\r\n");
+	log_printf (SEC_ID, 0, "  --> access allowed.\r\n");
 	return (DDS_RETCODE_OK);
  denied:
-	log_printf (SEC_ID, 0, "--> denied.\r\n");
+	log_printf (SEC_ID, 0, "  --> access denied.\r\n");
 	return (DDS_RETCODE_NOT_ALLOWED_BY_SEC);
 }
 
@@ -1089,7 +1091,7 @@ DDS_ReturnCode_t sp_check_peer_reader (PermissionsHandle_t      perm,
 	log_printf (SEC_ID, 0, "SP_ACCESS: DataReader('%s') create request by peer participant -> ", topic_name);
 	
 	if (perm == 1) {
-		log_printf (SEC_ID, 0, "unsecure domain -> accepted\r\n");
+		log_printf (SEC_ID, 0, "unsecure domain -> allowed\r\n");
 		return (DDS_RETCODE_OK);
 	}
 	
@@ -1116,10 +1118,10 @@ DDS_ReturnCode_t sp_check_peer_reader (PermissionsHandle_t      perm,
 				goto denied;
 		}
 	}
-	log_printf (SEC_ID, 0, "--> accepted.\r\n");
+	log_printf (SEC_ID, 0, "  --> access allowed.\r\n");
 	return (DDS_RETCODE_OK);
  denied:
-	log_printf (SEC_ID, 0, "--> denied.\r\n");
+	log_printf (SEC_ID, 0, "  --> access denied.\r\n");
 	return (DDS_RETCODE_NOT_ALLOWED_BY_SEC);
 }
 

@@ -21,6 +21,7 @@
 #include "dds/dds_security.h"
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
+#include <openssl/err.h>
 
 int dds_openssl_init_global = 1;
 
@@ -114,4 +115,12 @@ void sp_log_X509(X509* cert)
 	BIO_free(dbg_out);
 }
 #endif
+
+void sp_sys_final (void)
+{
+	CRYPTO_cleanup_all_ex_data ();
+	ERR_free_strings ();
+	ERR_remove_state (0);
+	EVP_cleanup ();
+}
 

@@ -300,6 +300,8 @@ typedef String_t	Token_t;
 #define SECC_LOCAL	16		/* Local capability set. */
 #define SECC_REMOTE	0		/* Remote capability set. */
 
+#define	SECC_NATIVE_SEC	(SECC_DDS_SEC | (SECC_DDS_SEC << SECC_LOCAL))
+
 #define FWD_UDP_TO_TCP	1		/* May forward from UDP to TCP. */
 #define FWD_TCP_TO_UDP	2		/* May forward from TCP to UDP. */
 #define FWD_TCP_TO_TCP	4		/* May forward from TCP to TCP. */

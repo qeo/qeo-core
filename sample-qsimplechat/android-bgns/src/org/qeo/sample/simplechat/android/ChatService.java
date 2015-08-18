@@ -36,7 +36,7 @@ import org.qeo.sample.simplechat.ChatParticipant;
 import org.qeo.sample.simplechat.ChatState;
 
 /**
- * 
+ * Service that contains the Qeo logic.
  */
 public class ChatService
     extends Service
@@ -202,14 +202,14 @@ public class ChatService
          * 
          * @param ready True if Qeo is ready to be used, false otherwise.
          */
-        public void onReady(boolean ready);
+        void onReady(boolean ready);
 
         /**
          * Called when a new message needs to be added to the activity's message log.
          * 
          * @param msg The message to be added.
          */
-        public void onMessage(String msg);
+        void onMessage(String msg);
     }
 
     private void setReady(boolean ready)
@@ -357,7 +357,7 @@ public class ChatService
                     .show();
             }
             mQeoReady = false;
-            setReady(mQeoReady);
+            setReady(false);
         }
 
         @Override
@@ -366,7 +366,7 @@ public class ChatService
             Log.w(TAG, "Qeo service connection lost");
             super.onQeoClosed(qeo);
             mQeoReady = false;
-            setReady(mQeoReady);
+            setReady(false);
 
             mStateReader = null;
             mStateWriter = null;

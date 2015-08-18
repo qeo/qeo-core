@@ -79,7 +79,7 @@ static void part_to (uintptr_t user)
 	Part_t *node = (Part_t *) user;
 	Participant_t *p = node->p;
 
-	log_printf (DISC_ID, 0, "Policy_updater: inconsistent handshake: deploying safety net\r\n");
+	log_printf (DISC_ID, 0, "Policy Updater: inconsistent handshake: deploying safety net\r\n");
 	disc_ignore_participant (p);
 	spdp_timeout_participant (p, TICKS_PER_SEC * 2);
 }
@@ -117,7 +117,7 @@ static Part_t *add_part_node (Domain_t *dp, Participant_t *p, unsigned timer)
 		if (!(node = xmalloc (sizeof (Part_t)))) {
 			return (NULL);
 		} else {
-			log_printf (DISC_ID, 0, "Policy_updater: add_part_node for %s\r\n", 
+			log_printf (DISC_ID, 0, "Policy Updater: add_part_node for %s\r\n", 
 				    guid_prefix_str ((GuidPrefix_t *) &p->p_guid_prefix, buf) );
 			node->dp = dp;
 			node->p = p;
@@ -136,7 +136,7 @@ static void remove_part_node (Part_t *node)
 	char buf [32];
 
 	if (node) {
-		log_printf (DISC_ID, 0, "Policy_updater: remove_part_node for %s\r\n", 
+		log_printf (DISC_ID, 0, "Policy Updater: remove_part_node for %s\r\n", 
 			    guid_prefix_str ((GuidPrefix_t *) &node->p->p_guid_prefix, buf) );
 		tmr_stop (&node->tmr);
 		LIST_REMOVE (list, *node);
@@ -187,13 +187,13 @@ void policy_updater_data_event (Reader_t *rp, NotificationType_t t, int secure)
 		if (change.kind != ALIVE) {
 			error = hc_get_key (rp->r_cache, change.h, &info2, 0);
 			if (error) {
-				warn_printf ("policy_updater_event: can't get key on dispose!");
+				warn_printf ("Policy_Updater: can't get key on dispose!");
 				continue;
 			}
 			type = EI_DELETE;
 
 			/* Fall back mechanism for inconsistent handshake is no longer needed */
-			log_printf (DISC_ID, 0, "Policy updater data event !ALIVE\r\n");
+			log_printf (DISC_ID, 0, "Policy Updater: !ALIVE\r\n");
 			lock_take (part_lock);
 			node = get_part_node_by_guid_prefix (dp, info2.participantGuidPrefix);
 			remove_part_node (node);
@@ -201,7 +201,7 @@ void policy_updater_data_event (Reader_t *rp, NotificationType_t t, int secure)
 
 			/* call callback function with right parameters */
 			if (cb_fct)
-				(*cb_fct) (info2.participantGuidPrefix, 0, (int) type);
+				(*cb_fct) (&info2.participantGuidPrefix, 0, (int) type);
 			hc_inst_free (rp->r_cache, change.h);
 			continue;
 		}
@@ -224,7 +224,7 @@ void policy_updater_data_event (Reader_t *rp, NotificationType_t t, int secure)
 		if (info) {
 
 			/* Fall back mechanism for inconsistent handshake is no longer needed */
-			log_printf (DISC_ID, 0, "Policy updater data event ALIVE\r\n");
+			log_printf (DISC_ID, 0, "Policy updater: ALIVE\r\n");
 			lock_take (part_lock);
 			node = get_part_node_by_guid_prefix (dp, info->participantGuidPrefix);
 			remove_part_node (node);
@@ -232,7 +232,7 @@ void policy_updater_data_event (Reader_t *rp, NotificationType_t t, int secure)
 
 			/* call callback function with right parameters */
 			if (cb_fct)
-				(*cb_fct) (info->participantGuidPrefix, info->version, (int) type);
+				(*cb_fct) (&info->participantGuidPrefix, info->version, (int) type);
 			xfree (info);
 		}
 		/* hc_inst_free (rp->r_cache, change.h); */
@@ -259,6 +259,9 @@ int policy_updater_init (void)
 void policy_updater_final (void)
 {
 	DDS_DynamicType_free (dds_policy_updater_msg_ts);
+	list_init = 0;
+	list.head = list.tail = NULL;
+	lock_destroy (part_lock);
 }
 
 static uint64_t get_policy_version (DDS_ReturnCode_t *error)
@@ -342,7 +345,7 @@ static void policy_updater_cleanup (Domain_t *dp, Participant_t *p)
 	Part_t	*node;
 
 	ARG_NOT_USED (dp)
-	log_printf (DISC_ID, 0, "Policy updater cleanup\r\n");
+	log_printf (DISC_ID, 0, "Policy Updater: cleanup\r\n");
 	lock_take (part_lock);
 	node = get_part_node (p);
 	if (node)
@@ -390,6 +393,7 @@ void policy_updater_disconnect (Domain_t *dp, Participant_t *rpp)
 	if ((rpp->p_builtins & (1 << EPB_POLICY_UPDATER_SEC_W)) != 0)
 		disconnect_builtin (dp, EPB_POLICY_UPDATER_SEC_R, rpp, EPB_POLICY_UPDATER_SEC_W);
 	policy_updater_cleanup (dp, rpp);
+	DDS_Security_free_policy_node (&rpp->p_guid_prefix);
 }
 
 /* policy_updater_write_policy_version -- Send a version update via the message writer. */

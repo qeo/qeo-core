@@ -13,6 +13,15 @@
 
     <application
         android:label="@string/app_name" >
+        <meta-data
+            android:name="org.qeo.rest.google.client.id"
+            android:value=""/>
+        <meta-data
+            android:name="org.qeo.rest.qeo.client.secret"
+            android:value=""/>
+        <meta-data
+            android:name="org.qeo.rest.qeo.client.id"
+            android:value="qeo-android-service-test"/>
         <uses-library android:name="android.test.runner" />
         <service android:name="org.qeo.ProcessService" android:process=":remote" android:exported="true" android:enabled="true"></service>
     </application>

@@ -323,7 +323,8 @@ Participant_t *disc_remote_participant_add (Domain_t                      *domai
 	}
 
 #ifdef DDS_NATIVE_SECURITY
-	rtps_participant_init_reply_locators (pp);
+	if (NATIVE_SECURITY (domain))
+		rtps_participant_init_reply_locators (pp);
 #endif
 #ifdef DDS_FORWARD
 	rfwd_participant_new (pp, 0);

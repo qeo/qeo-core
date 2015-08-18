@@ -293,10 +293,14 @@ static qeo_retcode_t fwd_server_register(qeo_factory_t *factory)
         qeo_security_hndl         qeo_sec = factory->qeo_sec;
         qeo_mgmt_client_retcode_t mgmt_rc = QMGMTCLIENT_EFAIL;
         qeo_mgmt_client_ctx_t     *mgmt_client_ctx = NULL;
-        qeo_mgmt_client_locator_t locator={QMGMT_LOCATORTYPE_TCPV4, factory->fwd.locator->address, factory->fwd.locator->port};
+        qeo_mgmt_client_locator_t locator={factory->fwd.locator->type, factory->fwd.locator->address, factory->fwd.locator->port};
         int                       nrOfLocators = 1;
 
         do {
+            if (QMGMT_LOCATORTYPE_UNKNOWN == locator.type) {
+                qeo_log_d("Can't register this locator type");
+                break;
+            }
             if ((rc = qeo_security_get_mgmt_client_ctx(qeo_sec, &mgmt_client_ctx)) != QEO_OK) {
                 qeo_log_e("register_forwarder get security mgmt client failed (rc=%d)", rc);
                 break;
@@ -1001,7 +1005,11 @@ qeo_retcode_t fwd_server_reconfig(qeo_factory_t *factory,
     }
     lock(&factory->mutex);
     if (QEO_OK == fwd_locator_create(factory)) {
-        qeo_mgmt_client_locator_t locator = {QMGMT_LOCATORTYPE_TCPV4, (char *)ip_address, port};
+        qeo_mgmt_client_locator_type_t locatorType = QMGMT_LOCATORTYPE_TCPV4;
+        if (strcmp("0.0.0.0", ip_address) == 0) {
+            locatorType = QMGMT_LOCATORTYPE_UNKNOWN;
+        }
+        qeo_mgmt_client_locator_t locator = {locatorType, (char *)ip_address, port};
 
         if (QEO_OK == fwd_locator_update(factory, &locator)) {
             fwd_server_state_machine_eval_ul(factory, -1, false, true);

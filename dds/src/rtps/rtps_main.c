@@ -4699,7 +4699,10 @@ void rtps_relay_add (Participant_t *pp)
 	Domain_t	*dp = pp->p_domain;
 
 	relay_add (pp);
-	sl_walk (&dp->peers, participant_add_relay, pp);
+#ifdef DDS_NATIVE_SECURITY
+	if (dp->security && (dp->participant.p_sec_caps & SECC_NATIVE_SEC) != 0)
+		sl_walk (&dp->peers, participant_add_relay, pp);
+#endif
 	sl_walk (&dp->participant.p_endpoints, proxy_add_relay, pp);
 }
 
@@ -4709,7 +4712,10 @@ void rtps_relay_update (Participant_t *pp)
 {
 	Domain_t	*dp = pp->p_domain;
 
-	participant_update_relay (pp);
+#ifdef DDS_NATIVE_SECURITY
+	if (dp->security && (dp->participant.p_sec_caps & SECC_NATIVE_SEC) != 0)
+		participant_update_relay (pp);
+#endif
 	sl_walk (&dp->participant.p_endpoints, proxy_relay_update, pp);
 }
 
@@ -4720,7 +4726,10 @@ void rtps_relay_remove (Participant_t *pp)
 	Domain_t	*dp = pp->p_domain;
 
 	relay_remove (pp);
-	participant_update_relay (pp);
+#ifdef DDS_NATIVE_SECURITY
+	if (dp->security && (dp->participant.p_sec_caps & SECC_NATIVE_SEC) != 0)
+		participant_update_relay (pp);
+#endif
 	sl_walk (&dp->participant.p_endpoints, proxy_relay_update, pp);
 }
 

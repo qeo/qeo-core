@@ -48,7 +48,10 @@
 #ifdef DDS_NATIVE_SECURITY
 #include "disc_psmp.h"
 #include "disc_ctt.h"
+#ifdef DDS_QEO_TYPES
 #include "disc_policy_updater.h"
+#include "disc_qeo.h"
+#endif
 #endif
 #include "disc_msg.h"
 #include "disc_sedp.h"
@@ -610,6 +613,7 @@ void spdp_end_participant (Participant_t *pp, int ignore)
 	/* Disconnect the Participant Message endpoints. */
 	msg_disconnect (dp, pp);
 
+#ifdef DDS_SECURITY
 #ifdef DDS_NATIVE_SECURITY
 	if (NATIVE_SECURITY (dp)) {
 
@@ -631,7 +635,28 @@ void spdp_end_participant (Participant_t *pp, int ignore)
 		/* Clear handshake reply cache. */
 		locator_list_delete_list (&pp->p_uc_locs);
 		pp->p_uc_dreply = NULL;
+
+		/* Clear crypto data. */
+		if (pp->p_crypto) {
+			sec_unregister_participant (pp->p_crypto);
+			pp->p_crypto = 0;
+		}
+
 	}
+#endif
+	/* Clear token data. */
+	if (pp->p_id_tokens)
+#ifdef DDS_NATIVE_SECURITY
+		token_unref (pp->p_id_tokens);
+#else
+		str_unref (pp->p_id_tokens);
+#endif
+	if (pp->p_p_tokens)
+#ifdef DDS_NATIVE_SECURITY
+		token_unref (pp->p_p_tokens);
+#else
+		str_unref (pp->p_p_tokens);
+#endif
 #endif
 
 	/* Release the various ReaderLocator instances that were created for
@@ -676,6 +701,7 @@ void spdp_end_participant (Participant_t *pp, int ignore)
 	if (ignore) {
 
 		/* Set ignored status. */
+		locator_list_delete_list (&pp->p_uc_locs);
 		pp->p_uc_dreply = NULL;
 		pp->p_flags &= ~(EF_NOT_IGNORED | EF_SHUTDOWN);
 		return;

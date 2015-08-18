@@ -14,7 +14,7 @@
 
 package org.qeo.android.security;
 
-import org.qeo.android.service.ApplicationSecurity;
+import org.qeo.android.service.ApplicationSecurityStandalone;
 import org.qeo.android.service.ui.R;
 
 import android.app.AlertDialog;
@@ -38,8 +38,8 @@ public class ManifestDialog
 
         AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
 
-        builder.setTitle(args.getString(ApplicationSecurity.INTENT_EXTRA_TITLE));
-        builder.setItems(args.getStringArray(ApplicationSecurity.INTENT_EXTRA_PERMISSIONS), null);
+        builder.setTitle(args.getString(ApplicationSecurityStandalone.INTENT_EXTRA_TITLE));
+        builder.setItems(args.getStringArray(ApplicationSecurityStandalone.INTENT_EXTRA_PERMISSIONS), null);
         // Add the buttons
         builder.setPositiveButton(R.string.accept, new DialogInterface.OnClickListener() {
             @Override

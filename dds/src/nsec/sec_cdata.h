@@ -37,6 +37,10 @@ int crypto_data_init (unsigned min, unsigned max);
 
 /* Initialize crypto data. */
 
+void crypto_data_final (void);
+
+/* Cleanup all crypto data. */
+
 CryptoData_t *crypto_create (const SEC_CRYPTO *plugin,
 			     size_t           data_size,
 			     void             *owner,

@@ -91,5 +91,6 @@
     <string name="close">Close</string>
     <string name="unknown">unknown</string>
     <string name="google_plus_sign_in_button">Google+ sign in button</string>
+    <string name="register_using_remote_registration">Please register this device using remote registration.</string>
 
 </resources>

@@ -319,10 +319,22 @@ static int tcp_receive_message_fragment (int fd, TCP_MSG *msg)
 			msg->size += l;
 		}
 		else {
-			/* Data not recognized as either a RTPS nor a RPSC message */
+			/* Data not recognized as either a RTPS nor a RPSC message - resync! */
 			ctrc_printd (TCPS_ID, TCPS_RX_BADMSG, &fd, sizeof (fd));
-			msg->size = msg->used = 0;
-			return (-1);
+			log_printf (RTPS_ID, 0, "TCP: out of sync reading from connection [%d]!\r\n", fd);
+			while (msg->header.protocol [0] != 'R'
+#ifdef TCP_SUSPEND
+			    && msg->header.protocol [0] != 'B'
+#endif
+							      ) {
+				if (!--msg->used)
+					break;
+
+				memmove (&msg->header.protocol [0],
+					 &msg->header.protocol [1],
+					 msg->used);
+			}
+			goto continue_reading;
 		}
 		msg->buffer = xmalloc (msg->size);
 		if (!msg->buffer) {

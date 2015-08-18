@@ -428,8 +428,6 @@ AuthState_t sec_begin_handshake_req (Identity_t         initiator,
 	HandshakeData_t		*handshake;
 	const SEC_AUTH		*ap;
 
-	*msg_token = NULL;
-
 	sec_log_fct ("begin_handshake_req");
 	init_p = id_lookup (initiator, NULL);
 	reply_p = id_lookup (replier, NULL);
@@ -457,6 +455,8 @@ AuthState_t sec_begin_handshake_req (Identity_t         initiator,
 	handshake->state = AS_PENDING_HANDSHAKE_MSG;
 
 	*handle = handshake->handle;
+	if (*msg_token)
+		DDS_DataHolder__free (*msg_token);
 	*msg_token = token;
 
 	sec_log_ret ("%s", as_str [handshake->state]);
@@ -479,7 +479,6 @@ AuthState_t sec_begin_handshake_reply (DDS_HandshakeToken *msg_in,
 	sec_log_fct ("begin_handshake_reply");
 	init_p = id_lookup (initiator, NULL);
 	reply_p = id_lookup (replier, NULL);
-	*msg_out = NULL;
 	for (i = 0; i < nauth_plugins; i++) {
 		ap = auth_plugins [i];
 		if (ap->req_name &&
@@ -519,6 +518,8 @@ AuthState_t sec_begin_handshake_reply (DDS_HandshakeToken *msg_in,
 	handshake->plugin = ap;
 
 	*handle = handshake->handle;
+	if (*msg_out)
+		DDS_DataHolder__free (*msg_out);
 	*msg_out = token;
 
 	sec_log_ret ("%s", as_str [handshake->state]);

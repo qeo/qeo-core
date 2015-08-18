@@ -366,7 +366,7 @@ int do_switches (int argc, const char **argv)
 					break;
 				case 'u':
 					INC_ARG()
-					if (!get_num (&cp, &nruns, 1, 1000, "-u"))
+					if (!get_num (&cp, &nruns, 0, 1000, "-u"))
 						usage ();
 					break;
 				case 'v':
@@ -681,8 +681,10 @@ static void do_write (void)
 			case 0:
 #ifndef NO_KEY
 				h [index] = DDS_DataWriter_register_instance (w, &data);
+#ifndef LOG_DATA
 				if (verbose)
-					printf ("DDS-W: [%2u] Registered instance.\r\n", h [index]);
+					fprintf (stdout, "DDS-W: [%2u] Registered instance.\r\n", h [index]);
+#endif
 #endif
 			case 1:
 			case 2:
@@ -815,6 +817,9 @@ static void do_write (void)
 		dds_seq_cleanup (&data.data);
 #endif
 		if (!--max_sends) {
+			if (verbose == 1)
+				fprintf (stdout, "done\r\n");
+
 			paused = 1;
 			break;
 		}
@@ -2050,8 +2055,8 @@ int main (int argc, const char *argv [])
 #ifdef POOL_CONSTRAINED
 	DDS_PoolConstraints		reqs;
 #endif
-	DDS_StatusMask			sm;
 	DDS_DomainParticipantFactoryQos	dfqos;
+	DDS_StatusMask			sm;
 	DDS_DomainParticipantQos	dpqos;
 	DDS_TopicQos			tqos;
 #ifdef TRANS_PARS
@@ -2086,6 +2091,14 @@ int main (int argc, const char *argv [])
 	DDS_Activities_register (wakeup_fct, connect_fct);
 	DDS_Activities_client_info (client_fct);
 #endif
+	if (!nruns)
+#ifdef DDS_SECURITY
+		if (cert_path || key_path || engine_id) {
+			enable_security ();
+			cleanup_security ();
+		}
+#endif
+
 	for (; nruns; nruns--) {
 		aborting = 0;
 
@@ -2229,10 +2242,6 @@ int main (int argc, const char *argv [])
 		if (verbose)
 			printf ("DDS Participant deleted\r\n");
 
-#ifdef DDS_SECURITY
-		if (cert_path || key_path || engine_id)
-			cleanup_security ();
-#endif
 		if (extra_dp) {
 			error = DDS_DomainParticipantFactory_delete_participant (part2);
 			if (error)
@@ -2242,6 +2251,12 @@ int main (int argc, const char *argv [])
 				printf ("Secondary DDS Participant deleted\r\n");
 		}
 
+#ifdef DDS_SECURITY
+		if (cert_path || key_path || engine_id) {
+			printf ("Cleanup security!\r\n");
+			cleanup_security ();
+		}
+#endif
 		if (nruns > 1) {
 			DDS_wait (200);
 #ifdef MULTIRUN_DUMP

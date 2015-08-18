@@ -42,6 +42,13 @@ int sec_crypto_init (unsigned min, unsigned max)
 	return (DDS_RETCODE_OK);
 }
 
+/* sec_crypto_final -- Finalize crypto data. */
+
+void sec_crypto_final (void)
+{
+	crypto_data_final ();
+}
+
 /* sec_crypto_add -- Add a new crypto control plugin. */
 
 int sec_crypto_add (const SEC_CRYPTO *cp)

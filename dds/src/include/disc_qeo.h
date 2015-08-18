@@ -32,7 +32,7 @@ void DDS_Security_write_volatile_data (Domain_t       *dp,
 /* Register a callback to receive data on a secure volatile topic */
 void DDS_Security_register_volatile_data (VOL_DATA_CB fct);
 
-typedef void (*POLICY_VERSION_CB) (GuidPrefix_t guid_prefix, uint64_t version, int type);
+typedef void (*POLICY_VERSION_CB) (GuidPrefix_t *guid_prefix, uint64_t version, int type);
 
 /* Write policy version number data on state topic */
 int DDS_Security_write_policy_version (Domain_t *dp,
@@ -42,6 +42,8 @@ int DDS_Security_write_policy_version (Domain_t *dp,
 void DDS_Security_register_policy_version (POLICY_VERSION_CB fct);
 
 /* Install the Qeo authentication/encryption plugin code. */
+
+void DDS_Security_free_policy_node (GuidPrefix_t *guid_prefix);
 
 void policy_updater_participant_start_timer (Domain_t *dp, Participant_t *p, unsigned timer);
 

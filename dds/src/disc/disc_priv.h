@@ -21,8 +21,7 @@
 
 #if defined (DDS_SECURITY) && defined (DDS_NATIVE_SECURITY)
 #define ACCESS_CONTROL(dp) ((dp)->security && (dp)->access_protected)
-#define	NATIVE_SECURITY(dp) (dp->security && (dp->participant.p_sec_caps & \
-				(SECC_DDS_SEC | (SECC_DDS_SEC << SECC_LOCAL))) != 0)
+#define	NATIVE_SECURITY(dp) (dp->security && (dp->participant.p_sec_caps & SECC_NATIVE_SEC) != 0)
 #define SECURE_DISCOVERY(dp,f) (NATIVE_SECURITY (dp) && f)
 #else
 #define ACCESS_CONTROL(dp) (dp)->security

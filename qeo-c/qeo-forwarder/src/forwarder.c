@@ -46,6 +46,7 @@
 
 /* periods in seconds */
 #define UPNP_POLL_PERIOD 300
+#define UPNP_RETRY_PERIOD 30
 #define PORTMAP_LEASE_PERIOD 0
 
 #define PORTMAP_DESCRIPTION QeoForwarder
@@ -81,6 +82,7 @@ static pthread_cond_t _state_cv = PTHREAD_COND_INITIALIZER;
 
 static unsigned int _upnp_disc_timeout = UPNP_DELAY;
 static unsigned int _upnp_poll_period = UPNP_POLL_PERIOD;
+static unsigned int _upnp_retry_period = UPNP_RETRY_PERIOD;
 static unsigned int _upnp_portmap_lease_period = PORTMAP_LEASE_PERIOD;
 
 static char *_public_ip = NULL;
@@ -346,11 +348,26 @@ static int add_portmap(igd_t *igd)
 static void igd_clean(igd_t *igd)
 {
     if (NULL != igd) {
-        free(igd->lan_ip);
-        free(igd->wan_ip);
-        free(igd->wan_port);
-        free(igd->control_url);
-        free(igd->service_type);
+        if (NULL != igd->lan_ip) {
+            free(igd->lan_ip);
+            igd->lan_ip = NULL;
+        }
+        if (NULL != igd->wan_ip) {
+            free(igd->wan_ip);
+            igd->wan_ip = NULL;
+        }
+        if (NULL != igd->wan_port) {
+            free(igd->wan_port);
+            igd->wan_port = NULL;
+        }
+        if (NULL != igd->control_url) {
+            free(igd->control_url);
+            igd->control_url = NULL;
+        }
+        if (NULL != igd->service_type) {
+            free(igd->service_type);
+            igd->service_type = NULL;
+        }
     }
 }
 
@@ -413,6 +430,9 @@ static int get_igd_details(igd_t *igd)
         rc = UPNP_GetExternalIPAddress(igd->control_url, igd->service_type, wan_ip);
         if (0 != rc) {
             qeo_log_e("failed to get external IP address: %d (%s)", rc, strupnperror(rc));
+            //clear IGD device so rediscovery will happen
+            igd_clean(igd);
+            qeocore_fwdfactory_set_public_locator(_factory, "0.0.0.0", 0);
         }
         else {
             if ((NULL == igd->wan_ip) || (0 != strcmp(igd->wan_ip, wan_ip))) {
@@ -461,14 +481,17 @@ static bool update_locator(igd_t *igd)
         qeo_log_e("failed to get public address using UPnP IGD");
     }
     else if (igd->wan_updated) {
+        qeo_log_d("Wan updated");
         if (strcmp("0.0.0.0", igd->wan_ip)) {
             /* create the port map */
+            qeo_log_d("Creating portmap");
             if (0 != add_portmap(igd)) {
                 qeo_log_e("failed to configure port map using UPnP IGD");
             }
             /* configure factory with public address */
             else {
                 int port = atoi(igd->wan_port);
+                qeo_log_d("Set public locator to qeo core: %s:%d", igd->wan_ip, port);
 
                 if (QEO_OK != qeocore_fwdfactory_set_public_locator(_factory, igd->wan_ip, port)) {
                     qeo_log_e("failed to configure public address");
@@ -479,7 +502,6 @@ static bool update_locator(igd_t *igd)
             }
         }
     }
-
     else {
         /* wan ip did not change, nothing to be done */
         success = true;
@@ -542,13 +564,20 @@ static timer_type_t find_earliest_timer(struct timespec *timer)
     return earliest;
 }
 
-static state_t state_for_timer(timer_type_t type)
+static state_t state_for_timer(timer_type_t type, igd_t * igd)
 {
     state_t state = STATE_IDLE;
 
     switch (type) {
         case TIMER_UPNP_POLL:
-            state = STATE_WAIT_FOR_UPNP_POLL;
+            if (NULL == igd->control_url) {
+                //IGD device not yet detected
+                state = STATE_PUBLIC_IP_REQUESTED;
+            }
+            else {
+                //IGDB device known, poll for changes.
+                state = STATE_WAIT_FOR_UPNP_POLL;
+            }
             break;
         case TIMER_NUM:
             /* should never happen */
@@ -586,7 +615,7 @@ static void state_machine_run(void)
         earliest = find_earliest_timer(timer);
         if (TIMER_NUM != earliest) {
             ts = &timer[earliest];
-            _state = state_for_timer(earliest);
+            _state = state_for_timer(earliest, &igd);
         }
         /* wait */
         if (NULL == ts) {
@@ -613,21 +642,29 @@ static void state_machine_run(void)
             case STATE_PUBLIC_IP_REQUESTED:
                 qeo_log_d("STATE_PUBLIC_IP_REQUESTED");
                 if (update_locator(&igd)) {
+                    //OK, start timer to periodically poll for changes
+                    qeo_log_d("IGD device found. Polling for changes every %d sec.", _upnp_poll_period);
                     update_timer(timer, TIMER_UPNP_POLL, _upnp_poll_period);
                 }
                 else {
-                    /* abort program */
-                    quit = true;
-                    handle_quit(&igd);
+                    //Not found. Try again after a timeout.
+                    qeo_log_w("No UPNP device found. Will retry in %d sec.", _upnp_retry_period);
+                    update_timer(timer, TIMER_UPNP_POLL, _upnp_retry_period);
                 }
                 break;
             case STATE_WAIT_FOR_UPNP_POLL:
                 if (timeout) {
                     // TODO LAN IP addresses changes not (yet) taken into account
+                    qeo_log_d("Poll IGD device for changes.");
                     if (!update_locator(&igd)) {
-                        qeo_log_e("failed to refresh public locator");
+                        qeo_log_e("failed to refresh public locator, retry in %d sec.", _upnp_retry_period);
+                        //retry faster
+                        update_timer(timer, TIMER_UPNP_POLL, _upnp_retry_period);
                     }
-                    update_timer(timer, TIMER_UPNP_POLL, _upnp_poll_period);
+                    else {
+                        qeo_log_d("Polling UPNP device again in %d sec.", _upnp_poll_period);
+                        update_timer(timer, TIMER_UPNP_POLL, _upnp_poll_period);
+                    }
                 }
                 break;
             case STATE_RUNNING:

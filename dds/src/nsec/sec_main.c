@@ -485,6 +485,7 @@ DDS_ReturnCode_t DDS_Security_set_credentials (const char      *name,
 	}
 	local_credentials_size = xlength;
 	local_identity = 0;
+
 	sec_log_ret ("%d", DDS_RETCODE_OK);
 	return (DDS_RETCODE_OK);
 }
@@ -498,6 +499,8 @@ void DDS_Security_cleanup_credentials (void)
 		local_credentials = NULL;
 	}
 	local_identity = 0;
+	if (plugin_fct [1])
+		sec_crypto_final ();
 }
 
 /* authenticate_participant -- Authenticate user credentials for a new
@@ -507,6 +510,7 @@ DDS_ReturnCode_t authenticate_participant (GuidPrefix_t *prefix)
 {
 	unsigned char	   part_key [16];
 	AuthState_t	   r;
+	IdentityData_t	   *p;
 	DDS_ReturnCode_t   error;
 
 	sec_log_fct ("authenticate_participant");
@@ -514,13 +518,21 @@ DDS_ReturnCode_t authenticate_participant (GuidPrefix_t *prefix)
 		sec_log_ret ("%d", DDS_RETCODE_PRECONDITION_NOT_MET);
 		return (DDS_RETCODE_PRECONDITION_NOT_MET);
 	}
-	memcpy (part_key, prefix->prefix, GUIDPREFIX_SIZE);
-	memset (&part_key [GUIDPREFIX_SIZE], 0, 4);
-	r = sec_validate_local_id (local_sec_name, part_key,
-				   local_credentials, local_credentials_size,
-				   &local_identity, &error);
-	memcpy (prefix->prefix, part_key, GUIDPREFIX_SIZE);
-	sec_log_ret ("%d", r);
+	if (!local_identity) {
+		memcpy (part_key, prefix->prefix, GUIDPREFIX_SIZE);
+		memset (&part_key [GUIDPREFIX_SIZE], 0, 4);
+		r = sec_validate_local_id (local_sec_name, part_key,
+					   local_credentials, local_credentials_size,
+					   &local_identity, &error);
+		memcpy (prefix->prefix, part_key, GUIDPREFIX_SIZE);
+		sec_log_ret ("%d", r);
+	}
+	else {
+		p = id_lookup (local_identity, NULL);
+		if (p)
+			id_ref (p);
+		r = AS_OK;
+	}
 	return ((r != AS_OK) ? error : DDS_RETCODE_OK);
 }
 

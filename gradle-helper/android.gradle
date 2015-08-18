@@ -10,14 +10,14 @@ apply from: (System.properties['qeoGradleHelper'] ?: '') + '/artifactoryPom.grad
 apply from: (System.properties['qeoGradleHelper'] ?: '') + '/androidInstallerTools.gradle'
 
 //latest version of the supportV4 library
-ext.latestSupportV4 = [group: "com.android.support", name: "support-v4", version: "21.0.3"]
+ext.latestSupportV4 = [group: "com.android.support", name: "support-v4", version: "22.2.0"]
 //define adb executable
 ext.adb = new File(System.env.ANDROID_HOME ?: "/ANDROID_HOME/NOT/DEFINED/", "platform-tools${File.separator}adb");
 if (!adb.isFile()) {
     throw new GradleException("ANDROID_HOME is not correct, can't find ${adb}")
 }
-ext.androidBuildToolsVersion = "21.1.2"
-ext.androidSdkVersion = 21
+ext.androidBuildToolsVersion = "22.0.1"
+ext.androidSdkVersion = 22
 
 //
 // Include the android gradle plugin
@@ -30,7 +30,7 @@ buildscript {
         }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:1.0.1'
+        classpath 'com.android.tools.build:gradle:1.2.3'
     }
 }
 
@@ -64,10 +64,10 @@ android {
     defaultConfig {
         targetSdkVersion androidSdkVersion
     }
-    /*compileOptions {
+    compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_7
         targetCompatibility JavaVersion.VERSION_1_7
-    }*/
+    }
     
     sourceSets {
         main {
@@ -183,8 +183,6 @@ afterEvaluate {
     if (android.noDeviceTests) {
         logger.info("Device tests for ${project.name} disabled")
         //project has no device tests
-        dexDebugTest.enabled = false
-        packageDebugTest.enabled = false
         connectedCheck.enabled = false
         connectedAndroidTest.enabled = false
         takeBugReportOnFailure.enabled = false
@@ -288,10 +286,12 @@ else {
 
 //task to execute a single unit test
 task singleTest(type: Exec) {
-    dependsOn 'installDebugTest'
-    if (project.hasProperty('android') && (!(project.ext.has('androidLibrary') && project.ext.androidLibrary))) {
-        //not a library, so regular android project
-        dependsOn "installDebug"
+    afterEvaluate {
+        dependsOn "installDebugAndroidTest"
+        if (project.hasProperty('android') && (!(project.ext.has('androidLibrary') && project.ext.androidLibrary))) {
+            //not a library, so regular android project
+            dependsOn installDebug
+        }
     }
     description "Execute a single unit test. Specify the unit class with \"-Dtest.single=my.class.to.test\""
     group "Verification"

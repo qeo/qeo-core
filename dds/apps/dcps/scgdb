@@ -1,0 +1,2 @@
+LD_LIBRARY_PATH=../../output/dds/HOSTLINUX/Coverage/coverage/usr/local/lib cgdb ./dds
+

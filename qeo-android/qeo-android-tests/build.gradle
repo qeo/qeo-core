@@ -18,10 +18,12 @@ checkstyleTest {
 }
 
 task jarAndroidClasses(type: Jar) {
-    dependsOn assembleDebug
+    afterEvaluate {
+        dependsOn assembleDebug, compileDebugAndroidTestJava
+    }
     File dir = file("${buildDir}/intermediates/classes/debug")
     from dir
-    File dir2 = file("${buildDir}/intermediates/classes/test/debug")
+    File dir2 = file("${buildDir}/intermediates/classes/androidTest/debug")
     from (dir2) {
         include "org/qeo/testframework/**"
     }
@@ -39,13 +41,13 @@ dependencies {
 }
 
 File testprogramApk = file("${buildDir}/outputs/apk/qeo-android-tests-debug-unaligned.apk")
-File testsApk = file("${buildDir}/outputs/apk/qeo-android-tests-debug-test-unaligned.apk")
+File testsApk = file("${buildDir}/outputs/apk/qeo-android-tests-debug-androidTest-unaligned.apk")
 
 artifacts {
     archives jarAndroidClasses //publish classes
     afterEvaluate {
         archives file: testprogramApk, name: project.name, classifier: 'testprogram', builtBy:assembleDebug
-        archives file: testsApk, name: project.name, classifier: 'tests', builtBy:assembleDebugTest
+        archives file: testsApk, name: project.name, classifier: 'tests', builtBy:assembleDebugAndroidTest
     }
 
 }

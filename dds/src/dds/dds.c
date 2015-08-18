@@ -1044,8 +1044,11 @@ void dds_post_final (void)
 #endif
 #ifdef DDS_SECURITY
 #ifdef DDS_NATIVE_SECURITY
-	if (local_identity)
+	if (local_identity) {
+		DDS_Security_cleanup_credentials ();
 		sec_release_identity (local_identity);
+		sec_final ();
+	}
 #endif
 #endif
 	sock_fd_final ();

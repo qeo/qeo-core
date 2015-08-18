@@ -36,10 +36,14 @@ public class ManifestTest
         try {
             mQeo.createEventReader(ClassNotListedInManifest.class,
                 new DefaultEventReaderListener<ClassNotListedInManifest>());
-            fail("Should throw securityexception");
+            if (!Helper.isEmbedded()) {
+                fail("Should throw securityexception");
+            }
         }
         catch (SecurityException e) {
-            // ok
+            if (Helper.isEmbedded()) {
+                fail("Embedded service should not throw securityexception");
+            }
         }
     }
 
@@ -48,10 +52,14 @@ public class ManifestTest
     {
         try {
             mQeo.createEventWriter(ClassNotListedInManifest.class);
-            fail("Should throw securityexception");
+            if (!Helper.isEmbedded()) {
+                fail("Should throw securityexception");
+            }
         }
         catch (SecurityException e) {
-            // ok
+            if (Helper.isEmbedded()) {
+                fail("Embedded service should not throw securityexception");
+            }
         }
     }
 
@@ -61,10 +69,14 @@ public class ManifestTest
         try {
             // DeviceInfo is readonly
             mQeo.createStateWriter(DeviceInfo.class);
-            fail("Should throw securityexception");
+            if (!Helper.isEmbedded()) {
+                fail("Should throw securityexception");
+            }
         }
         catch (SecurityException e) {
-            // ok
+            if (Helper.isEmbedded()) {
+                fail("Embedded service should not throw securityexception");
+            }
         }
     }
 }

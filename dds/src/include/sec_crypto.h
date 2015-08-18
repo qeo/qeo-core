@@ -31,6 +31,10 @@ int sec_crypto_init (unsigned min_handles, unsigned max_handles);
 
 /* Initialize crypto functionality. */
 
+void sec_crypto_final (void);
+
+/* Finalize crypto operations. */
+
 
 /**************************/
 /*   Crypto Key Factory.  */

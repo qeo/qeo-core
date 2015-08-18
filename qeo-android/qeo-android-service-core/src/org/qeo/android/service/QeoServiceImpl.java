@@ -165,7 +165,12 @@ public class QeoServiceImpl
         ApplicationSecurity appSec = mAppSec.get(key);
         if (appSec == null) {
             LOG.fine("Create new ApplicationSecurity for " + key);
-            appSec = new ApplicationSecurity(mService, uid, pid);
+            if (ServiceApplication.isEmbeddedService()) {
+                appSec = new ApplicationSecurityEmbedded();
+            }
+            else {
+                appSec = new ApplicationSecurityStandalone(mService, uid, pid);
+            }
             mAppSec.put(key, appSec);
         }
         else {

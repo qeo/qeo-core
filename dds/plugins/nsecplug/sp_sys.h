@@ -25,6 +25,7 @@
 void sp_sys_set_library_init (int val);
 void sp_sys_set_library_lock (void);
 void sp_sys_unset_library_lock (void);
+void sp_sys_final (void);
 
 #ifdef DDS_DEBUG
 void sp_log_X509(X509* cert);

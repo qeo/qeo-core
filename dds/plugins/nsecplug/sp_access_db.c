@@ -89,11 +89,11 @@ static void *create_empty_topic (ListTypes type)
 		if (!(dt = calloc (1, sizeof (MSTopic_t))))
 			return (NULL);
 
-		if (!(dt->name = malloc (strlen ("*") + 1))) {
+		/*if (!(dt->name = malloc (strlen ("*") + 1))) {
 			free (dt);
 			return (NULL);
 		}
-		strcpy (dt->name, "*");
+		strcpy (dt->name, "*");*/
 		dt->mode = TA_ALL;
 		dt->controlled = 1;
 		dt->disc_enc = 1;
@@ -102,17 +102,18 @@ static void *create_empty_topic (ListTypes type)
 		dt->crypto_mode = 3; /* AES128_SHA1 */
 		dt->index = 0;
 		dt->blacklist = 0;
+		log_printf (SEC_ID, 0, "MSP: create_empty_topic (DOMAIN);\r\n");
 		return ((void *) dt);
 	case LIST_PARTICIPANT:
 		if (!(pt = calloc (1, sizeof (MSUTopic_t))))
 			return (NULL);
 
 		pt->id = ~0; /* all domains */
-		if (!(pt->topic.name = malloc (strlen ("*") + 1))) {
+		/*if (!(pt->topic.name = malloc (strlen ("*") + 1))) {
 			free (pt);
 			return (NULL);
 		}
-		strcpy (pt->topic.name, "*");
+		strcpy (pt->topic.name, "*");*/
 		pt->topic.mode = TA_ALL;
 		pt->topic.controlled = 1;
 		pt->topic.disc_enc = 1;
@@ -121,6 +122,7 @@ static void *create_empty_topic (ListTypes type)
 		pt->topic.crypto_mode = 3;
 		pt->topic.index = 0;
 		pt->topic.blacklist = 0;
+		log_printf (SEC_ID, 0, "MSP: create_empty_topic (PARTICIPANT);\r\n");
 		return ((void *) pt);
 	default:
 		return (NULL);
@@ -892,6 +894,7 @@ void *sp_access_add_topic (TopicHandle_t *handle, unsigned parent_handle, ListTy
 			dt->index = ++topic_counter;
 			*handle = topic_counter;
 			d->ntopics++;
+			log_printf (SEC_ID, 0, "MSP: access_add_topic (DOMAIN, %d, %d);\r\n", *handle, parent_handle);
 
 			return ((void *) dt);
 		}
@@ -903,7 +906,7 @@ void *sp_access_add_topic (TopicHandle_t *handle, unsigned parent_handle, ListTy
 			if (!(pt = (MSUTopic_t *) create_empty_topic (type)))
 				return (NULL);
 
-			/* Remove the standard topic assigned to a domain */
+			/* Remove the standard topic assigned to a participant */
 			if ( LIST_HEAD (p->topics) &&
 			     LIST_HEAD (p->topics)->topic.index == 0)
 				sp_access_remove_topic (0, parent_handle, LIST_PARTICIPANT);
@@ -912,6 +915,7 @@ void *sp_access_add_topic (TopicHandle_t *handle, unsigned parent_handle, ListTy
 			pt->topic.index = ++topic_counter;
 			*handle = topic_counter;
 			p->ntopics++;
+			log_printf (SEC_ID, 0, "MSP: access_add_topic (PARTICIPANT, %d, %d);\r\n", *handle, parent_handle);
 
 			return ((void *) pt);
 		}
@@ -936,6 +940,7 @@ DDS_ReturnCode_t sp_access_remove_topic (TopicHandle_t handle, unsigned parent_h
 			if ((dt = (MSTopic_t *) sp_access_get_topic (handle, 
 								      parent_handle, 
 								      type))) {
+				log_printf (SEC_ID, 0, "MSP: access_remove_topic (DOMAIN, %d, %d, \"%s\");\r\n", handle, parent_handle, dt->name);
 				if (dt->name)
 					free (dt->name);
 				if (dt->fine_topic)
@@ -956,6 +961,7 @@ DDS_ReturnCode_t sp_access_remove_topic (TopicHandle_t handle, unsigned parent_h
 			if ((pt = (MSUTopic_t *) sp_access_get_topic (handle,
 								      parent_handle,
 								      type))) {
+				log_printf (SEC_ID, 0, "MSP: access_remove_topic (PARTICIPANT, %d, %d, \"%s\");\r\n", handle, parent_handle, pt->topic.name);
 				if (pt->topic.name)
 					free (pt->topic.name);
 				if (pt->topic.fine_topic)
