@@ -908,6 +908,7 @@ static bool registration_proxy_setup(qeo_factory_t* closed_domain_factory)
 qeo_retcode_t fwd_init_pre_auth(qeo_factory_t *factory)
 {
     qeo_retcode_t rc = QEO_OK;
+    char buf[16];
 
     do {
         pthread_cond_init(&factory->fwd.wait_rqst_finished, NULL);
@@ -921,6 +922,13 @@ qeo_retcode_t fwd_init_pre_auth(qeo_factory_t *factory)
             /* enable forwarder logic */
             if (factory->flags.forwarding_enabled) {
                 qeo_log_i("Forwarding service enabled");
+
+                snprintf(buf, sizeof(buf), "%d", core_get_domain_id_closed());
+                rc = ddsrc_to_qeorc(DDS_parameter_set("FWD_DOMAINS", buf));
+                if (QEO_OK != rc) {
+                    qeo_log_e("failed to set FWD_DOMAINS");
+                }
+
                 rc = ddsrc_to_qeorc(DDS_parameter_set("FORWARD", "15"));
                 if (QEO_OK != rc) {
                     qeo_log_e("failed to enable FORWARD");

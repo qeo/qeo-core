@@ -142,7 +142,11 @@ int sock_set_socket_nonblocking (int fd);
 
 int sock_set_tcp_nodelay (int fd);
 
-/* set socket tcp option TCP_NODELAY. */
+/* Set socket tcp option TCP_NODELAY. */
+
+int sock_set_tcp_keepalive (int fd);
+
+/* Set socket tcp option TCP_KEEPALIVE. */
 
 void sock_fd_dump (void);
 

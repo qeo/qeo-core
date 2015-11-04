@@ -18,6 +18,7 @@
 #include "log.h"
 #include "prof.h"
 #include "ctrace.h"
+#include "libx.h"
 #include "config.h"
 #include "dds/dds_dcps.h"
 #include "dds_data.h"
@@ -70,6 +71,9 @@ DDS_DomainParticipant DDS_DomainParticipantFactory_create_participant (
 	unsigned char	buffer [128];
 	size_t		length;
 #endif
+#endif
+#ifdef DDS_FORWARD
+	const char	*s;
 #endif
 
 	if (!nparticipants) {
@@ -176,7 +180,11 @@ DDS_DomainParticipant DDS_DomainParticipantFactory_create_participant (
 	}
 #endif
 #ifdef DDS_FORWARD
-	dp->participant.p_forward = config_get_number (DC_Forward, 0);;
+	s = config_get_string (DC_FwdDomains, NULL);
+	if (!s || num_list_contains (s, domain))
+		dp->participant.p_forward = config_get_number (DC_Forward, 0);
+	else
+		dp->participant.p_forward = 0;
 #endif
 	dp->participant.p_user_data = qos_octets2str (&qos->user_data.value);
 	if (dds_entity_name)

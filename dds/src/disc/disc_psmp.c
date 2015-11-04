@@ -52,6 +52,8 @@
 #define PSMP_TRACE_MSG		/* PSMP handshake message tracing if defined. */
 /*#define PSMP_RTPS_TRACE	** PSMP endpoint tracing on RTPS if defined. */
 /*#define PSMP_TRACE_HS		** PSMP creation, deletion, getting, ... of Handshakes. */
+/*#define PSMP_IGNORE_REPLY	** Ignore handshake reply messages if defined. */
+/*#define PSMP_IGNORE_PROCESS	** Ignore other handshake messages if defined. */
 
 int64_t		psmp_seqnr = 1;
 unsigned char	psmp_unknown_key [16] = {
@@ -469,12 +471,17 @@ static void psmp_handshake_reply (IpspHandshake_t *p)
 	log_printf (SEC_ID, 0, "psmp_handshake_reply: %p\r\n", (void *) p);
 #endif
 	p->tx_seqnr = psmp_seqnr++;
+#ifdef PSMP_IGNORE_REPLY
+	p->peer->p_auth_state = AS_PENDING_HANDSHAKE_REQ;
+	error = DDS_RETCODE_OK;
+#else
 	p->peer->p_auth_state = sec_begin_handshake_reply (p->rx_hs_token,
 							   p->peer->p_id,
 							   p->domain->participant.p_id,
 							   &p->handle,
 							   &p->tx_hs_token,
 							   &error);
+#endif
 	switch (p->peer->p_auth_state) {
 		case AS_OK:
 			psmp_handshake_ok (p, 0, 0);
@@ -533,10 +540,15 @@ static void psmp_handshake_process (IpspHandshake_t *p)
 #ifdef PSMP_TRACE_HS
 	log_printf (SEC_ID, 0, "psmp_handshake_process: %p \r\n", (void *) p);
 #endif
+#ifdef PSMP_IGNORE_PROCESS
+	p->peer->p_auth_state = AS_PENDING_RETRY;
+	error = DDS_RETCODE_OK;
+#else
 	p->peer->p_auth_state = sec_process_handshake (p->rx_hs_token,
 						       p->handle,
 						       &tmp_token,
 						       &error);
+#endif
 	if (tmp_token) {
 		if (p->tx_hs_token)
 			DDS_DataHolder__free (p->tx_hs_token);

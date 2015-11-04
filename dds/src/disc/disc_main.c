@@ -282,6 +282,7 @@ Participant_t *disc_remote_participant_add (Domain_t                      *domai
 	sl_init (&pp->p_topics, sizeof (Topic_t *));
 
 	pp->p_alive = 0;
+	pp->p_local = 0;
 
 	if (!authorized)
 		return (pp);
@@ -306,7 +307,6 @@ Participant_t *disc_remote_participant_add (Domain_t                      *domai
 	}
 
 	/* Remember if locally reachable. */
-	pp->p_local = 0;
 	if (srcs) {
 		foreach_locator (srcs, srp, snp) {
 			if (!pp->p_local &&

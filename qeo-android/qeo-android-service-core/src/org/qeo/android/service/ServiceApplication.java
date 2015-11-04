@@ -87,6 +87,7 @@ public final class ServiceApplication
         sApp = app;
         PRNGFixes.apply();
         sProperties = new AppProperties(app);
+        QeoSuspendHelper.enableBgnsKeepalive();
         QeoManagementApp.init();
     }
 

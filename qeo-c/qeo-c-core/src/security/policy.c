@@ -65,7 +65,10 @@ typedef struct {
 struct qeo_security_policy {
     qeo_security_policy_config  cfg;
     char                        *policy_path;
-    int                         rand;               /* random number for temporary file (only used when reading) */
+#ifndef ANDROID
+    int                         rand_read;          /* random number for temporary file (only used when reading) */
+#endif
+    int                         rand_write;         /* random number for temporary file (only used when writing) */
     policy_t                    published_policy;   /* policy that we published */
     policy_t                    new_policy;         /* remote policy from server or from QEO peers; becomes published if verification and enforcement is successful. */
     qeo_policy_cache_hndl_t     cache;
@@ -255,8 +258,13 @@ static bool open_local_policy_file(qeo_security_policy_hndl qeo_policy_handle)
     char *tmp_file = NULL;
 
     do {
-        qeo_policy_handle->rand = rand();
-        if (asprintf(&tmp_file, "%s.%u.%d_r.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand) == -1) {
+#ifndef ANDROID
+        /* Create hard-link to avoid other process from changing the file while we're reading it.
+         * This is however not an issue on android since only 1 process can use that file.
+         * And starting from Android 6.0, hardlinks are not allowed anymore.
+         */ 
+        qeo_policy_handle->rand_read = rand();
+        if (asprintf(&tmp_file, "%s.%u.%d_r.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand_read) == -1) {
             qeo_log_e("Could not allocate tmp_file string");
             break;
         }
@@ -266,6 +274,7 @@ static bool open_local_policy_file(qeo_security_policy_hndl qeo_policy_handle)
             qeo_log_e("Could not hardlink %s to %s %d(%s)", tmp_file, qeo_policy_handle->policy_path, errno, strerror(errno));
             break;
         }
+#endif
 
         qeo_policy_handle->new_policy.bio = BIO_new_file(qeo_policy_handle->policy_path, "r");
         if (qeo_policy_handle->new_policy.bio == NULL) {
@@ -305,8 +314,9 @@ static void close_local_policy_file(qeo_security_policy_hndl qeo_policy_handle)
 {
     char *tmp_file = NULL;
 
+#ifndef ANDROID
     do {
-        if (asprintf(&tmp_file, "%s.%u.%d_r.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand) == -1) {
+        if (asprintf(&tmp_file, "%s.%u.%d_r.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand_read) == -1) {
             qeo_log_e("Could not allocate tmp_file string");
             break;
         }
@@ -317,6 +327,7 @@ static void close_local_policy_file(qeo_security_policy_hndl qeo_policy_handle)
             break;
         }
     } while (0);
+#endif
 
     free_policy(&qeo_policy_handle->new_policy);
 
@@ -435,8 +446,8 @@ static bool new_remote_policy(qeo_security_policy_hndl qeo_policy_handle, const 
     char *tmp_file = NULL;
 
     do {
-        qeo_policy_handle->rand = rand();
-        if (asprintf(&tmp_file, "%s.%u.%d_w.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand) == -1) {
+        qeo_policy_handle->rand_write = rand();
+        if (asprintf(&tmp_file, "%s.%u.%d_w.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand_write) == -1) {
             qeo_log_e("Could not allocate tmp_file string");
             break;
         }
@@ -530,7 +541,7 @@ static void close_remote_policy(qeo_security_policy_hndl qeo_policy_handle, bool
     char *tmp_file = NULL;
 
     do {
-        if (asprintf(&tmp_file, "%s.%u.%d_w.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand) == -1) {
+        if (asprintf(&tmp_file, "%s.%u.%d_w.tmp", qeo_policy_handle->policy_path, getpid(), qeo_policy_handle->rand_write) == -1) {
             qeo_log_e("Could not allocate tmp_file string");
             break;
         }

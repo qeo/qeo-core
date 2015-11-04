@@ -1411,6 +1411,9 @@ static void tls_server_accept (SOCKET fd, short revents, void *arg)
 #ifdef DDS_TCP_NODELAY
 	sock_set_tcp_nodelay (r);
 #endif
+#ifdef DDS_TCP_KEEPALIVE_SERVER
+	sock_set_tcp_keepalive (r);
+#endif
 
 	/* Create a new tls context */
 	if ((tls = create_tls_ctx (r, TLS_SERVER)) == NULL) {
@@ -1698,6 +1701,9 @@ int tls_do_connect (TCP_CON_REQ_ST *p)
 #ifdef DDS_TCP_NODELAY
 		/* Set TCP_NODELAY flag */
 		sock_set_tcp_nodelay (fd);
+#endif
+#ifdef DDS_TCP_KEEPALIVE_CLIENT
+		sock_set_tcp_keepalive (fd);
 #endif
 		sock_set_socket_nonblocking (fd);
 

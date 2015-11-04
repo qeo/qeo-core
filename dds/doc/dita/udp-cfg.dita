@@ -28,6 +28,12 @@
                         <entry>Mode</entry>
                         <entry>enabled</entry>
                       </row>
+              <row>
+                <entry>UDP_DOMAINS</entry>
+                <entry>Domains for which UDP is enabled</entry>
+                <entry>String (number list)</entry>
+                <entry>not defined (all domains allowed)</entry>
+              </row>
                       <row>
                         <entry>UDP_PB</entry>
                         <entry>RTPS Port Base</entry>

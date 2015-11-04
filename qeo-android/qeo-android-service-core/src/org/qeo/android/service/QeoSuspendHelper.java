@@ -51,6 +51,11 @@ public final class QeoSuspendHelper implements BgnsCallbacks
     /** Number of seconds to auto-resume (e.g. on connectivity changes) (in seconds). */
     public static final int AUTO_RESUME_TIMEOUT = 30;
 
+    private static final int BGNS_TCP_KEEPCNT = 4; //4 retries
+    private static final int BGNS_TCP_KEEPIDLE = 15 * 60; //15minutes
+    private static final int BGNS_TCP_KEEPINTVL = 30; //30 sec
+    private static boolean sBgnsTcpKeepaliveNonDefault = false;
+
     private final Context mContext;
     private int mAutoResumeTimeOut;
     private final BroadcastReceiver mConnectionMonitor = new MyConnectionMonitor();
@@ -234,6 +239,41 @@ public final class QeoSuspendHelper implements BgnsCallbacks
             LOG.warning("Suspended while no connection with BGNS");
             mBgnsAlarmReceiver.startConnectionPoller(mContext);
         }
+    }
+
+    /**
+     * Enable TCP keepalive on BGNS channel with default parameters.<br>
+     * This must be called before starting Qeo.
+     */
+    public static void enableBgnsKeepalive()
+    {
+        if (!sBgnsTcpKeepaliveNonDefault) {
+            //only set defaults if not overridden.
+            enableBgnsKeepaliveSet(BGNS_TCP_KEEPCNT, BGNS_TCP_KEEPIDLE, BGNS_TCP_KEEPINTVL);
+        }
+    }
+
+    /**
+     * Enable TCP keepalive on BGNS channel.<br>
+     * See http://linux.die.net/man/7/tcp for more details about the paramters.
+     * This must be called before starting Qeo.
+     * @param keepCnt The maximum number of keepalive probes TCP should send before dropping the connection.
+     * @param keepIdle The time (in seconds) the connection needs to remain idle before TCP starts sending keepalive
+     * probes.
+     * @param keepIntvl The time (in seconds) between individual keepalive probes.
+     */
+    public static void enableBgnsKeepalive(int keepCnt, int keepIdle, int keepIntvl)
+    {
+        sBgnsTcpKeepaliveNonDefault = true;
+        enableBgnsKeepaliveSet(keepCnt, keepIdle, keepIntvl);
+    }
+
+    private static void enableBgnsKeepaliveSet(int keepCnt, int keepIdle, int keepIntvl)
+    {
+        LOG.fine("Set BGNS keepalive paramters: " + keepCnt + ", " + keepIdle + ", " + keepIntvl);
+        NativeQeo.setQeoParameter("FWD_BGNS_TCP_KEEPCNT", Integer.toString(keepCnt));
+        NativeQeo.setQeoParameter("FWD_BGNS_TCP_KEEPIDLE", Integer.toString(keepIdle));
+        NativeQeo.setQeoParameter("FWD_BGNS_TCP_KEEPINTVL", Integer.toString(keepIntvl));
     }
 
     private final Runnable mAutoSuspendRunnable = new Runnable()

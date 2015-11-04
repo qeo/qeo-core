@@ -29,14 +29,14 @@ import static org.qeo.jni.CertChainValidator.validateCertificateChain;
 /**
  *
  */
-public class CertChainValidatorTest
-    extends QeoTestCase
+public class CertChainValidatorTest extends QeoTestCase
 {
     //private byte[] USERTRUST_ROOT;
     //private byte[] PROJECTQ;
     private byte[] GANDI;
     private byte[] QEO;
-    private byte[] ENTRUST_LC1;
+    private byte[] ENTRUST_L1K;
+    private byte[] ENTRUST_L1K_XCERT;
     private byte[] ENTRUST_ROOT;
 
     @Override
@@ -47,7 +47,11 @@ public class CertChainValidatorTest
         GANDI = readFile("certs/GandiStandardSSLCA2.der");
         //USERTRUST_ROOT = readFile(new File("src/test/data/certs/USERTrustRSACertificationAuthority.der"));
         QEO = readFile("certs/qeo_org.der");
-        ENTRUST_LC1 = readFile("certs/EntrustCertificationAuthority-L1C.der");
+        //L1K cert is signed by G2 root. However this root is rather new and still unknown by certain jdk/jvms
+        //That's why it's also cross-signed by the L1K_XCERT which is then signed by their old root.
+        //info: http://www.entrust.net/knowledge-base/technote.cfm?tn=8863
+        ENTRUST_L1K = readFile("certs/EntrustCertificationAuthority-L1K.der");
+        ENTRUST_L1K_XCERT = readFile("certs/L1K-2048-Xcert_sha256.der");
         ENTRUST_ROOT = readFile("certs/Entrust_root.der");
     }
 
@@ -75,18 +79,16 @@ public class CertChainValidatorTest
         }
     }
 
-    public void testValidateQeoCertificateChain()
-        throws Exception
+    public void testValidateQeoCertificateChain() throws Exception
     {
-        validateCertificateChain(new byte[][]{QEO, ENTRUST_LC1});
-        validateCertificateChain(new byte[][]{QEO, ENTRUST_LC1, ENTRUST_ROOT});
+        validateCertificateChain(new byte[][]{QEO, ENTRUST_L1K, ENTRUST_L1K_XCERT});
+        validateCertificateChain(new byte[][]{QEO, ENTRUST_L1K, ENTRUST_L1K_XCERT, ENTRUST_ROOT});
     }
 
-    public void testLoopValidQeo()
-        throws Exception
+    public void testLoopValidQeo() throws Exception
     {
         for (int i = 0; i < 25; i++) {
-            validateCertificateChain(new byte[][]{QEO, ENTRUST_LC1, ENTRUST_ROOT});
+            validateCertificateChain(new byte[][]{QEO, ENTRUST_L1K, ENTRUST_L1K_XCERT, ENTRUST_ROOT});
         }
     }
 
@@ -104,8 +106,7 @@ public class CertChainValidatorTest
 //            validateCertificateChain(new byte[][] {PROJECTQ, GANDI});
 //        }
 //    }
-    public void testInvalidCertificateChain()
-        throws Exception
+    public void testInvalidCertificateChain() throws Exception
     {
         try {
             validateCertificateChain(new byte[][]{QEO, GANDI});
@@ -116,8 +117,7 @@ public class CertChainValidatorTest
         }
     }
 
-    public void testAloneCertificate()
-        throws Exception
+    public void testAloneCertificate() throws Exception
     {
         try {
             validateCertificateChain(new byte[][]{QEO});
@@ -128,8 +128,7 @@ public class CertChainValidatorTest
         }
     }
 
-    public void testNonSSLCertificate()
-        throws Exception
+    public void testNonSSLCertificate() throws Exception
     {
         try {
             validateCertificateChain(new byte[][]{GANDI});
@@ -145,8 +144,7 @@ public class CertChainValidatorTest
     // as the behavior change between Java 6 and Java 7.
     // Probably to be able to handle non linear trust chain (some certificate can be signed by multiple ca).
 
-    public static void main(String[] args)
-        throws Exception
+    public static void main(String[] args) throws Exception
     {
         FileInputStream in = new FileInputStream("<path-to-der-file>");
         ByteArrayOutputStream baos = new ByteArrayOutputStream();

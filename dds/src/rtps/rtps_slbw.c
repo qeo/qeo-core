@@ -222,6 +222,10 @@ int rtps_stateless_send (Writer_t *w, Participant_t *pp, int bcast)
 		if (rrp->rr_unsent_changes)
 			NEW_RR_TSTATE (rrp, RRTS_PUSHING, 0);
 	}
+	if (!wp->rh_timer) {
+		ret = DDS_RETCODE_OK;
+		goto done;
+	}
 	if (!tmr_active (wp->rh_timer))
 		t = wp->rh_period;
 	else

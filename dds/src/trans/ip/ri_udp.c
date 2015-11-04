@@ -34,6 +34,7 @@
 #include <sys/socket.h>
 #define ERRNO errno
 #endif
+#include "libx.h"
 #include "prof.h"
 #include "sock.h"
 #include "log.h"
@@ -272,6 +273,10 @@ static void rtps_udpv4_locators_get (DomainId_t    domain_id,
 #else
 	static unsigned char def_mcast_ip [] = { 239, 255, 0, 1 };
 #endif
+
+	if (config_defined (DC_UDP_Domains) &&
+	    !num_list_contains (config_get_string (DC_UDP_Domains, NULL), domain_id))
+		return;
 
 	memcpy (mcast_ip, def_mcast_ip, 4);
 	if (config_defined (DC_IP_MCastAddr)) {
@@ -1367,6 +1372,10 @@ static void rtps_udpv6_locators_get (DomainId_t    domain_id,
 	int		mcast;
 	const char	*env_str;
 	unsigned char	mc_addr [16];
+
+	if (config_defined (DC_UDP_Domains) &&
+	    !num_list_contains (config_get_string (DC_UDP_Domains, NULL), domain_id))
+		return;
 
 	if (config_defined (DC_IPv6_MCastAddr)) {
 		env_str = config_get_string (DC_IPv6_MCastAddr, NULL);

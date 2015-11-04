@@ -54,6 +54,14 @@
                   full forwarding). </entry>
                 <entry>Number</entry>
               </row>
+              <row>
+                <entry>FWD_DOMAINS</entry>
+                <entry>Domains for which forwarding is enabled.  If this parameter is not specified,
+                  all domains for which a domain participant is present are forwarded.  Syntax:
+                  &lt;number>{&lt;separator>&lt;number>} where separator is a character from
+                  ":;,|"</entry>
+                <entry>String</entry>
+              </row>
             </tbody>
           </tgroup>
         </table>

@@ -194,6 +194,7 @@ static qeo_factory_t *create_factory(const qeo_identity_t *id)
 {
     qeo_retcode_t rc        = QEO_EFAIL;
     qeo_factory_t *factory  = NULL;
+    char buf[16];
 
     do {
         if (_ownership_strength == 0) {
@@ -211,7 +212,17 @@ static qeo_factory_t *create_factory(const qeo_identity_t *id)
             }
             DDS_entity_name(DDS_ENTITY_NAME);
             DDS_set_generate_callback(calculate_member_id);
-            DDS_parameter_set("IP_NO_MCAST", "any");
+
+            rc = ddsrc_to_qeorc(DDS_parameter_set("IP_NO_MCAST", "any"));
+            if (QEO_OK != rc) {
+                qeo_log_e("failed to set IP_NO_MCAST");
+            }
+
+            snprintf(buf, sizeof(buf), "%d", core_get_domain_id_closed());
+            rc = ddsrc_to_qeorc(DDS_parameter_set("TCP_DOMAINS", buf));
+            if (QEO_OK != rc) {
+                qeo_log_e("failed to set TCP_DOMAINS");
+            }
         }
 
         if (_init_security_done == false && id != QEO_IDENTITY_OPEN) {

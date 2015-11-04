@@ -999,9 +999,23 @@ int sock_set_tcp_nodelay (int fd)
 {
 	int one = 1;
 
-	if (setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one))) {
+	if (setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof (one))) {
 		perror ("set_tcp_nodelay (): setsockopt () failure");
 		warn_printf ("setsockopt (TCP_NODELAY) failed - errno = %d.\r\n", errno);
+		return (0);
+	}
+	return (1);
+}
+
+/* sock_set_tcp_keepalive -- set socket tcp option TCP_KEEPALIVE. */
+
+int sock_set_tcp_keepalive (int fd)
+{
+	int	on = 1;
+
+	if (setsockopt (fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof (on))) {
+		perror ("set_tcp_keepalive (): setsockopt () failure");
+		warn_printf ("setsockopt (SO_KEEPALIVE) failed - errno = %d.\r\n", errno);
 		return (0);
 	}
 	return (1);

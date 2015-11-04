@@ -5011,6 +5011,10 @@ static void rtps_tcpv4_locators_get (DomainId_t    domain_id,
 	ARG_NOT_USED (mc)
 	ARG_NOT_USED (dst)
 
+	if (config_defined (DC_TCP_Domains) &&
+	    !num_list_contains (config_get_string (DC_TCP_Domains, NULL), domain_id))
+		return;
+
 	if (tcp_v4_pars.sport_s || tcp_v4_pars.sport_ns || tcp_v4_pars.nrservers)
 		switch (type) {
 			case RTLT_USER:
@@ -6795,6 +6799,10 @@ static void rtps_tcpv6_locators_get (DomainId_t    domain_id,
 
 	ARG_NOT_USED (mc)
 	ARG_NOT_USED (dst)
+
+	if (config_defined (DC_TCP_Domains) &&
+	    !num_list_contains (config_get_string (DC_TCP_Domains, NULL), domain_id))
+		return;
 
 	if (config_defined (DC_IPv6_MCastAddr)) {
 		env_str = config_get_string (DC_IPv6_MCastAddr, NULL);

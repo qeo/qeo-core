@@ -1841,7 +1841,7 @@ static void bgcp_ll_event (uintptr_t           user,
 						return;
 
 					if ((xcp = bgcp_lookup (&info.prefix)) != NULL) {
-						if (!xcp->active) { /* Implicit resume due to renewed Cx! */
+						if (xcp->suspended) { /* Implicit resume due to renewed Cx! */
 							bgcp_server_suspend (xcp, 0);
 							if (xcp->cxp)
 								rtps_tcp_srn_suspend (xcp->cxp, 0);

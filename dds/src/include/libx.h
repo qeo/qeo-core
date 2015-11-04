@@ -59,5 +59,11 @@ int is_dns_name (const char *s);
 
 /* Return a non-0 result if the string contains a DNS name. */
 
+int num_list_contains (const char *s, unsigned v);
+
+/* Return a non-0 result if the string contains the given number.
+   The string should contain a list of numbers separated by one of the
+   following characters: [,;:|]. */
+
 #endif /* !__libx_ */
 

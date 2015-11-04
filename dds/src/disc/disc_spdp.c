@@ -645,18 +645,22 @@ void spdp_end_participant (Participant_t *pp, int ignore)
 	}
 #endif
 	/* Clear token data. */
-	if (pp->p_id_tokens)
+	if (pp->p_id_tokens) {
 #ifdef DDS_NATIVE_SECURITY
 		token_unref (pp->p_id_tokens);
 #else
 		str_unref (pp->p_id_tokens);
 #endif
-	if (pp->p_p_tokens)
+		pp->p_id_tokens = NULL;
+	}
+	if (pp->p_p_tokens) {
 #ifdef DDS_NATIVE_SECURITY
 		token_unref (pp->p_p_tokens);
 #else
 		str_unref (pp->p_p_tokens);
 #endif
+		pp->p_p_tokens = NULL;
+	}
 #endif
 
 	/* Release the various ReaderLocator instances that were created for

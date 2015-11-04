@@ -132,4 +132,28 @@ int is_dns_name (const char *s)
 	return (0);
 }
 
+int num_list_contains (const char *s, unsigned v)
+{
+	unsigned	value = 0, ndigits = 0;
+
+	for (; s; s++) {
+		if (*s >= '0' && *s <= '9') {
+			value = value * 10 + *s - '0';
+			ndigits++;
+			if (s [1] == '\0')
+				return (value == v);
+		}
+		else if (*s == ',' || *s == ';' || *s == ':' || *s == '|') {
+			if (ndigits) {
+				if (value == v)
+					return (1);
+
+				value = ndigits = 0;
+			}
+		}
+		else
+			break;
+	}
+	return (0);
+}
 

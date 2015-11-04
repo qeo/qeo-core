@@ -53,6 +53,12 @@
                 <entry>Disabled</entry>
               </row>
               <row>
+                <entry>TCP_DOMAINS</entry>
+                <entry>Domains for which TCP is enabled</entry>
+                <entry>String (number list)</entry>
+                <entry>not defined (all domains allowed)</entry>
+              </row>
+              <row>
                 <entry>TCP_PB</entry>
                 <entry>RTPS Port base.</entry>
                 <entry>Number</entry>

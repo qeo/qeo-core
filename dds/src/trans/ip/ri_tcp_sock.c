@@ -555,6 +555,9 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 #ifdef DDS_TCP_NODELAY
 		sock_set_tcp_nodelay (fd);
 #endif
+#ifdef DDS_TCP_KEEPALIVE_CLIENT
+		sock_set_tcp_keepalive (fd);
+#endif
 		sock_set_socket_nonblocking (fd);
 		events = POLLIN | POLLPRI | POLLHUP | POLLNVAL;
 		for (;;) {
@@ -579,6 +582,8 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 					p->cxp->cx_state = CXS_WRETRY;
 					p->cxp->fd = 0;
 					p->cxp->fd_owner = 0;
+					p->cxp->sproto = NULL;
+					xfree (dp);
 				}
 				else {
 					log_printf (RTPS_ID, 0, "TCP: connecting to server [%d] ...\r\n", fd);
@@ -841,6 +846,9 @@ static void tcp_server_accept (SOCKET fd, short revents, void *arg)
 
 #ifdef DDS_TCP_NODELAY
 	sock_set_tcp_nodelay (r);
+#endif
+#ifdef DDS_TCP_KEEPALIVE_SERVER
+	sock_set_tcp_keepalive (r);
 #endif
 
 	/* Create a new pending TCP connection. */

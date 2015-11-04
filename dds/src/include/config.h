@@ -37,6 +37,7 @@ typedef enum {
 	DC_PurgeDelay,		/* Purge delay (N:ms). */
 	DC_SampleSize,		/* Maximum sample size (N). */
 	DC_Forward,		/* Forwarding mode (N). */
+	DC_FwdDomains,		/* Forwarding domains (S). */
 	DC_LogDir,		/* Location of logging file (S). */
 
 	/* Memory pools. */
@@ -113,6 +114,7 @@ typedef enum {
 
 	/* UDP/IP-specific parameters. */
 	DC_UDP_Mode,
+	DC_UDP_Domains,
 	DC_UDP_PB,
 	DC_UDP_DG,
 	DC_UDP_PG,
@@ -140,6 +142,7 @@ typedef enum {
 #endif
 	DC_TCP_Public,
 	DC_TCP_Private,
+	DC_TCP_Domains,
 	DC_TCP_PB,
 	DC_TCP_DG,
 	DC_TCP_PG,

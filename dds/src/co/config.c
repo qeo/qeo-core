@@ -77,6 +77,7 @@ static ParVal_t common_pars [] = {
 	{ G_Common, DC_PurgeDelay,  "PURGE_DELAY", V_Number, 0, NULL, {0}},
 	{ G_Common, DC_SampleSize,  "MAX_SAMPLE",  V_Number, 0, NULL, {0}},
 	{ G_Common, DC_Forward,     "FORWARD",     V_Number, 0, NULL, {0}},
+	{ G_Common, DC_FwdDomains,  "FWD_DOMAINS", V_String, 0, NULL, {0}},
 	{ G_Common, DC_LogDir,      "LOG_DIR",     V_String, 0, NULL, {0}},
 };
 
@@ -164,14 +165,15 @@ static ParVal_t ip_pars [] = {
 #define N_IP_PARS	(sizeof (ip_pars) / sizeof (ParVal_t))
 
 static ParVal_t udp_pars [] = {
-	{ G_UDP, DC_UDP_Mode, "MODE",          V_Mode,   0, NULL, {0}},
-	{ G_UDP, DC_UDP_PB,   "PB",            V_Number, 0, NULL, {0}},
-	{ G_UDP, DC_UDP_DG,   "DG",            V_Number, 0, NULL, {0}},
-	{ G_UDP, DC_UDP_PG,   "PG",            V_Number, 0, NULL, {0}},
-	{ G_UDP, DC_UDP_D0,   "D0",            V_Number, 0, NULL, {0}},
-	{ G_UDP, DC_UDP_D1,   "D1",            V_Number, 0, NULL, {0}},
-	{ G_UDP, DC_UDP_D2,   "D2",            V_Number, 0, NULL, {0}},
-	{ G_UDP, DC_UDP_D3,   "D3",            V_Number, 0, NULL, {0}}
+	{ G_UDP, DC_UDP_Mode,    "MODE",          V_Mode,   0, NULL, {0}},
+	{ G_UDP, DC_UDP_Domains, "DOMAINS",   	  V_String, 0, NULL, {0}},
+	{ G_UDP, DC_UDP_PB,      "PB",            V_Number, 0, NULL, {0}},
+	{ G_UDP, DC_UDP_DG,      "DG",            V_Number, 0, NULL, {0}},
+	{ G_UDP, DC_UDP_PG,      "PG",            V_Number, 0, NULL, {0}},
+	{ G_UDP, DC_UDP_D0,      "D0",            V_Number, 0, NULL, {0}},
+	{ G_UDP, DC_UDP_D1,      "D1",            V_Number, 0, NULL, {0}},
+	{ G_UDP, DC_UDP_D2,      "D2",            V_Number, 0, NULL, {0}},
+	{ G_UDP, DC_UDP_D3,      "D3",            V_Number, 0, NULL, {0}}
 };
 
 #define N_UDP_PARS	(sizeof (udp_pars) / sizeof (ParVal_t))
@@ -196,6 +198,7 @@ static ParVal_t tcp_pars [] = {
 #endif
 	{ G_TCP, DC_TCP_Public,   "PUBLIC",        V_String, 0, NULL, {0}},
 	{ G_TCP, DC_TCP_Private,  "PRIVATE",       V_Mode,   0, NULL, {0}},
+	{ G_TCP, DC_TCP_Domains,  "DOMAINS",       V_String, 0, NULL, {0}},
 	{ G_TCP, DC_TCP_PB,       "PB",            V_Number, 0, NULL, {0}},
 	{ G_TCP, DC_TCP_DG,       "DG",            V_Number, 0, NULL, {0}},
 	{ G_TCP, DC_TCP_PG,       "PG",            V_Number, 0, NULL, {0}},
@@ -445,7 +448,8 @@ static ParVal_t *config_lookup (const char *name)
 		group [cp - name] = '\0';
 		if (!astrcmp (group, "purge") ||
 		    !astrcmp (group, "max") ||
-		    !astrcmp (group, "log")) {
+		    !astrcmp (group, "log") ||
+		    !astrcmp (group, "fwd")) {
 			gp = &groups [0];
 			cp = name;
 		}

@@ -17,6 +17,10 @@
 #include <qeo/log.h>
 #include <string.h>
 #include <stdbool.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #include <qeo/factory.h>
 #include <qeocore/api.h>
@@ -222,10 +226,47 @@ static void bgns_on_wakeup(const char *topic_name,
 static void bgns_on_connected(int fd,
                               int connected)
 {
+    int rc;
     qeo_log_d("bgns_on_connected: %i - %i", fd, connected);
     _bgns_connected = (connected == 1 ? true: false);
     if (NULL != _bgns_listener.on_connect) {
         _bgns_listener.on_connect(_bgns_userdata, fd, connected ? true : false);
+    }
+    if (connected) {
+        /* Enable TCP keepalive on the bgns connection */
+        int on = 1;
+        int keep_cnt = qeocore_parameter_get_number("FWD_BGNS_TCP_KEEPCNT"); /* num probes */
+        int keep_idle = qeocore_parameter_get_number("FWD_BGNS_TCP_KEEPIDLE"); /* min connection idle */
+        int keep_intvl = qeocore_parameter_get_number("FWD_BGNS_TCP_KEEPINTVL"); /* seconds per probe */
+        if (keep_cnt != -1 && keep_idle != -1 && keep_intvl != -1) {
+            qeo_log_i("Enable TCP keepalive on BGNS channel (TCP_KEEPCNT=%d, TCP_KEEPIDLE=%d, TCP_KEEPINTVL=%d)", keep_cnt, keep_idle, keep_intvl);
+            rc = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on));
+            if (rc != 0) {
+                qeo_log_e("Error setting SO_KEEPALIVE: %d: %s", rc, strerror(errno));
+            }
+#ifdef __APPLE__
+            setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &keep_idle, sizeof(keep_idle));
+            if (rc != 0) {
+                qeo_log_e("Error setting TCP_KEEPALIVE: %d: %s", rc, strerror(errno));
+            }
+#else
+            setsockopt(fd, SOL_TCP, TCP_KEEPCNT, &keep_cnt, sizeof(keep_cnt));
+            if (rc != 0) {
+                qeo_log_e("Error setting TCP_KEEPCNT: %d: %s", rc, strerror(errno));
+            }
+            setsockopt(fd, SOL_TCP, TCP_KEEPIDLE, &keep_idle, sizeof(keep_idle));
+            if (rc != 0) {
+                qeo_log_e("Error setting TCP_KEEPIDLE: %d: %s", rc, strerror(errno));
+            }
+            setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, &keep_intvl, sizeof(keep_intvl));
+            if (rc != 0) {
+                qeo_log_e("Error setting TCP_KEEPINTVL: %d: %s", rc, strerror(errno));
+            }
+#endif
+        }
+        else {
+            qeo_log_i("Not enabling TCP keepalive on BGNS channel");
+        }
     }
 }
 
