@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -221,6 +221,10 @@ static ParVal_t ipv6_pars [] = {
 	{ G_IPv6, DC_IPv6_MCastHops, "MCAST_HOPS",    V_Number, 0, NULL, {0}},
 	{ G_IPv6, DC_IPv6_MCastIntf, "MCAST_INTF",    V_String, 0, NULL, {0}},
 	{ G_IPv6, DC_IPv6_MCastAddr, "GROUP",         V_String, 0, NULL, {0}}
+#ifdef DDS_NAT64
+      , { G_IPv6, DC_IPv6_Nat64Pref, "NAT64_PREFIX",  V_String, 0, NULL, {0}},
+	{ G_IPv6, DC_IPv6_Nat64Mode, "NAT64_MODE",    V_String, 0, NULL, {0}}
+#endif
 };
 
 #define N_IPV6_PARS	(sizeof (ipv6_pars) / sizeof (ParVal_t))

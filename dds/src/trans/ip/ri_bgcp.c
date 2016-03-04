@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -45,6 +45,7 @@
 #include "pid.h"
 #include "dds/dds_trans.h"
 #include "dds.h"
+#include "rtps_ip.h"
 #include "ri_data.h"
 #include "ri_tcp_sock.h"
 #include "ri_tcp.h"
@@ -1932,15 +1933,19 @@ IP_CX *bgcp_connect (RTPS_TCP_RSERV *sp, SR_CX *cp, Ticks_t delay)
 		c_control,		/* on_new_message */
 		c_on_close		/* on_close */
 	};
-	IP_CX		*cxp;
-	struct hostent	*he;
-	struct in_addr	addr;
+	IP_CX			*cxp;
 #ifdef DDS_IPV6
-	int		ipv6;
-	struct in6_addr	addr6;
-	static char	abuf [100];
+	struct addrinfo		hints, *res, *rp, *ip4res;
+	int			nat64, s, ipv6;
+	struct sockaddr_in	*sa;
+	struct sockaddr_in6	*sa6;
+	struct in6_addr		addr6;
+	static char		sbuf [40];
+#else
+	struct hostent		*he;
 #endif
-	unsigned	i;
+	struct in_addr		addr;
+	unsigned		i;
 
 	log_printf (BGNS_ID, 0, "BGCP: Client start.\r\n");
 	cxp = Alloc (sizeof (IP_CX));
@@ -1987,56 +1992,106 @@ IP_CX *bgcp_connect (RTPS_TCP_RSERV *sp, SR_CX *cp, Ticks_t delay)
 		goto free_cx;
 	}
 	tmr_init (cp->timer, "BGCP-Client");
+#ifdef DDS_IPV6
+	nat64 = rtps_ipv6_nat64_required ();
+#endif
 	if (sp->name) {
-		he = gethostbyname (sp->addr.name);
-		if (!he) {
+#ifdef DDS_IPV6
+		memset (&hints, 0, sizeof (struct addrinfo));
+		hints.ai_family = AF_UNSPEC;	/* Allow IPv4 or IPv6. */
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_flags = 0;
+		hints.ai_protocol = 0;
+		sprintf (sbuf, "%u", sp->port);
+		s = getaddrinfo (sp->addr.name, sbuf, &hints, &res);
+		if (!s) {
+			ip4res = NULL;
+			for (rp = res; rp; rp = rp->ai_next)
+				if (rp->ai_family == AF_INET)
+					if (nat64) {
+						ip4res = rp;
+						continue;
+					}
+					else {
+						ipv6 = 0;
+						sa = (struct sockaddr_in *) rp->ai_addr;
+						addr = sa->sin_addr;
+						if (ipv4_proto.enabled)
+							break;
+					}
+				else if (rp->ai_family == AF_INET6) {
+					ipv6 = 1;
+					sa6 = (struct sockaddr_in6 *) rp->ai_addr;
+					addr6 = sa6->sin6_addr;
+					if (ipv6_proto.enabled)
+						break;
+				}
+		}
+		if (!rp && ip4res) {
+			rp = ip4res;
+			sa = (struct sockaddr_in *) rp->ai_addr;
+			ipv6 = 0;
+			addr = sa->sin_addr;
+		}
+		freeaddrinfo (res);
+		if (s || !rp) {
 			warn_printf ("BGCP: server name could not be resolved!");
 			goto free_timer;
 		}
-		log_printf (BGNS_ID, 0, "BGCP: server name resolved to ");
-#ifdef DDS_IPV6
-		ipv6 = he->h_addrtype == AF_INET6;
-		if (ipv6) {
-			addr6 = *((struct in6_addr *) he->h_addr_list [0]);
-			log_printf (BGNS_ID, 0, "%s\r\n", inet_ntop (AF_INET6, &addr6,
-								abuf, sizeof (abuf)));
-			cxp->locator->locator.kind = LOCATOR_KIND_TCPv6;
+		log_printf (BGNS_ID, 0, "BGCP: server name resolved to %s\r\n", 
+				          inet_ntop ((ipv6) ? AF_INET6 : AF_INET,
+					  	     (ipv6) ? (void *) &addr6 : (void *) &addr,
+						     sbuf, sizeof (sbuf)));
+#else
+		he = gethostbyname (sp->addr.name);
+		if (!he || he->h_addrtype != AF_INET) {
+			warn_printf ("BGCP: server name could not be resolved!");
+			goto free_timer;
 		}
-		else {
-#endif
-			addr = *((struct in_addr *) he->h_addr_list [0]);
-			log_printf (BGNS_ID, 0, "%s\r\n", inet_ntoa (addr));
-			cxp->locator->locator.kind = LOCATOR_KIND_TCPv4;
-#ifdef DDS_IPV6
-		}
+		addr = *((struct in_addr *) he->h_addr_list [0]);
+		log_printf (BGNS_ID, 0, "BGCP: server name resolved to %s\r\n",
+						          inet_ntoa (addr));
 #endif
 	}
 #ifdef DDS_IPV6
+	else if (sp->ipv6) {
+		memcpy (addr6.s6_addr, sp->addr.ipa_v6, 16);
+		ipv6 = 1;
+	}
+#endif
 	else {
-		ipv6 = sp->ipv6;
-		if (ipv6) {
-			memcpy (addr6.s6_addr, sp->addr.ipa_v6, 16);
-			cxp->locator->locator.kind = LOCATOR_KIND_TCPv6;
-		}
-#endif
-		else {
-			addr.s_addr = htonl (sp->addr.ipa_v4);
-	       		cxp->locator->locator.kind = LOCATOR_KIND_TCPv4;
-		}
+		addr.s_addr = htonl (sp->addr.ipa_v4);
 #ifdef DDS_IPV6
+		ipv6 = 0;
+#endif
 	}
-	if (ipv6)
+
+#ifdef DDS_IPV6
+	if (!ipv6 && nat64) {
+		rtps_ipv6_nat64_addr (addr.s_addr, addr6.s6_addr);
+		ipv6 = 1;
+	}
+	if (ipv6) {
+		cxp->locator->locator.kind = LOCATOR_KIND_TCPv6;
 		memcpy (cxp->dst_addr, addr6.s6_addr, 16);
+		log_printf (BGNS_ID, 0, "BGCP: connecting to %s", 
+			          inet_ntop (AF_INET6, (void *) &addr6,
+					     sbuf, sizeof (sbuf)));
+	}
 	else
 #endif
-	{
+	     {
+       		cxp->locator->locator.kind = LOCATOR_KIND_TCPv4;
 		cxp->dst_addr [12] = ntohl (addr.s_addr) >> 24;
 		cxp->dst_addr [13] = (ntohl (addr.s_addr) >> 16) & 0xff;
 		cxp->dst_addr [14] = (ntohl (addr.s_addr) >> 8) & 0xff;
 		cxp->dst_addr [15] = ntohl (addr.s_addr) & 0xff;
+		log_printf (BGNS_ID, 0, "BGCP: connecting to %s", 
+						          inet_ntoa (addr));
 	}
-	cxp->dst_port = sp->port;
+	log_printf (BGNS_ID, 0, ":%u\r\n", sp->port);
 	cxp->associated = 1;
+	cxp->dst_port = sp->port;
 	cxp->has_dst_addr = 1;
 	for (i = 0; i < BG_MAX_CLIENTS; i++)
 		if (!bg_client [i]) {

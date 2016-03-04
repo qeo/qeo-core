@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -14,13 +14,13 @@
 
 package org.qeo.testframework;
 
+import org.qeo.ReaderWriter;
+import org.qeo.testframework.impl.QeoTestCaseImpl;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-
-import org.qeo.ReaderWriter;
-import org.qeo.testframework.impl.QeoTestCaseImpl;
 
 public abstract class QeoTestCase
     extends QeoTestCaseImpl
@@ -33,6 +33,7 @@ public abstract class QeoTestCase
     public void setUp(boolean initQeo)
         throws Exception
     {
+        startWatchDog();
         super.setUp(initQeo);
         initReaderWriters();
     }
@@ -41,6 +42,7 @@ public abstract class QeoTestCase
     public void setUp()
         throws Exception
     {
+        startWatchDog();
         super.setUp();
         initReaderWriters();
     }
@@ -50,6 +52,16 @@ public abstract class QeoTestCase
         throws Exception
     {
         closeReaderWriters();
+        stopWatchDog();
+        super.tearDown();
+    }
+
+    protected void tearDown(boolean stopWatchDog) throws Exception
+    {
+        closeReaderWriters();
+        if (stopWatchDog) {
+            stopWatchDog();
+        }
         super.tearDown();
     }
 
@@ -115,6 +127,43 @@ public abstract class QeoTestCase
     public static synchronized void setVerbose(boolean v)
     {
         verbose = v;
+    }
+
+    private Thread watchDog = null;
+
+    private void startWatchDog() throws InterruptedException
+    {
+        if (watchDog != null) {
+            stopWatchDog();
+        }
+        //create exception already here, but don't throw it.
+        //this will make the stracktrace of the exception the place where the timer was actually started
+        //this provides more information.
+        final IllegalStateException ex = new IllegalStateException("TIMEOUT");
+        watchDog = new Thread() {
+            @Override
+            public void run()
+            {
+                try {
+                    //just sleep for 60 seconds
+                    Thread.sleep(60000); //60 seconds
+                }
+                catch (InterruptedException e) {
+                    //This is expected, the watchdog should be interrupted before 60 seconds sleep.
+                    return;
+                }
+                //if we get here, we slept for 60 seconds, this is bad. Abort!
+                throw ex;
+            }
+        };
+        watchDog.start();
+    }
+
+    private void stopWatchDog() throws InterruptedException
+    {
+        watchDog.interrupt();
+        watchDog.join();
+        watchDog = null;
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -76,22 +76,22 @@ public final class QeoConnection
     /**
      * Sets a flag to indicate that the manifest popup must not be shown but simply accepted. To have it's desired
      * effect, this method must be called before calling getInstance on this class.
-     * 
+     *
      * @remark Calling this method when the release version of the Qeo service is installed has no effect.
      */
-    public static synchronized void disableManifestPopup()
+    public static void disableManifestPopup()
     {
         sDisableManifestPopup = true;
     }
 
     /**
      * Get the Qeo connection singleton. If it does not exist, instantiate it.
-     * 
+     *
      * @param context The application context
      * @param handler The handler to post callbacks.
-     * 
+     *
      * @return the Qeo connection singleton
-     * 
+     *
      * @throws IllegalStateException if the context or looper parameter is null or if they do not correspond with the
      *             one already used
      * @throws QeoServiceNotFoundException if the Qeo service is not present
@@ -119,7 +119,7 @@ public final class QeoConnection
 
     /**
      * Getter for the Qeo connection singleton.
-     * 
+     *
      * @return the Qeo connection singleton
      */
     public static QeoConnection getInstance()
@@ -140,7 +140,8 @@ public final class QeoConnection
             resume();
         }
         // call the onQeoReady in a Handler to ensure it comes on the correct thread.
-        mOnReadyHandler.post(new Runnable() {
+        mOnReadyHandler.post(new Runnable()
+        {
             @Override
             public void run()
             {
@@ -213,7 +214,8 @@ public final class QeoConnection
     private void callOnWakeUp(final QeoAndroid factory, final String typeName)
     {
         // call the onWakeUp in a Handler to ensure it comes on the correct thread.
-        mOnReadyHandler.post(new Runnable() {
+        mOnReadyHandler.post(new Runnable()
+        {
             @Override
             public void run()
             {
@@ -230,7 +232,8 @@ public final class QeoConnection
     private void callOnBgnsConnected(final QeoAndroid factory, final boolean state)
     {
         // call the onWakeUp in a Handler to ensure it comes on the correct thread.
-        mOnReadyHandler.post(new Runnable() {
+        mOnReadyHandler.post(new Runnable()
+        {
             @Override
             public void run()
             {
@@ -246,7 +249,7 @@ public final class QeoConnection
 
     /**
      * Add a Qeo factory for Android. When the Qeo connection is in the connected state, call the onQeoready callback.
-     * 
+     *
      * @param factory The factory to add.
      */
     public void addFactory(final QeoAndroid factory)
@@ -262,7 +265,7 @@ public final class QeoConnection
 
     /**
      * Get a Qeo factory for Android corresponding to a specific listener.
-     * 
+     *
      * @param listener The listener used to look for a factory
      * @return the Qeo factory or null if not found.
      */
@@ -281,7 +284,7 @@ public final class QeoConnection
 
     /**
      * Close a factory for a connection listener.
-     * 
+     *
      * @param listener The listener.
      */
     public void closeFactory(final QeoConnectionListener listener)
@@ -296,7 +299,7 @@ public final class QeoConnection
 
     /**
      * Remove a factory. When the list of factories becomes empty, the connection is closed.
-     * 
+     *
      * @param factory The factory to remove.
      */
     private void removeFactory(QeoAndroid factory)
@@ -312,7 +315,7 @@ public final class QeoConnection
 
     /**
      * Indication of the connection state.
-     * 
+     *
      * @return true if the Qeo connection is connected
      */
     boolean isConnected()
@@ -323,17 +326,17 @@ public final class QeoConnection
 
     /**
      * return the service connections proxy, to be used for calling interface methods.
-     * 
+     * @throws ServiceDisconnectedException If the Qeo service is not connected.
      * @return the IServiceQeo proxy
      */
-    public IServiceQeoV1 getProxy()
+    public IServiceQeoV1 getProxy() throws ServiceDisconnectedException
     {
         return mServiceConnection.getProxy();
     }
 
     /**
      * Getter for the Qeo service callbacks.
-     * 
+     *
      * @return the IServiceCallback object
      */
     IServiceQeoCallback getServiceQeoCallback()
@@ -358,6 +361,9 @@ public final class QeoConnection
         catch (final RemoteException e) {
             LOG.log(Level.SEVERE, "Error suspending", e);
         }
+        catch (final ServiceDisconnectedException e) {
+            e.throwNotInitException();
+        }
     }
 
     /**
@@ -372,6 +378,9 @@ public final class QeoConnection
         catch (final RemoteException e) {
             LOG.log(Level.SEVERE, "Error resuming", e);
         }
+        catch (final ServiceDisconnectedException e) {
+            e.throwNotInitException();
+        }
     }
 
     private void close()
@@ -380,15 +389,20 @@ public final class QeoConnection
         synchronized (LOCK) {
             sInstance = null;
             if (mConnected) {
-                IServiceQeoV1 proxy = getProxy();
-                if (proxy != null) {
-                    // check if proxy is available. On service crash this will be null.
-                    try {
-                        getProxy().unregister(mServiceQeoCb);
+                try {
+                    IServiceQeoV1 proxy = getProxy();
+                    if (proxy != null) {
+                        // check if proxy is available. On service crash this will be null.
+                        try {
+                            proxy.unregister(mServiceQeoCb);
+                        }
+                        catch (final RemoteException e) {
+                            LOG.log(Level.SEVERE, "Error unregistering service callback", e);
+                        }
                     }
-                    catch (final RemoteException e) {
-                        LOG.log(Level.SEVERE, "Error unregistering service callback", e);
-                    }
+                }
+                catch (final ServiceDisconnectedException e) {
+                    LOG.warning("Service already disconnected while closing factory");
                 }
             }
             mConnected = false;
@@ -397,7 +411,8 @@ public final class QeoConnection
         }
     }
 
-    private final ServiceConnectionListener mConnListener = new ServiceConnectionListener() {
+    private final ServiceConnectionListener mConnListener = new ServiceConnectionListener()
+    {
         @Override
         public void onConnected()
         {
@@ -406,7 +421,7 @@ public final class QeoConnection
                 getProxy().setSecurityConfig(sRealm, sUserName, sDeviceName);
                 getProxy().register(mServiceQeoCb);
             }
-            catch (final RemoteException e) {
+            catch (final Exception e) {
                 LOG.log(Level.SEVERE, "", e);
             }
         }
@@ -422,7 +437,8 @@ public final class QeoConnection
                 removeFactory(factory); // remove factory
             }
 
-            // notify client that everything is closed, do this at the very last at the client may try to setup a new
+            // notify client that everything is closed, do this at the very last at the client may try to setup a
+            // new
             // connection directly from this call.
             for (final QeoAndroid factory : factories) {
                 if (wasConnected) {
@@ -454,7 +470,7 @@ public final class QeoConnection
 
     /**
      * Read the manifest (text) file from the AssetsManagers.
-     * 
+     *
      * @param fileName the file to read
      * @return the content of the file represented as a String[]
      * @throws ManifestParseException if the manifest could not be found, opened, read or closed
@@ -462,7 +478,7 @@ public final class QeoConnection
     private String[] readManifest(String fileName)
         throws ManifestParseException
     {
-        String[] manifest = new String[] {};
+        String[] manifest = new String[]{};
         Context context = mServiceConnection.getContext();
         BufferedReader manifestReader = null;
 
@@ -500,11 +516,9 @@ public final class QeoConnection
     {
         final ParcelableException exception = new ParcelableException();
         try {
-            synchronized (LOCK) {
-                if (sDisableManifestPopup) {
-                    LOG.info("Manifest popup disabled by application");
-                    sDisableManifestPopup = getProxy().disableManifestPopup();
-                }
+            if (sDisableManifestPopup) {
+                LOG.info("Manifest popup disabled by application");
+                sDisableManifestPopup = getProxy().disableManifestPopup();
             }
             String[] manifest = sManifest;
             if (manifest == null) {
@@ -518,6 +532,7 @@ public final class QeoConnection
         }
         catch (RemoteException e) {
             LOG.log(Level.SEVERE, "Failed to push manifest", e);
+            mConnListener.onError(new QeoException("Failed to push manifest", e));
         }
         if (null != exception.getException()) {
             Exception ex = exception.getException();
@@ -529,7 +544,7 @@ public final class QeoConnection
     /**
      * Set the content of the manifest file instead of parsing the default file location. This should only be used for
      * special cases.
-     * 
+     *
      * @param content The unparsed manifest file content. This is an array containing 1 line of the file per element.
      */
     public static void setManifest(String[] content)
@@ -539,7 +554,7 @@ public final class QeoConnection
 
     /**
      * Configures the realm, user name and device name to be used when registering this device.
-     * 
+     *
      * @param realm The realm name
      * @param userName The user name
      * @param deviceName The device name
@@ -551,7 +566,8 @@ public final class QeoConnection
         sDeviceName = deviceName;
     }
 
-    private final IServiceQeoCallback.Stub mServiceQeoCb = new IServiceQeoCallback.Stub() {
+    private final IServiceQeoCallback.Stub mServiceQeoCb = new IServiceQeoCallback.Stub()
+    {
 
         @Override
         public void onRegistered()

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -26,6 +26,7 @@ import org.qeo.android.internal.ParcelableDeviceId;
 import org.qeo.android.internal.QeoConnection;
 import org.qeo.android.internal.QeoLogger;
 import org.qeo.android.internal.ServiceConnection;
+import org.qeo.android.internal.ServiceDisconnectedException;
 import org.qeo.internal.BaseFactory;
 import org.qeo.system.DeviceId;
 
@@ -284,6 +285,9 @@ public final class QeoAndroid
         catch (final RemoteException e) {
             LOG.log(Level.SEVERE, "Error continueing authenticatino", e);
         }
+        catch (ServiceDisconnectedException ex) {
+            ex.throwNotInitException();
+        }
     }
 
     /**
@@ -368,6 +372,9 @@ public final class QeoAndroid
             catch (final RemoteException e) {
                 LOG.log(Level.SEVERE, "Error fetching userId", e);
             }
+            catch (ServiceDisconnectedException ex) {
+                ex.throwNotInitException();
+            }
         }
         return 0;
     }
@@ -382,6 +389,9 @@ public final class QeoAndroid
             catch (final RemoteException e) {
                 LOG.log(Level.SEVERE, "Error fetching userId", e);
             }
+            catch (ServiceDisconnectedException ex) {
+                ex.throwNotInitException();
+            }
         }
         return 0;
     }
@@ -395,6 +405,9 @@ public final class QeoAndroid
             }
             catch (final RemoteException e) {
                 LOG.log(Level.SEVERE, "Error fetching userId", e);
+            }
+            catch (ServiceDisconnectedException ex) {
+                ex.throwNotInitException();
             }
         }
         return null;

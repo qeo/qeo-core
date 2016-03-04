@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -41,6 +41,7 @@
 #include "prof.h"
 #include "vgdefs.h"
 #include "sys.h"
+#include "libx.h"
 #include "log.h"
 #include "error.h"
 #include "sock.h"
@@ -195,6 +196,22 @@ static unsigned long	rtps_ip_nomem_hdr;
 IP_PROTO		ipv4_proto;
 #ifdef DDS_IPV6
 IP_PROTO		ipv6_proto;
+
+#ifdef DDS_NAT64
+
+typedef enum {
+	N64_DISABLE,	/* NAT64 not enabled. */
+	N64_ENABLE,	/* NAT64 used if only an IPv6 address is configured. */
+	N64_FORCE	/* NAT64 is used, even if an IPv4 address is present. */
+} NAT64_MODE;
+
+static unsigned		nat64_prefix_len = 12;
+static unsigned char	nat64_prefix [16] = {
+	0, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0
+}; 
+static NAT64_MODE	nat64_mode = N64_ENABLE;
+
+#endif
 #endif
 
 /* rtps_scope -- Get IP scope settings. */
@@ -256,6 +273,10 @@ static int rtps_ipv4_addr_notify (void)
 }
 
 #ifdef DDS_IPV6
+#ifdef DDS_NAT64
+
+
+#endif
 
 static int rtps_ipv6_addr_notify (void)
 {
@@ -921,13 +942,12 @@ IP_CX *rtps_ip_alloc (void)
 	IP_CX	*cxp;
 
 	cxp = mds_pool_alloc (&mem_blocks [MB_CX]);
-	if (cxp)
+	if (cxp) {
 		memset (cxp, 0, sizeof (IP_CX));
-
 #ifdef MSG_TRACE
-	if (cxp)
-	    cxp->trace = rtps_ip_dtrace;
+		cxp->trace = rtps_ip_dtrace;
 #endif
+	}
 	return (cxp);
 }
 
@@ -1324,11 +1344,9 @@ RMBUF *rtps_parse_buffer (IP_CX *cxp, const unsigned char *buf, unsigned len)
 /* rtps_rx_buffer -- Process a received packet in a buffer. */
 
 void rtps_rx_buffer (IP_CX               *cxp,
+		     IP_CX               *tx_cxp,
 		     const unsigned char *buf,
-		     size_t              len,
-		     const unsigned char *saddr,
-		     uint32_t            sport/*,
-		     unsigned            sintf*/)
+		     size_t              len)
 {
 	RMBUF			*mp;
 #ifdef MSG_TRACE
@@ -1346,35 +1364,45 @@ void rtps_rx_buffer (IP_CX               *cxp,
 		0,
 		0
 	};
+	const unsigned char	*dst_addr;
+	uint32_t		dst_port;
+	LocatorKind_t		dst_kind;
+	unsigned		dst_flags;
 
 	mp = rtps_parse_buffer (cxp, buf, len);
 	if (!mp)
 		return;
 
+	if (tx_cxp) {
+		dst_addr = tx_cxp->dst_addr;
+		dst_port = tx_cxp->dst_port;
+		dst_kind = tx_cxp->locator->locator.kind;
+		dst_flags = tx_cxp->locator->locator.flags;
+	}
+	else {
+		dst_addr = NULL;
+		dst_port = 0;
+		dst_kind = cxp->locator->locator.kind;
+		dst_flags = 0;
+	}
+
 #ifdef MSG_TRACE
 	if (cxp->trace) {
-		if (saddr)
-			ap = (cxp->locator->locator.kind & LOCATOR_KINDS_IPv4) ? saddr + 12 : saddr;
+		if (dst_addr)
+			ap = (dst_kind & LOCATOR_KINDS_IPv4) ? dst_addr + 12 : dst_addr;
 		else
 			ap = NULL;
 		rtps_ip_trace (cxp->handle, 'R',
-			       &cxp->locator->locator, ap, sport, mp);
+			       &cxp->locator->locator, ap, dst_port, mp);
 	}
 #endif
-	raddr.kind = cxp->locator->locator.kind;
-	raddr.flags = cxp->locator->locator.flags;
-	if (saddr) {
-		memcpy (&raddr.address, saddr, 16);
-		raddr.port = sport;
-		raddr.handle = cxp->handle;
-	}
-	else {
-		memcpy (&raddr.address, &loc_addr_invalid, 16);
-		raddr.port = 0;
-		raddr.handle = 0;
-	}
+	raddr.kind = dst_kind;
+	raddr.flags = dst_flags;
+	memcpy (raddr.address, (dst_addr) ? dst_addr : loc_addr_invalid, 16);
+	raddr.port = dst_port;
+	raddr.handle = (tx_cxp) ? tx_cxp->handle : 0;
 
-	/*dbg_printf ("locator: %s\r\n", locator_str (&raddr));*/
+	/*dbg_printf ("rtps_rx_buffer ==> locator: %s\r\n", locator_str (&raddr));*/
 	(*rtps_rxf) (cxp->id, mp, &raddr);
 }
 
@@ -1382,9 +1410,8 @@ void rtps_rx_buffer (IP_CX               *cxp,
 		  RMBUF format. */
 
 void rtps_rx_msg (IP_CX               *cxp,
-		  RMBUF               *msg,
-		  const unsigned char *saddr,
-		  uint32_t            sport)
+                  IP_CX               *tx_cxp,
+		  RMBUF               *msg)
 {
 	static Locator_t raddr = {
 		LOCATOR_KIND_UDPv4,
@@ -1398,18 +1425,30 @@ void rtps_rx_msg (IP_CX               *cxp,
 		0,
 		0
 	};
-
 #ifdef MSG_TRACE
-	if (cxp->trace || (msg->element.flags & RME_TRACE) != 0)
-		rtps_ip_trace (cxp->handle, 'R',
-			       &cxp->locator->locator, saddr, sport, msg);
+	const unsigned char	*ap;
 #endif
-	raddr.kind = cxp->locator->locator.kind;
-	raddr.flags = cxp->locator->locator.flags;
-	if (saddr) {
-		memcpy (&raddr.address, saddr, 16);
-		raddr.port = sport;
-		raddr.handle = cxp->handle;
+	const unsigned char	*dst_addr;
+	uint32_t		dst_port;
+
+	dst_addr = tx_cxp->dst_addr;
+	dst_port = tx_cxp->dst_port;
+#ifdef MSG_TRACE
+	if (cxp->trace || (msg->element.flags & RME_TRACE) != 0) {
+		if (dst_addr)
+			ap = (tx_cxp->locator->locator.kind & LOCATOR_KINDS_IPv4) ? dst_addr + 12 : dst_addr;
+		else
+			ap = NULL;
+		rtps_ip_trace (cxp->handle, 'R',
+			       &tx_cxp->locator->locator, ap, dst_port, msg);
+	}
+#endif
+	raddr.kind = tx_cxp->locator->locator.kind;
+	raddr.flags = tx_cxp->locator->locator.flags;
+	if (dst_addr) {
+		memcpy (&raddr.address, dst_addr, 16);
+		raddr.port = dst_port;
+		raddr.handle = tx_cxp->handle;
 	}
 	else {
 		memcpy (&raddr.address, &loc_addr_invalid, 16);
@@ -1417,7 +1456,7 @@ void rtps_rx_msg (IP_CX               *cxp,
 		raddr.handle = 0;
 	}
 
-	/*dbg_printf ("locator: %s\r\n", locator_str (&raddr));*/
+	/*dbg_printf ("rtps_rx_msg ==> locator: %s\r\n", locator_str (&raddr));*/
 	(*rtps_rxf) (cxp->id, msg, &raddr);
 }
 
@@ -2590,11 +2629,95 @@ void rtps_ipv4_detach (void)
 
 #ifdef DDS_IPV6
 
+#ifdef DDS_NAT64
+
+static void nat64_prefix_set (const char *s)
+{
+	char		buf [32];
+	unsigned	l, plen;
+
+	l = strlen (s);
+	if (l < 11 || l > 34 ||
+	    s [l - 1] < '0' || s [l - 1] > '8' ||
+	    s [l - 2] < '3' || s [l - 1] > '9' ||
+	    s [l - 3] != '/') {
+		nat64_mode = N64_DISABLE;
+		return;
+	}
+	plen = (s [l - 2] - '0') * 10 + (s [l - 1] - '0');
+	if ((plen & 7) != 0 ||		/* Must be a multiple of 8. */
+	    plen < 32 || plen > 96 ||	/* Must be in the range 32..96. */
+	    (plen > 64 && plen < 96)) {	/* May not be 72, 80 or 88. */
+		nat64_mode = N64_DISABLE;
+		return;
+	}
+	nat64_prefix_len = plen >> 3;
+	memcpy (buf, s, l - 3);
+	buf [l - 3] = '\0';
+	inet_pton (AF_INET6, buf, nat64_prefix);
+}
+
+static void nat64_mode_set (const char *s)
+{
+	if (!astrncmp (s, "ENABLE", 6))
+		nat64_mode = N64_ENABLE;
+	else if (!astrncmp (s, "FORCE", 5))
+		nat64_mode = N64_FORCE;
+	else {
+		if (astrncmp (s, "DISABLE", 7))
+			log_printf (RTPS_ID, 0, "IPv6: invalid NAT64 mode, mechanism disabled!");
+		nat64_mode = N64_DISABLE;
+	}
+}
+
+#endif
+
+/* rtps_ipv6_nat64_required -- Returns 1 if NAT64 is enabled and required for
+			       IPv4 connectivity. */
+
+int rtps_ipv6_nat64_required (void)
+{
+#ifdef DDS_NAT64
+	if (ipv6_proto.enabled &&
+	    (nat64_mode == N64_FORCE ||
+	     (nat64_mode == N64_ENABLE && !ipv4_proto.enabled)))
+		return (1);
+	else
+#endif
+		return (0);
+}
+
+/* rtps_ipv6_nat64_addr -- Converts an IPv4 address to IPv6 format (in *dst) if
+			   NAT64 is required for IPv4 connections. */
+
+void rtps_ipv6_nat64_addr (uint32_t ipa, unsigned char *dst)
+{
+#ifdef DDS_NAT64
+	unsigned char	*sp;
+	unsigned	ofs, i;
+
+	memcpy (dst, nat64_prefix, sizeof (nat64_prefix));
+	ofs = nat64_prefix_len;
+	sp = (unsigned char *) &ipa;
+	for (i = 0; i < 4; i++) {
+		if (ofs == 8)
+			ofs++;
+		dst [ofs++] = *sp++;
+	}
+#else
+	ARG_NOT_USED (ipa)
+	ARG_NOT_USED (dst)
+#endif
+}
+
 /* rtps_ipv6_attach -- Attach the RTPS over IPv6 transport handlers. */
 
 int rtps_ipv6_attach (unsigned max_cx, unsigned max_addr)
 {
-	int	error;
+#ifdef DDS_NAT64
+	const char	*prefix, *mode;
+#endif
+	int		error = DDS_RETCODE_OK;
 
 	act_printf ("IPv6_attach()\r\n");
 	ipv6_proto.mode = config_get_mode (DC_IPv6_Mode, MODE_ENABLED);
@@ -2622,8 +2745,20 @@ int rtps_ipv6_attach (unsigned max_cx, unsigned max_addr)
 		act_printf ("Attach UDPv6\r\n");
 		error = rtps_udpv6_attach ();
 	}
-	else
-		error = DDS_RETCODE_OK;
+#ifdef DDS_NAT64
+	prefix = config_get_string (DC_IPv6_Nat64Pref, "64:ff9b::/96");
+	nat64_prefix_set (prefix);
+	mode = config_get_string (DC_IPv6_Nat64Mode, "ENABLE");
+	nat64_mode_set (mode);
+	log_printf (RTPS_ID, 0, "IPv6: NAT64 prefix = %s, NAT64 mode = %s\r\n",
+								prefix, mode);
+#endif
+#ifdef DDS_TCP
+	if (ipv6_proto.tcp_mode != MODE_DISABLED) {
+		act_printf ("Attach TCPv6\r\n");
+		error = rtps_tcpv6_attach ();
+	}
+#endif
 	return (error);
 }
 

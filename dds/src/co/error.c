@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -72,7 +72,7 @@
 #define BASE_LOG_NAME	"tdds.log"
 #else
 #ifdef ANDROID
-#define	BASE_LOG_NAME	"/mnt/sdcard/tdds_log_"
+#define	BASE_LOG_NAME	"/sdcard/tdds_log_"
 #include <android/log.h>
 #else
 #define	BASE_LOG_NAME	".tdds_log_"

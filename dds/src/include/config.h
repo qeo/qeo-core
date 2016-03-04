@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -160,6 +160,10 @@ typedef enum {
 	DC_IPv6_MCastHops,
 	DC_IPv6_MCastIntf,
 	DC_IPv6_MCastAddr,
+#ifdef DDS_NAT64
+	DC_IPv6_Nat64Pref,
+	DC_IPv6_Nat64Mode,
+#endif
 #endif
 
 #ifdef TCP_SUSPEND

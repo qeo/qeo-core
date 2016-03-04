@@ -89,7 +89,7 @@ dds.libdds_SRCS             := \
                                $(addprefix src/cache/,       cache.c) \
                                $(addprefix src/co/,          cmdline.c config.c ctrace.c db.c error.c handle.c hash.c heap.c \
                                                              ipc.c ipfilter.c libx.c log.c md5.c nmatch.c pool.c prof.c random.c \
-                                                             skiplist.c sock.c str.c strseq.c sys.c thread.c timer.c) \
+                                                             skiplist.c sock.c str.c strseq.c sys.c thread.c timer.c crc32.c) \
                                $(addprefix src/dcps/,        dcps_builtin.c dcps_dbg.c dcps_dpfact.c dcps_entity.c dcps_event.c dcps_main.c \
 			                                     dcps_part.c dcps_pub.c dcps_qos.c dcps_reader.c dcps_sub.c dcps_topic.c dcps_notif.c \
 							     dcps_waitset.c dcps_writer.c) \
@@ -128,6 +128,9 @@ dds.libdds_SRCS             += $(addprefix src/dbg/,         debug.c) \
 	                       $(addprefix src/co/,          tty.c)
 endif
 
+ifeq ($(dds_NAT64), 1)
+dds_EXTRA_DEFINES           += -DDDS_IPV6 -DDDS_NAT64
+endif
 ifneq ($(dds_FORCE_MALLOC),)
 dds_EXTRA_DEFINES           += -DFORCE_MALLOC 
 endif
@@ -179,7 +182,7 @@ dds.PEDANTIC                := -pedantic
 endif
 endif
 dds.libdds_LOCALINCLUDES    := $(dds_INCLUDES) src/include
-dds.libdds_LOCALDEFINES     := -Wextra -Wall -Wno-long-long $(dds.PEDANTIC) $(dds_EXTRA_DEFINES) -DNO_ATOMIC -DDCPS_ZERO_BUFFER -DPTHREADS_USED -D_XOPEN_SOURCE=600 -D_SVID_SOURCE -DRTPS_USED -DDDS_AUTO_LIVELINESS -DDDS_DYN_IP -DDDS_TYPECODE -DDDS_TCP -DBIGDATA -DNO_CERTIFICATE_TIME_VALIDITY_CHECK -DRTPS_SPDP_BCAST # -DDDS_IPV6 -DLOG_FILE  -DCTRACE_USED -DCTRACE_ATEXIT 
+dds.libdds_LOCALDEFINES     := -Wextra -Wall -Wno-long-long $(dds.PEDANTIC) $(dds_EXTRA_DEFINES) -DNO_ATOMIC -DDCPS_ZERO_BUFFER -DPTHREADS_USED -D_XOPEN_SOURCE=600 -D_SVID_SOURCE -DRTPS_USED -DDDS_AUTO_LIVELINESS -DDDS_DYN_IP -DDDS_TYPECODE -DDDS_TCP -DBIGDATA -DNO_CERTIFICATE_TIME_VALIDITY_CHECK -DRTPS_SPDP_BCAST #-DDDS_IPV6 -DDDS_NAT64 -DLOG_FILE  -DCTRACE_USED -DCTRACE_ATEXIT 
 ifeq ($(dds_WERROR), 1)
 dds.libdds_LOCALDEFINES     += -Werror
 endif

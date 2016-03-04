@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -1656,8 +1656,6 @@ static int rtps_udpv6_add_locator (DomainId_t    domain_id,
 	sa = (struct sockaddr *) &addr6;
 	ssize = sizeof (addr6);
 
-	log_printf (RTPS_ID, 0, "UDPv6: adding %s\r\n", buf);
-
 	/* Create the listening socket. */
 	cxp->fd = fd = socket (AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 	if (fd < 0) {
@@ -1668,6 +1666,8 @@ static int rtps_udpv6_add_locator (DomainId_t    domain_id,
 		return (DDS_RETCODE_ALREADY_DELETED);
 	}
 	cxp->fd_owner = 1;
+
+	log_printf (RTPS_ID, 0, "UDPv6: adding %s on [%d]\r\n", buf, fd);
 
 	/* If multicast address: allow multiple binds per host. */
 	if (lp->kind == LOCATOR_KIND_UDPv6 && lp->address [0] == 0xff) {

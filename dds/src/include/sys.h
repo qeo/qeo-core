@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -264,6 +264,14 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
    of addresses stored in the array, with each address occupying OWN_IPV6_SIZE
    bytes in the address buffer (16-bytes IPv6 address, 4-byte scope type and
    4-byte scope_id. */
+
+#ifdef IP_BLOCK_SRC
+extern int sys_block_ipv4;
+extern int sys_block_ipv6;
+#else
+#define	sys_block_ipv4	0
+#define	sys_block_ipv6	0
+#endif
 
 const char *sys_getenv (const char *var_name);
 

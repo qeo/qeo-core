@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -902,8 +902,8 @@ void spdp_remote_participant_enable (Domain_t      *dp,
 				     Participant_t *pp,
 				     unsigned      hs_handle)
 {
-	Writer_t	  *wp;
 #ifdef DDS_NATIVE_SECURITY
+	/*Writer_t	  *wp;*/
 	DDS_ReturnCode_t  ret;
 	DDS_ParticipantVolatileSecureMessage msg;
 #else
@@ -921,10 +921,6 @@ void spdp_remote_participant_enable (Domain_t      *dp,
 		else*/
 			rtps_relay_add (pp);
 	}
-
-	/* Resend participant info. */
-	wp = (Writer_t *) dp->participant.p_builtin_ep [EPB_PARTICIPANT_W];
-	rtps_stateless_send (wp, pp, 0);
 
 #ifdef DDS_NATIVE_SECURITY
 	if (NATIVE_SECURITY (dp)) {
@@ -954,7 +950,7 @@ void spdp_remote_participant_enable (Domain_t      *dp,
 			return;
 		}
 		msg.message_class_id = GMCLASSID_SECURITY_PARTICIPANT_CRYPTO_TOKENS;
-		wp = (Writer_t *) dp->participant.p_builtin_ep [EPB_PARTICIPANT_VOL_SEC_W];
+		/*wp = (Writer_t *) dp->participant.p_builtin_ep [EPB_PARTICIPANT_VOL_SEC_W];*/
 		ctt_send (dp, pp, NULL, NULL, &msg);
 		sec_release_tokens (&msg.message_data);
 
@@ -997,6 +993,7 @@ static void spdp_new_participant (Domain_t                      *dp,
 				  int                           indirect)
 {
 	Participant_t		*pp;
+	Writer_t		*wp;
 	unsigned		ticks;
 	int			authorize;
 	char                    buf [32];
@@ -1025,7 +1022,7 @@ static void spdp_new_participant (Domain_t                      *dp,
 	authorize = DDS_AA_ACCEPTED;
 #ifdef DDS_SECURITY
 #ifdef DDS_NATIVE_SECURITY
-    rem_id = 0;
+	rem_id = 0;
 #endif
 	if (dp->security && info->id_tokens) {
 #ifdef DDS_NATIVE_SECURITY
@@ -1126,7 +1123,8 @@ static void spdp_new_participant (Domain_t                      *dp,
 	if (pp->p_local && indirect) {
 		pp->p_local = 0;
 #ifdef DDS_NATIVE_SECURITY
-		rtps_participant_reset_reply_locators (pp);
+		if (dp->security)
+			rtps_participant_reset_reply_locators (pp);
 #endif
 	}
 	/*log_printf (SPDP_ID, 0, "SPDP: New participant is %s (indirect=%d) due to %s.\r\n", 
@@ -1140,6 +1138,12 @@ static void spdp_new_participant (Domain_t                      *dp,
 	/*spdp_log_handshake (pp);*/
 #endif
 #endif
+	/* Resend participant info if eligible for communication. */
+	if (authorize != DDS_AA_REJECTED) {
+		/*log_printf (SPDP_ID, 0, "SPDP: Reply directly to participant\r\n");*/
+		wp = (Writer_t *) dp->participant.p_builtin_ep [EPB_PARTICIPANT_W];
+		rtps_stateless_send (wp, pp, 0);
+	}
 	if (authorize == DDS_AA_ACCEPTED)
 		spdp_remote_participant_enable (dp, pp, 0);
 #ifdef DDS_SECURITY
@@ -1452,7 +1456,8 @@ static void spdp_update_participant (Domain_t                      *dp,
 #ifdef DDS_NATIVE_SECURITY
 
 	/* Clear handshake reply cache. */
-	if (locators_update || proxy_local_update || relay_update)
+	if (dp->security &&
+	    (locators_update || proxy_local_update || relay_update))
 		rtps_participant_reset_reply_locators (pp);
 	/* spdp_log_handshake (pp); */
 #endif

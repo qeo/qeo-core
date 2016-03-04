@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -422,6 +422,9 @@ JNIEXPORT jint JNICALL Java_org_qeo_jni_NativeQeo_nativePreDestroy(JNIEnv *env, 
     qeo_log_i("Native Qeo pre destroy");
     int rc = QEO_OK;
     if (DDS_parameter_unset("TCP_SEC_SERVER") != DDS_RETCODE_OK) {
+        rc = QEO_EFAIL;
+    }
+    if (DDS_parameter_unset("TCP_SERVER") != DDS_RETCODE_OK) {
         rc = QEO_EFAIL;
     }
     return rc;

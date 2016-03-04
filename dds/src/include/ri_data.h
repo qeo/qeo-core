@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -267,17 +267,15 @@ RMBUF *rtps_parse_buffer (IP_CX *cxp, const unsigned char *buf, unsigned len);
 /* Parse a (received) packet in a buffer. */
 
 void rtps_rx_buffer (IP_CX               *cxp,
+		     IP_CX               *reply_cxp,
 		     const unsigned char *buf,
-		     size_t              len,
-		     const unsigned char *saddr,
-		     uint32_t            sport);
+		     size_t              len);
 
 /* Process an RTPS message in a buffer. */
 
-void rtps_rx_msg (IP_CX               *cxp,
-		  RMBUF               *msg,
-		  const unsigned char *saddr,
-		  uint32_t            sport);
+void rtps_rx_msg (IP_CX  *cxp,
+		  IP_CX  *reply_cxp,
+		  RMBUF  *msg);
 
 /* Process an RTPS message in message format. */
 

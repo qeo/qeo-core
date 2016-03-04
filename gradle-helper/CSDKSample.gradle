@@ -7,7 +7,7 @@ group = "org.qeo.sample"
 ext.cSdkSample = true
 
 def enableHost = true
-def enableMips = true
+def enableMips = false
 def enableRpi = true
 if (hasProperty("disableHost") && getProperty("disableHost")) {
     enableHost = false
@@ -135,12 +135,14 @@ task compileSdkSampleHost(type: Exec) {
     workingDir "${buildDir}/sdk-src"
     commandLine = ["make", "clean", "default"]
 }
-task compileSdkSampleMips(type: Exec) {
-    dependsOn prepareSources, getQeoC
-    description "Compile the sample as if it was done with the sdk (disable with -PdisableMips=true)"
-    group "build"
-    workingDir "${buildDir}/sdk-src"
-    commandLine = ["make", "-f", "Makefile.mips", "clean", "default"]
+if (enableMips) {
+    task compileSdkSampleMips(type: Exec) {
+        dependsOn prepareSources, getQeoC
+        description "Compile the sample as if it was done with the sdk (disable with -PdisableMips=true)"
+        group "build"
+        workingDir "${buildDir}/sdk-src"
+        commandLine = ["make", "-f", "Makefile.mips", "clean", "default"]
+    }
 }
 task compileSdkSampleRpi(type: Exec) {
     dependsOn prepareSources, getQeoC

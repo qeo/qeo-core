@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -315,6 +315,7 @@ struct rtps_msg_ref_st {
 	RMREF		*next;		/* Next message reference. */
 	RMBUF		*message;	/* Message pointer. */
 	Ticks_t		ticks;		/* Timestamp. */
+	uint32_t	crc32;		/* Optional: CRC-32. */
 };
 
 extern size_t		rtps_max_msg_size;	/* RTPS maximum message size. */

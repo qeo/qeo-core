@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -33,14 +33,15 @@
 #include <arpa/inet.h>
 #include <net/if.h>
 #include <sys/utsname.h>
-#if defined (__APPLE__) || defined (DDS_IPV6)
+#if !defined (__ANDROID__) && !defined (__mips__)
 #include <ifaddrs.h>
+#define	USE_GETIFADDRS_V6
+#elif !defined (USE_SIOCGIFCONF_V6)
+#define USE_GETADDRINFO_V6
 #endif
-#ifdef DDS_IPV6
-#ifdef USE_GETADDRINFO_V6
+#if defined (DDS_IPV6) && defined (USE_GETADDRINFO_V6)
 #include <netdb.h>
-#endif
-#endif /* DDS_IPV6 */
+#endif /* IPv6 && GetAddrInfo */
 #endif /* !_WIN32 */
 #include <time.h>
 #include "log.h"
@@ -54,8 +55,16 @@
 FTime_t	sys_startup_time;	/* Time at startup. */
 Ticks_t	sys_ticks_last;		/* Last retrieved system ticks value. */
 
+#ifdef IP_BLOCK_SRC
+int	sys_block_ipv4;		/* No IPv4 addresses assigned. */
+int	sys_block_ipv6;		/* No IPv6 addresses assigned. */
+#endif
+
 int sys_init (void)
 {
+#ifdef IP_BLOCK_SRC
+	const char	*s;
+#endif
 #ifdef _WIN32
 	WSADATA	ad;
 	int	err;
@@ -77,6 +86,12 @@ int sys_init (void)
 	}
 #endif
 	sys_getftime (&sys_startup_time);
+#ifdef IP_BLOCK_SRC
+	s = sys_getenv ("TDDS_BLOCK_IPV4");
+	sys_block_ipv4 = (s != NULL && s [0] == '1' && s [1] == '\0');
+	s = sys_getenv ("TDDS_BLOCK_IPV6");
+	sys_block_ipv6 = (s != NULL && s [0] == '1' && s [1] == '\0');
+#endif
 	return (0 /*DDS_RETCODE_OK*/);
 }
 
@@ -320,12 +335,15 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 #ifndef CDR_ONLY
 	const char		*intfs;
 #endif
-
 #ifdef _WIN32
 	unsigned char		buf [2048];
 	DWORD			nbytes;
 	SOCKET_ADDRESS_LIST	*slist;
 	SOCKADDR_IN		*sap;
+
+	if (sys_block_ipv4)
+		return (0);
+
 	if ((s = socket (AF_INET, SOCK_DGRAM, 0)) < 0) {
 		perror ("socket");
 		exit (1);
@@ -357,6 +375,9 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 	struct ifaddrs	*ifa = NULL, *ifp;
 	struct in_addr	*ina;
 	int		rc;
+
+	if (sys_block_ipv4)
+		return (0);
 
 	rc = getifaddrs (&ifa);
 	if (rc) {
@@ -408,6 +429,9 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 	struct ifreq		*ifr, *r;
 	struct sockaddr_in	*in4;
 	int			numif;
+
+	if (sys_block_ipv4)
+		return (0);
 
 	if ((s = socket (AF_INET, SOCK_DGRAM, 0)) < 0) {
 		perror ("socket");
@@ -478,10 +502,6 @@ unsigned sys_own_ipv4_addr (unsigned char *addr,
 
 #ifdef DDS_IPV6
 
-#define	USE_GETIFADDRS_V6
-/*#define USE_GETADDRINFO_V6 */
-/*#define USE_SIOCGIFCONF_V6 */
-
 Scope_t sys_ipv6_scope (const unsigned char *addr)
 {
 	unsigned	i;
@@ -549,6 +569,9 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 	SOCKADDR_IN6		*sap;
 	Scope_t			scope;
 
+	if (sys_block_ipv6)
+		return (0);
+
 	if ((s = socket (AF_INET6, SOCK_DGRAM, 0)) < 0) {
 		perror ("socket");
 		exit (1);
@@ -587,12 +610,18 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 	const char		*intfs;
 	char			buf [INET6_ADDRSTRLEN];
 
+	if (sys_block_ipv6)
+		return (0);
+
 	rc = getifaddrs (&ifa);
 	if (rc) {
 		perror ("getifaddrs");
 		return (0);
 	}
 	for (ifp = ifa; ifp; ifp = ifp->ifa_next) {
+		if (!ifp->ifa_addr)
+			continue;
+
 		if (ifp->ifa_addr->sa_family != AF_INET6)
 			continue;
 
@@ -639,32 +668,45 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 	return (naddr);
 
 #elif defined (USE_GETADDRINFO_V6)
-	int			s;
+	/*int			s;*/
 	unsigned		naddr = 0;
-	struct sockaddr		*ip;
+	struct sockaddr_in6	*in6;
 	struct addrinfo		hints, *res;
+	Scope_t			scope;
 	char			addrstr [INET6_ADDRSTRLEN];
 
+	if (sys_block_ipv6)
+		return (0);
+
 	memset (&hints, 0, sizeof (hints));
-	hints.ai_flags = AI_ALL;
 	hints.ai_family = AF_INET6;
 	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_flags = 0;
+	hints.ai_protocol = 0;
+	hints.ai_canonname = NULL;
+	hints.ai_addr = NULL;
+	hints.ai_next = NULL;
 
-	/*if ((*/s = getaddrinfo (NULL, "7400", &hints, &res);/*) < 0) {
+	/*if ((s = */getaddrinfo (NULL, "7400", &hints, &res);/*) < 0) {
 		perror ("getaddrinfo");
 		exit (1);
 	}*/
 	while (res) {
 		if (res->ai_family == AF_INET6) {
-			ip = res->ai_addr;
+			in6 = (struct sockaddr_in6 *) res->ai_addr;
+			scope = sys_ipv6_scope (in6->sin6_addr.s6_addr);
+			if (scope < min_scope || scope > max_scope) {
+				res = res->ai_next;
+				continue;
+			}
 			if (log)
 				if (!naddr)
-					log_printf (LOG_DEF_ID, 0, "IPv6 interfaces:\r\n");
+					log_printf (LOG_DEF_ID, 0, "IPv6 interface:\r\n");
 				log_printf (LOG_DEF_ID, 0, "    %-8s : %s\r\n",
 					    res->ai_canonname,
-					    inet_ntop (ip->sa_family, ip->sa_data, addrstr, INET6_ADDRSTRLEN));
+					    inet_ntop (AF_INET6, in6->sin6_addr.s6_addr, addrstr, INET6_ADDRSTRLEN));
 			if (max >= 16) {
-				memcpy (addr, ip->sa_data, 16);
+				memcpy (addr, in6->sin6_addr.s6_addr, 16);
 				addr += 16;
 				max -= 16;
 				++naddr;
@@ -690,6 +732,9 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 	int			numif;
 #endif /* !_WIN32 */
 	char			ip [INET_ADDRSTRLEN];
+
+	if (sys_block_ipv6)
+		return (0);
 
 	if ((s = socket (AF_INET6, SOCK_DGRAM, 0)) < 0) {
 		perror ("socket");

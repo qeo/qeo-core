@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -198,7 +198,7 @@ public final class ServiceConnection
     void addListener(ServiceConnectionListener listener)
     {
         LOG.fine("ServiceConnection.addListener() called");
-        synchronized (LOCK) {
+        synchronized (mListeners) {
             mListeners.add(listener);
             if (mConnected) {
                 listener.onConnected();
@@ -224,7 +224,7 @@ public final class ServiceConnection
     void removeListener(ServiceConnectionListener listener)
     {
         LOG.fine("ServiceConnection.removeListener() called");
-        synchronized (LOCK) {
+        synchronized (mListeners) {
             mListeners.remove(listener);
             if (mListeners.isEmpty()) {
                 close();
@@ -234,15 +234,15 @@ public final class ServiceConnection
 
     /**
      * Getter for the IServiceQeo interface object used to communicate with the Qeo service.
-     * 
+     *
+     * @throws ServiceDisconnectedException If the Qeo service is not connected.
      * @return the IServiceQeo object
      */
-    public IServiceQeoV1 getProxy()
+    public IServiceQeoV1 getProxy() throws ServiceDisconnectedException
     {
         synchronized (LOCK) {
             if (!mConnected) {
-                throw new IllegalStateException(
-                    "Qeo service not yet initialized. Wait until the QeoCallback is called please");
+                throw new ServiceDisconnectedException();
             }
             return mServiceQeo;
         }
@@ -355,10 +355,10 @@ public final class ServiceConnection
                 mServiceQeo = IServiceQeoV1.Stub.asInterface(service);
 
                 mConnected = true;
-                for (final ServiceConnectionListener listener : mListeners) {
-                    listener.onConnected();
-                }
                 LOG.fine("Service connection established");
+            }
+            for (final ServiceConnectionListener listener : mListeners) {
+                listener.onConnected();
             }
         }
     };

@@ -1,6 +1,6 @@
 
 //define default targets for which to make the SDK
-ext.targets = ["HOSTLINUX", "REVG_MIPSLINUX", "RPI_ARMHFLINUX"];
+ext.targets = ["HOSTLINUX", "RPI_ARMHFLINUX"];
 ext.publishAllHeaders = true
 
 apply from: file("common.gradle")

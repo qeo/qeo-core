@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -323,7 +323,7 @@ Participant_t *disc_remote_participant_add (Domain_t                      *domai
 	}
 
 #ifdef DDS_NATIVE_SECURITY
-	if (NATIVE_SECURITY (domain))
+	if (domain->security)
 		rtps_participant_init_reply_locators (pp);
 #endif
 #ifdef DDS_FORWARD

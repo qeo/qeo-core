@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -567,16 +567,31 @@ void rtps_locator_send_ll (unsigned id, void *dest, int dlist, RMBUF *msgs)
 	const RTPS_TRANSPORT	*tp;
 	LocatorList_t		listp;
 	Locator_t		*lp;
+	int			sent = 0;
+	unsigned		unknown_kinds = 0;
 
 	if (dlist) {
 		listp = (LocatorList_t) dest;
 		while (listp) {
 			lp = &listp->data->locator;
-			if (lp->kind < MAX_TRANSPORTS &&
-			    (tp = rtps_transports [lp->kind]) != NULL)
+			tp = (lp->kind < MAX_TRANSPORTS) ?
+				rtps_transports [lp->kind] : NULL;
+			if (tp) {
 				(*tp->send_fct) (id, &listp, 1, msgs);
-			else
+				sent++;
+			}
+			else {
+				unknown_kinds |= lp->kind;
 				listp = listp->next;
+			}
+		}
+		if (!sent) { /* Due to NAT64, IPv4 vs. IPv6 should be transparent! */
+			listp = (LocatorList_t) dest;
+			if (((unknown_kinds & LOCATOR_KIND_TCPv4) != 0 &&
+			     (tp = rtps_transports [LOCATOR_KIND_TCPv6]) != NULL) ||
+		            ((unknown_kinds & LOCATOR_KIND_TCPv6) != 0 &&
+		             (tp = rtps_transports [LOCATOR_KIND_TCPv4]) != NULL))
+				(*tp->send_fct) (id, &listp, 1, msgs);
 		}
 	}
 	else {
@@ -584,6 +599,12 @@ void rtps_locator_send_ll (unsigned id, void *dest, int dlist, RMBUF *msgs)
 		if (lp->kind < MAX_TRANSPORTS &&
 		    (tp = rtps_transports [lp->kind]) != NULL)
 			(*tp->send_fct) (id, lp, 0, msgs);
+		else if (((lp->kind == LOCATOR_KIND_TCPv4) != 0 &&
+		          (tp = rtps_transports [LOCATOR_KIND_TCPv6]) != NULL) ||
+		         ((lp->kind & LOCATOR_KIND_TCPv6) != 0 &&
+		          (tp = rtps_transports [LOCATOR_KIND_TCPv4]) != NULL))
+			(*tp->send_fct) (id, lp, 0, msgs);
+			
 	}
 }
 

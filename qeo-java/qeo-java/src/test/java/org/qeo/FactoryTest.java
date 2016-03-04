@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -32,13 +32,6 @@ public class FactoryTest
     {
         super.setUp();
         mFailed = false;
-    }
-
-    @Override
-    public void tearDown()
-        throws Exception
-    {
-        super.tearDown();
     }
 
     /**
@@ -74,7 +67,7 @@ public class FactoryTest
     public void testQuickOpenAfterClose()
         throws Exception
     {
-        tearDown(); // first close regular factory
+        tearDown(false); // first close regular factory
 
         // create factory
         QeoConnectionTestListener l = createFactory(new MyListener());

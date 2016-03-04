@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -14,12 +14,14 @@
 
 package org.qeo.android.qeomanagement;
 
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.qeo.QeoFactory;
 import org.qeo.android.QeoAndroid;
 import org.qeo.android.QeoConnectionListener;
 import org.qeo.android.internal.QeoConnection;
+import org.qeo.android.internal.ServiceDisconnectedException;
 import org.qeo.exception.QeoException;
 
 import android.app.Service;
@@ -60,6 +62,9 @@ public class QeoManagementService
                 }
                 catch (RemoteException e) {
                     LOG.severe("Refreshing policy failed");
+                }
+                catch (ServiceDisconnectedException e) {
+                    LOG.log(Level.SEVERE, "Refreshing policy failed", e);
                 }
                 catch (InterruptedException e) {
                     LOG.fine("Polling thread interrupted");

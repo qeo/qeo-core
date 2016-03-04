@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -22,6 +22,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.cert.CertificateException;
 import java.util.Arrays;
+import java.util.logging.Logger;
 
 import static org.qeo.jni.CertChainValidator.validateCertificateChain;
 
@@ -31,6 +32,7 @@ import static org.qeo.jni.CertChainValidator.validateCertificateChain;
  */
 public class CertChainValidatorTest extends QeoTestCase
 {
+    private static final Logger LOG = Logger.getLogger("CertChainValidatorTest");
     //private byte[] USERTRUST_ROOT;
     //private byte[] PROJECTQ;
     private byte[] GANDI;
@@ -70,6 +72,7 @@ public class CertChainValidatorTest extends QeoTestCase
                 b = Arrays.copyOf(b, oldSize + avail);
                 dis.readFully(b, oldSize, avail);
             } while (true);
+            assertTrue(b.length > 100); //check that there is some data in here.
             return b;
         }
         finally {

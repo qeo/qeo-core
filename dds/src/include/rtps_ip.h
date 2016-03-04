@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -44,6 +44,17 @@ int rtps_ipv6_attach (unsigned max_cx, unsigned max_addr);
 void rtps_ipv6_detach (void);
 
 /* Detach the RTPS over IPv6 transport handler. */
+
+
+int rtps_ipv6_nat64_required (void);
+
+/* Returns 1 if NAT64 is enabled and required for IPv4 connectivity. */
+
+void rtps_ipv6_nat64_addr (uint32_t ipa, unsigned char *dst);
+
+/* Converts an IPv4 address to IPv6 format (in *dst) if NAT64 is required for
+   IPv4 connections. */
+
 
 void rtps_ip_dump (const char *cx, int extra);
 

@@ -285,7 +285,8 @@ else {
 
 
 //task to execute a single unit test
-task singleTest(type: Exec) {
+task singleTest() {
+    dependsOn getConnectedDevices
     afterEvaluate {
         dependsOn "installDebugAndroidTest"
         if (project.hasProperty('android') && (!(project.ext.has('androidLibrary') && project.ext.androidLibrary))) {
@@ -309,7 +310,13 @@ task singleTest(type: Exec) {
         logger.debug "Manifest package: ${testPackage}"
         logger.debug "Manifest runner: ${runner}"
 
-        commandLine adb, "shell", "am", "instrument", "-e", "class", System.properties['test.single'], "-w", "${testPackage}.test/${runner}"
+        project.connectedDevices.each { device ->
+            logger.info("[${device}] Starting test")
+            exec {
+                executable = adb
+                args = ["-s" , device, "shell", "am", "instrument", "-e", "class", System.properties['test.single'], "-w", "${testPackage}.test/${runner}"]
+            }
+        }
     }
 }
 
@@ -321,7 +328,7 @@ task takeBugReportOnFailure() {
         enabled = true
     }
     doLast {
-        if (connectedAndroidTest.success) {
+        if (connectedAndroidTestDebug.success) {
             logger.info("connectedCheck succeeded, no need to take bugreport")
         }
         else {
@@ -341,7 +348,7 @@ task takeBugReportOnFailure() {
 }
 
 afterEvaluate {
-    connectedAndroidTest {
+    connectedAndroidTestDebug {
         ext.success = false
         doLast {
             success = true

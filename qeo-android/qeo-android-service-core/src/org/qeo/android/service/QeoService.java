@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -778,7 +778,7 @@ public class QeoService
                         }
                         else {
                             LOG.fine("Skipping initQeo for open factory as service is destroyed");
-                            mQeoConnectionListenerClosed.onQeoError(new QeoException("Service already stopped"));
+                            mQeoConnectionListenerOpen.onQeoError(new QeoException("Service already stopped"));
                         }
                     }
                     LOG.fine("Creating Native Factory DONE");

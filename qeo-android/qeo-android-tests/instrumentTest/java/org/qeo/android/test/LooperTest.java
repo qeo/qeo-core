@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -57,7 +57,7 @@ public class LooperTest
     }
 
     @Override
-    public void tearDown()
+    public void tearDown() throws Exception
     {
         if (stateReader != null) {
             stateReader.close();
@@ -75,6 +75,7 @@ public class LooperTest
             QeoAndroid.closeQeo(mQeoListener);
         }
         mQeo = null;
+        super.tearDown();
     }
 
     // Thread without a Looper object

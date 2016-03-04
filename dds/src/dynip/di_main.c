@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -374,6 +374,9 @@ void di_add_addr (IP_Intf_t *ifp, unsigned family, unsigned char *ipa)
 #endif
 
 	if (family == AF_INET) {
+		if (sys_block_ipv4)
+			return;
+
 		ipaddr = *((uint32_t *) ipa);
 		ipaddr = htonl (ipaddr);
 		for (ap = ifp->addr; ap; ap = ap->next)
@@ -413,6 +416,9 @@ void di_add_addr (IP_Intf_t *ifp, unsigned family, unsigned char *ipa)
 	}
 #ifdef DDS_IPV6
 	else if (family == AF_INET6) {
+		if (sys_block_ipv6)
+			return;
+
 		for (ap = ifp->addr6; ap; ap = ap->next)
 			if (!memcmp (ap->a_ipv6, ipa, 16))
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -705,7 +705,7 @@ static void rtps_dtls_receive (IP_CX *cxp)
 		switch (error) {
 			case SSL_ERROR_NONE:
 				++dtls->rcvd_msg_cnt;
-				rtps_rx_buffer (cxp, rtps_rx_buf, nread, cxp->dst_addr, cxp->dst_port);
+				rtps_rx_buffer (cxp, cxp, rtps_rx_buf, nread);
 				break;
 
 			case SSL_ERROR_WANT_READ:

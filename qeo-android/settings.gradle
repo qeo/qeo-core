@@ -1,4 +1,4 @@
-include 'qeo-android-core', 'qeo-android', 'qeo-android-tests', 'qeo-android-tests-release', 'qeo-android-service', 'qeo-android-management',  'qeo-android-debugconfig', "qeo-android-uitest", "qeo-android-service-embedded", "qeo-android-service-core", "qeo-android-tests-embedded"
+include 'qeo-android-core', 'qeo-android', 'qeo-android-tests', 'qeo-android-service', 'qeo-android-management',  'qeo-android-debugconfig', "qeo-android-service-embedded", "qeo-android-service-core", "qeo-android-tests-embedded"
 rootProject.name = 'qeo-android-root'
 
 
@@ -20,7 +20,6 @@ if (!System.env.JENKINS_URL) {
         project(':qeo-android').projectDir = new File(root, "qeo-android")
         project(':qeo-android-service').projectDir = new File(root, "qeo-android-service")
         project(':qeo-android-tests').projectDir = new File(root, "qeo-android-tests")
-        project(':qeo-android-tests-release').projectDir = new File(root, "qeo-android-tests-release")
         project(':qeo-android-webview').projectDir = new File(root, "qeo-android-webview")
     }
 

@@ -132,6 +132,11 @@ task installCertFile(dependsOn: getConnectedDevices) {
                     args = ['-s', device, 'shell', 'chown', user + "." + group, prefsFile]
                 }
             }
+
+            project.exec {
+                executable = adb
+                args = ['-s', device, 'shell', 'setenforce', 'permissive']
+            }
         }
     }
 }

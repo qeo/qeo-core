@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -517,12 +517,17 @@ void rtps_update_kinds (Participant_t *p)
 {
 	LocatorNode_t	*np;
 	LocatorRef_t	*rp;
+	char		buffer [32];
 
 	p->p_kinds = 0;
 	foreach_locator (p->p_def_ucast, rp, np)
 		p->p_kinds |= np->locator.kind;
 	foreach_locator (p->p_meta_ucast, rp, np)
 		p->p_kinds |= np->locator.kind;
+	if ((p->p_kinds & LOCATOR_KINDS_TCP) != 0)
+		p->p_kinds |= LOCATOR_KINDS_TCP;
+	log_printf (RTPS_ID, 0, "RTPS: valid locator types for %s = 0x%x!\r\n", 
+			guid_prefix_str (&p->p_guid_prefix, buffer), p->p_kinds);
 }
 
 #ifdef RTPS_SPDP_BCAST
@@ -754,7 +759,8 @@ static int peer_participant_update (Skiplist_t *list, void *node, void *arg)
 
 	p = *pp;
 	p->p_local = 0;
-	rtps_participant_reset_reply_locators (p);
+	if (p->p_domain->security)
+		rtps_participant_reset_reply_locators (p);
 	return (1);
 }
 
@@ -2818,13 +2824,27 @@ static void *muc_reply_locator (Participant_t *p, LocatorKind_t kinds, LocatorKi
 }
 # endif
 
+/* lookup_dest_participant -- Lookup the destination participant for a message. */
+
+static Participant_t *lookup_dest_participant (Domain_t *dp, RMBUF *mp)
+{
+	RME	*mep;
+
+	if ((mp->element.flags & (RME_MCAST | RME_BCAST)) == 0 &&
+	    (mep = mp->first) != NULL &&
+	    (mep->flags & RME_HEADER) != 0 &&
+	    mep->header.id == ST_INFO_DST)
+		return (participant_lookup (dp, (GuidPrefix_t *) mep->data));
+	else
+		return (NULL);
+}
+
 /* writer_best_locator -- Return the best locator for a proxy context. */
 
 static void *writer_best_locator (Domain_t *dp, Proxy_t *pp, RMBUF *mp, int *dlist)
 {
 	RemReader_t	*rrp;
 	Participant_t	*p;
-	RME		*mep;
 	void		*dest;
 # if 0
 	unsigned	i;
@@ -2848,26 +2868,34 @@ static void *writer_best_locator (Domain_t *dp, Proxy_t *pp, RMBUF *mp, int *dli
 			dest = best_locator (rrp->rr_uc_locs, rtps_mux_mode);
 		else if (rrp->rr_mc_locs)
 			dest = best_locator (rrp->rr_mc_locs, rtps_mux_mode);
+		else if ((p = lookup_dest_participant (dp, mp)) != NULL)
+			dest = p->p_src_locators;
 		else
 			dest = NULL;
 	}
-	else if ((mp->element.flags & (RME_MCAST | RME_BCAST)) == 0 &&
-		 (mep = mp->first) != NULL &&
-		 (mep->flags & RME_HEADER) != 0 &&
-		 mep->header.id == ST_INFO_DST &&
-		 (p = participant_lookup (dp, (GuidPrefix_t *) mep->data)) != NULL) {
+	else if ((p = lookup_dest_participant (dp, mp)) != NULL) {
 
 		lrloc_print1 ("RTPS: writer_best_locator: [stateless] to %s -> ",
 					guid_prefix_str (&p->p_guid_prefix, buf));
-		if (p->p_uc_dreply) {
-			*dlist = 0;
-			dest = &p->p_uc_dreply->locator;
-			lrloc_print ("using dreply: ");
+#ifdef DDS_NATIVE_SECURITY
+		if (dp->security) {
+			if (p->p_uc_dreply) {
+				*dlist = 0;
+				dest = &p->p_uc_dreply->locator;
+				lrloc_print ("using dreply: ");
+			}
+			else {
+				*dlist = 1;
+				dest = p->p_uc_locs;
+			}
 		}
 		else {
+#endif
 			*dlist = 1;
-			dest = p->p_uc_locs;
+			dest = best_locator (p->p_meta_ucast, rtps_mux_mode);
+#ifdef DDS_NATIVE_SECURITY
 		}
+#endif
 #ifdef RTPS_LOG_REPL_LOC
 		if (dest && !*dlist)
 			lrloc_print1 ("%s", locator_str (/*(const Locator_t *)*/ dest));
@@ -2896,14 +2924,15 @@ static void *writer_best_locator (Domain_t *dp, Proxy_t *pp, RMBUF *mp, int *dli
 
 /* reader_best_locator -- Return the best locator for a proxy context. */
 
-static void *reader_best_locator (Proxy_t *pp, int mcast, int *dlist)
+static void *reader_best_locator (Domain_t *dp, Proxy_t *pp, RMBUF *mp, int *dlist)
 {
 	RemWriter_t	*rwp;
+	Participant_t	*p;
 	void		*dest;
 
 	rwp = proxy2rw (pp);
 	*dlist = 1;
-	if (mcast) {
+	if ((mp->element.flags & RME_MCAST) != 0) {
 		if (rwp->rw_mc_locs)
 			dest = best_locator (rwp->rw_mc_locs, rtps_mux_mode);
 		else if (rwp->rw_uc_locs)
@@ -2915,9 +2944,10 @@ static void *reader_best_locator (Proxy_t *pp, int mcast, int *dlist)
 		dest = best_locator (rwp->rw_uc_locs, rtps_mux_mode);
 	else if (rwp->rw_mc_locs)
 		dest = best_locator (rwp->rw_mc_locs, rtps_mux_mode);
+	else if ((p = lookup_dest_participant (dp, mp)) != NULL)
+		dest = p->p_src_locators;
 	else
 		dest = NULL;
-
 	return (dest);
 }
 
@@ -3195,7 +3225,6 @@ static void *reader_best_locator (Proxy_t *pp, int mcast, int *dlist)
 		dest = fitting_locator (rwp->rw_mc_locs, rtps_mux_mode, dlist);
 	else
 		dest = NULL;
-
 	return (dest);
 }
 
@@ -3232,7 +3261,6 @@ static unsigned msg_put (unsigned char *dp, RMBUF *mp, unsigned max)
 	return (total);
 }
 
-
 static void rtps_send_messages (unsigned id, void *dest, int dlist, RMBUF *mp)
 {
 	TRANSMITTER     *txp = &rtps_transmitter;
@@ -3252,7 +3280,7 @@ static void rtps_send_messages (unsigned id, void *dest, int dlist, RMBUF *mp)
 		else
 			log_printf (RTPS_ID, 0, "%s", locator_str ((Locator_t *) dest));
 		log_printf (RTPS_ID, 0, "\r\n");
-		rtps_log_message (RTPS_ID, 0, mp, 't', 0);
+		rtps_log_messages (RTPS_ID, 0, mp, 't', 0);
 	}
 #endif
 	if (dest) {
@@ -3265,7 +3293,7 @@ static void rtps_send_messages (unsigned id, void *dest, int dlist, RMBUF *mp)
 
 		/* No destination + messages to transmit.
 		   Cleanup the messages. */
-		log_printf (RTPS_ID, 0, "rtps_send_changes: no route to remote reader!\r\n");
+		/*log_printf (RTPS_ID, 0, "rtps_send_changes: no route to remote reader!\r\n");*/
 		txp->last_error = T_NO_DEST;
 		txp->no_locator++;
 
@@ -3312,7 +3340,6 @@ void rtps_send_changes (void)
 				continue;
 
 			ctrc_printd (RTPS_ID, RTPS_SCH_W_PREP, &w, sizeof (w));
-			dp = w->w_publisher->domain;
 			lock_take (w->w_lock);
 
 			/* Create the RTPS DATA messages to transmit, and
@@ -3342,11 +3369,13 @@ void rtps_send_changes (void)
 					if (pp->uc_dreply &&
 					    (mp->element.flags & RME_MCAST) == 0)
 						dest = &pp->uc_dreply->locator;
-					else
+					else {
+						dp = w->w_publisher->domain;
 						dest = writer_best_locator (dp,
 									    pp,
 									    mp,
 									    &dlist);
+					}
 					if ((w->w_flags & EF_BUILTIN) == 0)
 						mp->element.flags |= RME_USER;
 					rtps_send_messages (w->w_publisher->domain->index,
@@ -3373,10 +3402,10 @@ void rtps_send_changes (void)
 				if (pp->uc_dreply &&
 				    (mp->element.flags & RME_MCAST) == 0)
 					dest = &pp->uc_dreply->locator;
-				else
-					dest = reader_best_locator (pp,
-							mp->element.flags & RME_MCAST,
-							&dlist);
+				else {
+					dp = r->r_subscriber->domain;
+					dest = reader_best_locator (dp, pp, mp, &dlist);
+				}
 			}
 
 			/* Reset proxy context. */

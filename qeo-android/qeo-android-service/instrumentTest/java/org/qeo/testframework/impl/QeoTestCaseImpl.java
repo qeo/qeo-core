@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -137,7 +137,7 @@ public abstract class QeoTestCaseImpl
                 .getAssets().open(name);
         }
         catch (Exception e) {
-            LOG.warning("Can't find asset in test package, trying in own package");
+            LOG.warning("Can't find asset " + name + " in test package, trying in own package");
         }
         return getContext().getResources().getAssets().open(name);
     }

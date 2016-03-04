@@ -1,5 +1,5 @@
 printf "\r\n***** Sys Cert test started *****\r\n\r\n"
-# Copyright (c) 2015 - Qeo LLC
+# Copyright (c) 2016 - Qeo LLC
 #
 # The source code form of this Qeo Open Source Project component is subject
 # to the terms of the Clear BSD license.

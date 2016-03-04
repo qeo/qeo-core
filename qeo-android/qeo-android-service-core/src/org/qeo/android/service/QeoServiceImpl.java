@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 - Qeo LLC
+ * Copyright (c) 2016 - Qeo LLC
  *
  * The source code form of this Qeo Open Source Project component is subject
  * to the terms of the Clear BSD license.
@@ -270,6 +270,9 @@ public class QeoServiceImpl
                     + ", it must be listed in the manifest file");
             }
             BaseFactory qeo = getFactory(id);
+            if (qeo == null) {
+                throw new IllegalStateException("Factory with id " + id + " is not initialized");
+            }
             dataReader =
                 ConnectedReader.addReader(qeo, type, listener, policyListener, EntityType.valueOf(readerType),
                     isqc.asBinder());
