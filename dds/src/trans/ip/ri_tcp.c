@@ -3256,9 +3256,10 @@ static void rtps_tcp_client_start (RTPS_TCP_RSERV *sp, int index, unsigned delay
 		hints.ai_flags = 0;
 		hints.ai_protocol = 0;
 		sprintf (sbuf, "%u", sp->port);
+		ipv6 = 0;
+		ip4res = NULL;
 		s = getaddrinfo (sp->addr.name, sbuf, &hints, &res);
 		if (!s) {
-			ip4res = NULL;
 			for (rp = res; rp; rp = rp->ai_next)
 				if (rp->ai_family == AF_INET)
 					if (nat64) {
@@ -3280,6 +3281,8 @@ static void rtps_tcp_client_start (RTPS_TCP_RSERV *sp, int index, unsigned delay
 						break;
 				}
 		}
+		else
+			rp = NULL;
 		if (!rp && ip4res) {
 			rp = ip4res;
 			sa = (struct sockaddr_in *) rp->ai_addr;
@@ -3320,7 +3323,9 @@ static void rtps_tcp_client_start (RTPS_TCP_RSERV *sp, int index, unsigned delay
 	}
 
 #ifdef DDS_IPV6
-	if (!ipv6 && nat64) {
+	/* Handle NAT64 only for external ipv4 addresses. */
+	if (!ipv6 && nat64 && 
+	    sys_ipv4_scope ((unsigned char *) &addr.s_addr) >= SITE_LOCAL) {
 		rtps_ipv6_nat64_addr (addr.s_addr, addr6.s6_addr);
 		ipv6 = 1;
 	}
@@ -6269,8 +6274,8 @@ static int is_spdp (unsigned  id,
 void rtps_tcp_send (unsigned id, Locator_t *lp, LocatorList_t *next, RMBUF *msgs)
 {
 	IP_CX		*cxp, *ccxp, *tx_cxp;
-	uint32_t	dport;
-	unsigned	i, dflags;
+	uint32_t	dport = 0;
+	unsigned	i, dflags = 0;
 	int		queue, forward = 0;
 #ifdef LOG_TCP_SEND
 	char		buf [128];

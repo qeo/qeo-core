@@ -2003,9 +2003,10 @@ IP_CX *bgcp_connect (RTPS_TCP_RSERV *sp, SR_CX *cp, Ticks_t delay)
 		hints.ai_flags = 0;
 		hints.ai_protocol = 0;
 		sprintf (sbuf, "%u", sp->port);
+		ipv6 = 0;
+		ip4res = NULL;
 		s = getaddrinfo (sp->addr.name, sbuf, &hints, &res);
 		if (!s) {
-			ip4res = NULL;
 			for (rp = res; rp; rp = rp->ai_next)
 				if (rp->ai_family == AF_INET)
 					if (nat64) {
@@ -2027,6 +2028,8 @@ IP_CX *bgcp_connect (RTPS_TCP_RSERV *sp, SR_CX *cp, Ticks_t delay)
 						break;
 				}
 		}
+		else
+			rp = NULL;
 		if (!rp && ip4res) {
 			rp = ip4res;
 			sa = (struct sockaddr_in *) rp->ai_addr;

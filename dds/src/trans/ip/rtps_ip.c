@@ -729,7 +729,7 @@ int rtps_ipv4_init (RMRXF    rxf,
 		if (error)
 			return (error);
 	}
-	rtps_scope (DC_IP_Scope, &ipv4_proto.min_scope, &ipv4_proto.max_scope, LINK_LOCAL);
+	rtps_scope (DC_IP_Scope, &ipv4_proto.min_scope, &ipv4_proto.max_scope, SITE_LOCAL);
 	log_printf (RTPS_ID, 0, "IP: scope = %s", sys_scope_str (ipv4_proto.min_scope));
 	if (ipv4_proto.min_scope < ipv4_proto.max_scope)
 		log_printf (RTPS_ID, 0, "..%s", sys_scope_str (ipv4_proto.max_scope));
@@ -2696,13 +2696,15 @@ void rtps_ipv6_nat64_addr (uint32_t ipa, unsigned char *dst)
 	unsigned char	*sp;
 	unsigned	ofs, i;
 
-	memcpy (dst, nat64_prefix, sizeof (nat64_prefix));
-	ofs = nat64_prefix_len;
-	sp = (unsigned char *) &ipa;
-	for (i = 0; i < 4; i++) {
-		if (ofs == 8)
-			ofs++;
-		dst [ofs++] = *sp++;
+	if (!sys_nat64_ipv6_addr (ipa, dst)) {
+		memcpy (dst, nat64_prefix, sizeof (nat64_prefix));
+		ofs = nat64_prefix_len;
+		sp = (unsigned char *) &ipa;
+		for (i = 0; i < 4; i++) {
+			if (ofs == 8)
+				ofs++;
+			dst [ofs++] = *sp++;
+		}
 	}
 #else
 	ARG_NOT_USED (ipa)

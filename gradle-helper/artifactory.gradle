@@ -1,8 +1,8 @@
 // The stupid artifactory plugin seems to assume that everyone just applies this plugin!!!
 allprojects {
     apply plugin: 'maven'
-    ext.qeoReleaseVersion = "1.1.3-SNAPSHOT"
-    ext.qeoLatestVersion = "1.1.4-SNAPSHOT"
+    ext.qeoReleaseVersion = "1.1.4-SNAPSHOT"
+    ext.qeoLatestVersion = "1.1.5-SNAPSHOT"
     ext.qeoVersion = System.getProperty('qeoVersion') ?: ext.qeoLatestVersion
     ext.qeoGroup = System.getProperty('qeoGroup') ?: "org.qeo"
     ext.qeoGroupDefault = qeoGroup

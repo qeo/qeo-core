@@ -12,6 +12,9 @@ dds_QEO_SECURITY := 1
 # Enable low-power backgrounding service
 dds_SUSPEND := 1
 
+# Enable NAT64 and IPV6
+dds_NAT64 := 1
+
 # The license of this component
 
 # The exported header files for this component
@@ -130,6 +133,10 @@ endif
 
 ifeq ($(dds_NAT64), 1)
 dds_EXTRA_DEFINES           += -DDDS_IPV6 -DDDS_NAT64
+else
+ifeq ($(dds_IPV6), 1)
+dds_EXTRA_DEFINES           += -DDDS_IPV6
+endif
 endif
 ifneq ($(dds_FORCE_MALLOC),)
 dds_EXTRA_DEFINES           += -DFORCE_MALLOC 

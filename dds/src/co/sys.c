@@ -27,10 +27,12 @@
 #include <ws2tcpip.h>
 #else
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <net/if.h>
 #include <sys/utsname.h>
 #if !defined (__ANDROID__) && !defined (__mips__)
@@ -839,6 +841,48 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
 #else
 #error "Unknown IPv6 address retrieval method!"
 #endif /* USE_SIOCGIFCONF_V6 */
+#endif
+}
+
+/* sys_nat64_ipv4_addr -- Dynamically convert a destination IPv4 address to an
+			  IPv6 address using a NAT64 prefix if the system allows
+			  this. */
+
+int sys_nat64_ipv6_addr (uint32_t ipa, unsigned char *dst)
+{
+#if defined (DDS_NAT64) && defined (__APPLE__)
+	int			ipv6 = 0;
+	struct sockaddr_in6	*sa6;
+	struct addrinfo		hints, *res, *rp;
+	struct in_addr		ipv4_addr;
+	/*char			buf [INET6_ADDRSTRLEN];*/
+
+	ipv4_addr.s_addr = ipa;
+
+	memset (&hints, 0, sizeof (struct addrinfo));
+	hints.ai_family = AF_INET6;	/* Allow IPv6 only. */
+	hints.ai_socktype = SOCK_STREAM;
+
+	if ((getaddrinfo (inet_ntoa (ipv4_addr), NULL, &hints, &res)) == 0) {
+		for (rp = res; rp; rp = rp->ai_next) {
+			if (rp->ai_family != AF_INET6)
+				continue;
+
+			ipv6 = 1;
+			sa6 = (struct sockaddr_in6 *) rp->ai_addr;
+			memcpy (dst, sa6->sin6_addr.s6_addr, 16);
+			/*log_printf (LOG_DEF_ID, 0, "Got IPv6 address %s\r\n",
+				    inet_ntop (AF_INET6, dst, buf, sizeof (buf)));*/
+			break;
+		}
+		freeaddrinfo (res);
+	}
+	return (ipv6);
+#else
+	ARG_NOT_USED (ipa)
+	ARG_NOT_USED (dst)
+
+	return (0);
 #endif
 }
 

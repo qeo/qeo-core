@@ -265,6 +265,11 @@ unsigned sys_own_ipv6_addr (unsigned char *addr,
    bytes in the address buffer (16-bytes IPv6 address, 4-byte scope type and
    4-byte scope_id. */
 
+int sys_nat64_ipv6_addr (uint32_t ipa, unsigned char *dst);
+
+/* Dynamically convert a destination IPv4 address to an IPv6 address if the
+   system supports this. */
+
 #ifdef IP_BLOCK_SRC
 extern int sys_block_ipv4;
 extern int sys_block_ipv6;

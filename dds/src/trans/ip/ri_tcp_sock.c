@@ -504,6 +504,7 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 		/* No connect() in progress currently! */
 		hp = p->head;
 		if ((hp->locator.kind & LOCATOR_KINDS_IPv4) != 0) {
+			memset (&sa_v4, 0, sizeof (sa_v4));
 			sa_v4.sin_family = family = AF_INET;
 			sa_v4.sin_port = htons (hp->locator.port);
 			sa = (struct sockaddr *) &sa_v4;
@@ -516,6 +517,7 @@ static int tcp_do_connect (TCP_CON_REQ_ST *p)
 		}
 #ifdef DDS_IPV6
 		else if ((hp->locator.kind & LOCATOR_KINDS_IPv6) != 0) {
+			memset (&sa_v6, 0, sizeof (sa_v6));
 			sa_v6.sin6_family = family = AF_INET6;
 			memcpy (sa_v6.sin6_addr.s6_addr, hp->locator.address, 16);
 			sa_v6.sin6_port = htons (hp->locator.port);
