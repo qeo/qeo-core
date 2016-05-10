@@ -25,8 +25,8 @@
 #include "error.h"
 #include "thread.h"
 #include "dds.h"
-#include "dds/dds_security.h"
 #ifdef DDS_SECURITY
+#include "dds/dds_security.h"
 #include "security.h"
 #ifdef DDS_NATIVE_SECURITY
 #include "sec_auth.h"
@@ -56,6 +56,7 @@
 #include "disc_msg.h"
 #include "disc_sedp.h"
 #include "disc_spdp.h"
+#include "dds/dds_plugin.h"
 
 #ifdef SIMPLE_DISCOVERY
 
@@ -705,8 +706,10 @@ void spdp_end_participant (Participant_t *pp, int ignore)
 	if (ignore) {
 
 		/* Set ignored status. */
+#ifdef DDS_NATIVE_SECURITY
 		locator_list_delete_list (&pp->p_uc_locs);
 		pp->p_uc_dreply = NULL;
+#endif
 		pp->p_flags &= ~(EF_NOT_IGNORED | EF_SHUTDOWN);
 		return;
 	}

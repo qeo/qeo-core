@@ -27,7 +27,9 @@
 #include "prof.h"
 #include "error.h"
 #include "str.h"
+#ifdef DDS_SECURITY
 #include "dds/dds_security.h"
+#endif //DDS_SECURITY
 #include "dds/dds_dcps.h"
 #include "dds_data.h"
 #include "domain.h"

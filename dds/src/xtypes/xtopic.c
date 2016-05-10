@@ -12,7 +12,9 @@
  * See LICENSE file for more details.
  */
 
+#ifdef DDS_SECURITY
 #include "dds/dds_security.h"
+#endif //DDS_SECURITY
 #include "dds/dds_xtypes.h"
 #include "dds/dds_dwriter.h"
 #include "dds/dds_dreader.h"
