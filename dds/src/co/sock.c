@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/socket.h>
 #ifdef __linux__
 #include <sys/epoll.h>
 #define	EPOLL_USED
@@ -45,7 +46,6 @@
 #include "debug.h"
 #include "sock.h"
 #include <sys/types.h>
-#include <sys/socket.h>
 
 static int n_ready;
 static lock_t sock_lock;
