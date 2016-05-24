@@ -352,7 +352,7 @@ int sock_fd_event_socket (SOCKET s, short events, int set)
 
 /* sock_fd_udata_socket -- Update the notified user data on a socket. */
 
-int sock_fd_udata_socket (SOCKET s, void *udata)
+void sock_fd_udata_socket (SOCKET s, void *udata)
 {
 	unsigned	i;
 	SockSocket_t	*sp;
@@ -364,7 +364,6 @@ int sock_fd_udata_socket (SOCKET s, void *udata)
 			break;
 		}
 	lock_release (sock_lock);
-	return (0);
 }
 
 /* sock_fd_schedule -- Schedule all pending event handlers. */
