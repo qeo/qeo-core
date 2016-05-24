@@ -17,7 +17,7 @@
 #include <stdint.h>
 #ifndef _WIN32
 #	include <arpa/inet.h>
-#endif //_WIN32
+#endif /* _WIN32 */
 #include "log.h"
 #include "list.h"
 #include "error.h"
