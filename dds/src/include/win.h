@@ -27,27 +27,29 @@
 #include <windows.h>
 #include <process.h>
 #include <winsock2.h>
-#if !defined (_M_X64) && !defined (_M_IA64)
-#include "vld.h"
-#endif
+#if _MSC_VER //Only available on MS Visual Studio
+#	if !defined (_M_X64) && !defined (_M_IA64)
+#		include "vld.h"
+#	endif
+struct timespec {
+	time_t	tv_sec;
+	long	tv_nsec;
+};
+struct timezone {
+	int	tz_minuteswest; /* Minutes W of Greenwich. */
+	int	tz_dsttime;     /* Type of dst correction. */
+};
+#else
+#	include <time.h>
+#endif //_MSC_VER
 
 void usleep (long usec);
 
 #define CLOCK_REALTIME	0
 #define CLOCK_MONOTONIC	1
 
-struct timespec {
-	time_t	tv_sec;
-	long	tv_nsec;
-};
-
 int clock_gettime (int X, struct timespec *tv);
 
-struct timezone {
-	int	tz_minuteswest; /* Minutes W of Greenwich. */
-	int	tz_dsttime;     /* Type of dst correction. */
-};
- 
 int gettimeofday (struct timeval *tv, struct timezone *tz);
 
 #ifndef POLLRDNORM	/* Pre-Vista? No WSAPoll(). */
@@ -79,7 +81,9 @@ int gettimeofday (struct timeval *tv, struct timezone *tz);
 #define PRId64	"lld"
 #define PRIu64	"llu"
 
-#define strtold	strtod
+#if _MSC_VER //Only available on MS Visual Studio
+#	define strtold	strtod
+#endif //_MSC_VER
 
 #endif
 
