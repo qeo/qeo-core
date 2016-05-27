@@ -451,10 +451,10 @@ void rcl_done (void *p)
 }
 
 #else
-
+#ifndef _WIN32
 void rcl_access (void *p) {}
 void rcl_done (void *p) {}
-
+#endif /* _WIN32 */
 #endif /* PTHREADS_USED */
 
 #ifdef _WIN32

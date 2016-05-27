@@ -24,12 +24,11 @@ void thread_init (void);
 #include "win.h"
 
 #define	lock_t			HANDLE
-
-#define LOCK_STATIC_INIT	CreateMutex (NULL, 0, /*s*/NULL)
+#define LOCK_STATIC_INIT	NULL //CreateMutex (NULL, 0, /*s*/NULL)
 #define	lock_init_r(l,s)	((l = CreateMutex (NULL, 0, /*s*/NULL)) == NULL)
 #define	lock_init_nr(l,s)	((l = CreateMutex (NULL, 0, /*s*/NULL)) == NULL)
 #define	lock_try(l)		(WaitForSingleObject (l, 0) != WAIT_TIMEOUT)
-#define	lock_take(l)		WaitForSingleObject (l,INFINITE)
+#define	lock_take(l)		emulate_pthread_mutex_lock(&l) //WaitForSingleObject (l,INFINITE)
 #define	lock_release(l)		ReleaseMutex (l)
 #define	lock_takef		lock_take
 #define	lock_releasef		lock_release
@@ -46,6 +45,19 @@ void thread_init (void);
 #define	thread_id()		GetCurrentThread()
 #define	thread_wait(t,st)	WaitForSingleObject(t, INFINITE)
 #define thread_return(p)	_endthread()
+
+int emulate_pthread_mutex_lock(volatile lock_t *mx)
+{
+	if (*mx == NULL) /* Static Initializer */
+	{
+		lock_t p = CreateMutex (NULL, 0, /*s*/NULL);
+		if ( InterlockedCompareExchangePointer( (PVOID *)mx, (PVOID)p, NULL) != NULL )
+		{
+			CloseHandle(p);
+		}
+	}
+	return WaitForSingleObject (*mx, INFINITE) == WAIT_FAILED;
+}
 
 /* Condition variables can not be defined in a simple manner on Windows since
    they were only implemented from Windows Vista onwards and are thus not avail-
