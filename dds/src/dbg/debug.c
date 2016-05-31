@@ -1869,10 +1869,6 @@ void debug_command (const char *buf)
 		dbg_printf ("?%s\r\n", cmd);
 }
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL 0
-#endif
-
 static void debug_session_destroy (DebugSession_t *sp)
 {
 	static const char	close_msg [] = "TDDS closing connection!\r\n";
