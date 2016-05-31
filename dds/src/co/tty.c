@@ -19,10 +19,10 @@
 #ifndef _WIN32
 #include <unistd.h>
 #include <termios.h>
+#include <poll.h>
 #endif
 #include <stdarg.h>
 #include <stdint.h>
-#include <poll.h>
 #include "libx.h"
 #include "dds/dds_aux.h"
 #include "tty.h"
