@@ -72,7 +72,6 @@ int gettimeofday (struct timeval *tv, struct timezone *tz);
 #define INLINE
 
 #define snprintf	sprintf_s
-#define vsnprintf(d,dsize,fmt,arg)	vsnprintf_s(d,dsize,dsize-1,fmt,arg)
 #define strncpy(d,s,n)	strcpy_s(d,n,s)
 #define sscanf		sscanf_s
 #define isblank(c)	((c)==' '||(c)=='\t')
@@ -81,9 +80,10 @@ int gettimeofday (struct timeval *tv, struct timezone *tz);
 #define PRId64	"lld"
 #define PRIu64	"llu"
 
-#if _MSC_VER //Only available on MS Visual Studio
+#if _MSC_VER /* Only available on MS Visual Studio */
+#	define vsnprintf(d,dsize,fmt,arg)	vsnprintf_s(d,dsize,dsize-1,fmt,arg)
 #	define strtold	strtod
-#endif //_MSC_VER
+#endif /* _MSC_VER */
 
 #endif
 
