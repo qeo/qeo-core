@@ -16,6 +16,7 @@
 
 #include <stdio.h>
 #include "win.h"
+#include "timer.h"
 #include "Ws2IpDef.h"
 #include "Ws2tcpip.h"
 #include "dds/dds_error.h"
@@ -62,13 +63,13 @@ static void di_event (intptr_t user)
 
 	if (ipv4.fct) {
 		*ipv4.n = sys_own_ipv4_addr (ipv4.ipa, ipv4.max,
-					     ipv4.min_scope, ipv4.max_scope);
+					     ipv4.min_scope, ipv4.max_scope, 0);
 		(*ipv4.fct)();
 	}
 #ifdef DDS_IPV6
 	if (ipv6.fct) {
 		*ipv6.n = sys_own_ipv6_addr (ipv6.ipa, ipv6.max,
-					     ipv6.min_scope, ipv6.max_scope);
+					     ipv6.min_scope, ipv6.max_scope, 0);
 		(*ipv6.fct)();
 	}
 #endif
@@ -124,7 +125,7 @@ int di_sys_detach (unsigned family)
 	else
 		return (DDS_RETCODE_BAD_PARAMETER);
 
-	if (!ipv4_fct
+	if (!ipv4.fct
 #ifdef DDS_IPV6
 	              && !ipv6.fct
 #endif
@@ -146,6 +147,6 @@ void di_sys_final (void)
 
 void di_sys_check (void)
 {
-	di_event ();
+	di_event (0);
 }
 
