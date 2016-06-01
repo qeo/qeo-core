@@ -106,6 +106,7 @@ int clock_gettime (int X, struct timespec *tv)
 	return (0);
 }
 
+#if _MSC_VER /* Only available on MS Visual Studio */
 int gettimeofday (struct timeval *tv, struct timezone *tz)
 {
 	struct timespec ts;
@@ -127,5 +128,6 @@ int gettimeofday (struct timeval *tv, struct timezone *tz)
 	}
 	return (0);
 }
+#endif /* _MSC_VER */
 
 #endif /* _WIN32 */
