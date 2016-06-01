@@ -46,18 +46,7 @@ void thread_init (void);
 #define	thread_wait(t,st)	WaitForSingleObject(t, INFINITE)
 #define thread_return(p)	_endthread()
 
-int emulate_pthread_mutex_lock(volatile lock_t *mx)
-{
-	if (*mx == NULL) /* Static Initializer */
-	{
-		lock_t p = CreateMutex (NULL, 0, /*s*/NULL);
-		if ( InterlockedCompareExchangePointer( (PVOID *)mx, (PVOID)p, NULL) != NULL )
-		{
-			CloseHandle(p);
-		}
-	}
-	return WaitForSingleObject (*mx, INFINITE) == WAIT_FAILED;
-}
+int emulate_pthread_mutex_lock(volatile lock_t *mx);
 
 /* Condition variables can not be defined in a simple manner on Windows since
    they were only implemented from Windows Vista onwards and are thus not avail-
