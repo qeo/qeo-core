@@ -24,28 +24,6 @@
 
 #ifdef _WIN32
 
-void usleep (long usec)
-{
-	LARGE_INTEGER	lFrequency;
-	LARGE_INTEGER	lEndTime;
-	LARGE_INTEGER	lCurTime;
-
-	if (usec >= 1000) {
-		Sleep (usec / 1000);	/* Don't bother with us accuracy. */
-		return;
-	}
-	QueryPerformanceFrequency (&lFrequency);
-	if (lFrequency.QuadPart) {
-		QueryPerformanceCounter (&lEndTime);
-		lEndTime.QuadPart += (LONGLONG) usec * lFrequency.QuadPart / 1000000;
-		do {
-			QueryPerformanceCounter (&lCurTime);
-			Sleep(0);
-		}
-		while (lCurTime.QuadPart < lEndTime.QuadPart);
-	}
-}
-
 static LARGE_INTEGER get_filetime_offset (void)
 {
 	SYSTEMTIME	s;
@@ -107,6 +85,29 @@ int clock_gettime (int X, struct timespec *tv)
 }
 
 #if _MSC_VER /* Only available on MS Visual Studio */
+
+void usleep (long usec)
+{
+	LARGE_INTEGER	lFrequency;
+	LARGE_INTEGER	lEndTime;
+	LARGE_INTEGER	lCurTime;
+
+	if (usec >= 1000) {
+		Sleep (usec / 1000);	/* Don't bother with us accuracy. */
+		return;
+	}
+	QueryPerformanceFrequency (&lFrequency);
+	if (lFrequency.QuadPart) {
+		QueryPerformanceCounter (&lEndTime);
+		lEndTime.QuadPart += (LONGLONG) usec * lFrequency.QuadPart / 1000000;
+		do {
+			QueryPerformanceCounter (&lCurTime);
+			Sleep(0);
+		}
+		while (lCurTime.QuadPart < lEndTime.QuadPart);
+	}
+}
+
 int gettimeofday (struct timeval *tv, struct timezone *tz)
 {
 	struct timespec ts;

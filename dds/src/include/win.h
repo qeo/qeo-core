@@ -39,11 +39,11 @@ struct timezone {
 	int	tz_minuteswest; /* Minutes W of Greenwich. */
 	int	tz_dsttime;     /* Type of dst correction. */
 };
+void usleep (long usec);
 #else
 #	include <time.h>
+#	include <unistd.h>
 #endif //_MSC_VER
-
-void usleep (long usec);
 
 #define CLOCK_REALTIME	0
 #define CLOCK_MONOTONIC	1
