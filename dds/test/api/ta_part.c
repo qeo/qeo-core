@@ -12,7 +12,9 @@
  * See LICENSE file for more details.
  */
 
+#ifndef _WIN32
 #include <arpa/inet.h>
+#endif
 #include "test.h"
 #include "ta_data.h"
 #include "ta_part.h"
