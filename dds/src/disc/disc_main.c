@@ -40,8 +40,8 @@
 #include "guard.h"
 #include "dcps.h"
 #include "dds/dds_debug.h"
-#include "dds/dds_security.h"
 #ifdef DDS_SECURITY
+#include "dds/dds_security.h"
 #include "security.h"
 #ifdef DDS_NATIVE_SECURITY
 #include "sec_auth.h"

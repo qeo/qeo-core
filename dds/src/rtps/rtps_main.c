@@ -759,8 +759,10 @@ static int peer_participant_update (Skiplist_t *list, void *node, void *arg)
 
 	p = *pp;
 	p->p_local = 0;
+#ifdef DDS_SECURITY
 	if (p->p_domain->security)
 		rtps_participant_reset_reply_locators (p);
+#endif
 	return (1);
 }
 
@@ -4260,7 +4262,9 @@ static void reply_locators_update (LocatorKind_t kinds,
 	}
 	else {
 		lrloc_print1 ("\r\n  ==> updating reply locators list of {%u} -> ", pp->p_handle);
+#ifdef DDS_SECURITY
 		pp->p_uc_dreply = NULL;
+#endif
 	}
 	locator_list_delete_list (list);
 	for (n = 0, lp1 = locs;
@@ -4606,7 +4610,15 @@ static void add_participant_relay_locators (Participant_t *p)
 
 	for (i = 0, rp = dp->relays; i < dp->nr_relays; i++, rp++) {
 		pp = *rp;
-		locators_add (&p->p_uc_locs, pp->p_meta_ucast, dp->participant.p_kinds);
+		locators_add (
+#ifdef DDS_SECURITY
+		              &p->p_uc_locs, 
+#else
+		              NULL,
+#endif
+		              pp->p_meta_ucast, 
+		              dp->participant.p_kinds
+		             );
 	}
 }
 
@@ -4614,24 +4626,38 @@ static void participant_locators_update (Participant_t *p)
 {
 	unsigned	kinds;
 
+#ifdef DDS_SECURITY
 	if (p->p_uc_locs)
 		locator_list_delete_list (&p->p_uc_locs);
+#endif
 	kinds = p->p_domain->participant.p_kinds & p->p_kinds;
 	if (p->p_local)
 		kinds &= LOCATOR_KINDS_LOCAL;
 	if (p->p_meta_ucast)
-		locators_add (&p->p_uc_locs, p->p_meta_ucast, kinds);
+		locators_add (
+#ifdef DDS_SECURITY
+		              &p->p_uc_locs, 
+#else
+		              NULL,
+#endif
+		              p->p_meta_ucast, 
+		              kinds
+		             );
 	if (p->p_domain->nr_relays && !p->p_local)
 		add_participant_relay_locators (p);
+#ifdef DDS_SECURITY
 	p->p_ir_locs = 0;
 	p->p_uc_dreply = NULL;
+#endif
 }
 
 void rtps_participant_init_reply_locators (Participant_t *p)
 {
 	lrloc_print1 ("RTPS: init reply locators for Participant {%u} -> ", p->p_handle);
+#ifdef DDS_SECURITY
 	p->p_uc_locs = NULL;
 	p->p_ir_locs = 0;
+#endif
 	participant_locators_update (p);
 #ifdef RTPS_LOG_REPL_LOC
 	if (p->p_uc_locs)
@@ -4647,14 +4673,21 @@ void participant_update_reply_locators (Participant_t *p, RECEIVER *rxp)
 	lrloc_print1 ("RTPS: update reply locators for Participant {%u} -> ", p->p_handle);
 	if (rxp->n_uc_replies) {
 		lrloc_print ("[InfoReply] ");
+#ifdef DDS_SECURITY
 		p->p_ir_locs = 1;
+#endif
 		reply_locators_update (p->p_kinds & p->p_domain->participant.p_kinds,
 				       NULL,
 				       p,
+#ifdef DDS_SECURITY
 				       &p->p_uc_locs,
+#else
+		             NULL,
+#endif
 				       rxp->n_uc_replies,
 				       (Locator_t *) rxp->reply_locs);
 	}
+#ifdef DDS_SECURITY
 	else if (p->p_ir_locs) {
 		lrloc_print ("[Reset]");
 		participant_locators_update (p);
@@ -4671,11 +4704,21 @@ void participant_update_reply_locators (Participant_t *p, RECEIVER *rxp)
 		lrloc_print ("\r\n");
 		return;
 	}
+#endif //DDS_SECURITY
 #ifdef RTPS_LOG_REPL_LOC
 	if (p->p_uc_dreply && p->p_uc_dreply->locator.kind > rxp->src_locator.kind)
 		lrloc_print (" - improved reply locator found! ");
 #endif
-	rtps_direct_reply_set (&p->p_uc_dreply, p->p_uc_locs, &rxp->src_locator);
+	rtps_direct_reply_set(
+#ifdef DDS_SECURITY
+	                      &p->p_uc_dreply, 
+	                      p->p_uc_locs, 
+#else
+	                      NULL,
+	                      NULL,
+#endif
+	                      &rxp->src_locator
+	                     );
 
 #ifdef RTPS_LOG_REPL_LOC
 	if (p->p_uc_dreply)
@@ -4704,7 +4747,15 @@ static int participant_add_relay (Skiplist_t *list, void *node, void *arg)
 		return (1);
 
 	lrloc_print1 ("RTPS: add relay locators for Participant {%u} -> ", p->p_handle);
-	locators_add (&p->p_uc_locs, rp->p_meta_ucast, p->p_domain->participant.p_kinds);
+	locators_add (
+#ifdef DDS_SECURITY
+	              &p->p_uc_locs, 
+#else
+	              NULL,
+#endif
+	              rp->p_meta_ucast, 
+	              p->p_domain->participant.p_kinds
+	             );
 #ifdef RTPS_LOG_REPL_LOC
 	if (p->p_uc_locs)
 		locator_list_log (RTPS_ID, 0, p->p_uc_locs);
@@ -4712,7 +4763,9 @@ static int participant_add_relay (Skiplist_t *list, void *node, void *arg)
 		lrloc_print ("<none>");
 #endif
 	lrloc_print ("\r\n");
+#ifdef DDS_SECURITY
 	p->p_uc_dreply = NULL;
+#endif
 	return (1);
 }
 
