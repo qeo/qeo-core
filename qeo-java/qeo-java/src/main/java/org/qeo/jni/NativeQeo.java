@@ -142,8 +142,8 @@ public final class NativeQeo implements QeoJavaCallbackHandler
             if (osName.contains("Linux") || osName.contains("MacOSX")) {
                 final String javaRuntime = System.getProperty("java.runtime.name");
 
-                if ((javaRuntime == null) || !javaRuntime.toLowerCase(Locale.getDefault()).contains("android "
-                    + "runtime")) {
+                if ((javaRuntime == null) || !javaRuntime.toLowerCase(Locale.getDefault()).contains("android " +
+                    "runtime")) {
                     System.out.println("loading " + fname.toString());
                     /* for non-Android try locating resource in jar */
                     nativeLib = NativeQeo.class.getResource(fname.toString());
@@ -213,16 +213,12 @@ public final class NativeQeo implements QeoJavaCallbackHandler
      */
     public static void closeNativeQeo(QeoJava qeoJava)
     {
-        NativeQeo nativeQeo;
-
         int id = qeoJava.getDomainId();
-        synchronized (NATIVE_FACTORIES) {
-            if (NATIVE_FACTORIES.containsKey(id)) {
-                LOG.fine("Closing NativeQeo with id: " + id);
-                nativeQeo = NATIVE_FACTORIES.get(id);
-                nativeQeo.close(qeoJava);
-                LOG.fine("NativeQeo with id: " + id + " closed");
-            }
+        NativeQeo nativeQeo = NATIVE_FACTORIES.get(id);
+        if (nativeQeo != null) {
+            LOG.fine("Closing NativeQeo with id: " + id);
+            nativeQeo.close(qeoJava);
+            LOG.fine("NativeQeo with id: " + id + " closed");
         }
     }
 
@@ -236,19 +232,27 @@ public final class NativeQeo implements QeoJavaCallbackHandler
     private static void dispatchWakeUp(String typeName)
     {
         LOG.fine("dispatchWakeUp");
+        List<NativeQeo> nativeFactories = new ArrayList<NativeQeo>();
         synchronized (NATIVE_FACTORIES) {
             for (final NativeQeo nativeQeo : NATIVE_FACTORIES.values()) {
                 if (QeoJava.OPEN_ID != nativeQeo.mId) {
-                    for (final QeoConnectionListener listener : nativeQeo.mListener) {
-                        listener.onWakeUp(typeName);
-                    }
+                    nativeFactories.add(nativeQeo);
                 }
             }
         }
+        for (NativeQeo nativeQeo : nativeFactories) {
+            for (final QeoConnectionListener listener : nativeQeo.mListener) {
+                listener.onWakeUp(typeName);
+            }
+        }
+        List<BgnsCallbacks> bgnsCallbacks = new ArrayList<BgnsCallbacks>();
         synchronized (BGNS_CALLBACKS) {
             for (BgnsCallbacks cb : BGNS_CALLBACKS) {
-                cb.dispatchWakeUp(typeName);
+                bgnsCallbacks.add(cb);
             }
+        }
+        for (BgnsCallbacks cb : bgnsCallbacks) {
+            cb.dispatchWakeUp(typeName);
         }
     }
 
@@ -256,19 +260,28 @@ public final class NativeQeo implements QeoJavaCallbackHandler
     private static void onBgnsConnected(int fd, boolean state)
     {
         LOG.fine("onBgnsConnected: " + state);
+        List<NativeQeo> nativeFactories = new ArrayList<NativeQeo>();
         synchronized (NATIVE_FACTORIES) {
             for (final NativeQeo nativeQeo : NATIVE_FACTORIES.values()) {
                 if (QeoJava.OPEN_ID != nativeQeo.mId) {
-                    for (final QeoConnectionListener listener : nativeQeo.mListener) {
-                        listener.onBgnsConnectionChange(state);
-                    }
+                    nativeFactories.add(nativeQeo);
                 }
             }
         }
+        for (NativeQeo nativeQeo : nativeFactories) {
+            for (final QeoConnectionListener listener : nativeQeo.mListener) {
+                listener.onBgnsConnectionChange(state);
+            }
+        }
+
+        List<BgnsCallbacks> bgnsCallbacks = new ArrayList<BgnsCallbacks>();
         synchronized (BGNS_CALLBACKS) {
             for (BgnsCallbacks cb : BGNS_CALLBACKS) {
-                cb.onBgnsConnected(fd, state);
+                bgnsCallbacks.add(cb);
             }
+        }
+        for (BgnsCallbacks cb : bgnsCallbacks) {
+            cb.onBgnsConnected(fd, state);
         }
     }
 
