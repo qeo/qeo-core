@@ -364,7 +364,10 @@ static int rtps_tcp_suspended;
 
 void rtps_ip_reset (void)
 {
-	rtps_udp_suspended = rtps_tcp_suspended = 0;
+	rtps_udp_suspended = 0;
+#ifdef DDS_TCP
+	rtps_tcp_suspended = 0;
+#endif
 }
 
 static void rtps_udp_mode_change (Config_t c)
