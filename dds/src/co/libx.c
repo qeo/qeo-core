@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include "libx.h"
+#include "dds/dds_error.h"
 
 /* astrcmp -- Compare two strings for equality but do it case independent. */
 
@@ -62,7 +63,7 @@ int astrncmp (const char *s1, const char *s2, size_t n)
 }
 
 
-void fatal (const char *fmt, ...)
+DDS_EXPORT void fatal (const char *fmt, ...)
 {
 	va_list	arg;
 

@@ -451,10 +451,10 @@ void rcl_done (void *p)
 }
 
 #else
-
+#ifndef _WIN32
 void rcl_access (void *p) {}
 void rcl_done (void *p) {}
-
+#endif /* _WIN32 */
 #endif /* PTHREADS_USED */
 
 #ifdef _WIN32
@@ -468,6 +468,19 @@ void rcl_done (void *p) {}
 #define ev_wait(ev)		WaitForSingleObject (ev, INFINITE)
 #define ev_signal(ev)		SetEvent (ev)
 #define ev_destroy(ev)		CloseHandle (ev)
+
+int emulate_pthread_mutex_lock(volatile lock_t *mx) 
+{ 
+   if (*mx == NULL) /* Static Initializer */ 
+   { 
+      lock_t p = CreateMutex (NULL, 0, /*s*/NULL); 
+      if ( InterlockedCompareExchangePointer( (PVOID *)mx, (PVOID)p, NULL) != NULL ) 
+      { 
+         CloseHandle(p); 
+      } 
+   } 
+   return WaitForSingleObject (*mx, INFINITE) == WAIT_FAILED; 
+}
 
 static lock_t		rclock;
 

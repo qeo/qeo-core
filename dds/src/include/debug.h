@@ -21,6 +21,10 @@
 #include "rtps.h"
 #include "sock.h"
 
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
 /* Some utility functions: */
 
 void dbg_print_uclist (unsigned nchars, const unsigned char *cp, int hex);

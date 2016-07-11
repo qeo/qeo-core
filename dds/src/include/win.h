@@ -27,27 +27,29 @@
 #include <windows.h>
 #include <process.h>
 #include <winsock2.h>
-#if !defined (_M_X64) && !defined (_M_IA64)
-#include "vld.h"
-#endif
-
-void usleep (long usec);
-
-#define CLOCK_REALTIME	0
-#define CLOCK_MONOTONIC	1
-
+#if _MSC_VER //Only available on MS Visual Studio
+#	if !defined (_M_X64) && !defined (_M_IA64)
+#		include "vld.h"
+#	endif
 struct timespec {
 	time_t	tv_sec;
 	long	tv_nsec;
 };
-
-int clock_gettime (int X, struct timespec *tv);
-
 struct timezone {
 	int	tz_minuteswest; /* Minutes W of Greenwich. */
 	int	tz_dsttime;     /* Type of dst correction. */
 };
- 
+void usleep (long usec);
+#else
+#	include <time.h>
+#	include <unistd.h>
+#endif //_MSC_VER
+
+#define CLOCK_REALTIME	0
+#define CLOCK_MONOTONIC	1
+
+int clock_gettime (int X, struct timespec *tv);
+
 int gettimeofday (struct timeval *tv, struct timezone *tz);
 
 #ifndef POLLRDNORM	/* Pre-Vista? No WSAPoll(). */
@@ -70,7 +72,6 @@ int gettimeofday (struct timeval *tv, struct timezone *tz);
 #define INLINE
 
 #define snprintf	sprintf_s
-#define vsnprintf(d,dsize,fmt,arg)	vsnprintf_s(d,dsize,dsize-1,fmt,arg)
 #define strncpy(d,s,n)	strcpy_s(d,n,s)
 #define sscanf		sscanf_s
 #define isblank(c)	((c)==' '||(c)=='\t')
@@ -79,7 +80,10 @@ int gettimeofday (struct timeval *tv, struct timezone *tz);
 #define PRId64	"lld"
 #define PRIu64	"llu"
 
-#define strtold	strtod
+#if _MSC_VER /* Only available on MS Visual Studio */
+#	define vsnprintf(d,dsize,fmt,arg)	vsnprintf_s(d,dsize,dsize-1,fmt,arg)
+#	define strtold	strtod
+#endif /* _MSC_VER */
 
 #endif
 

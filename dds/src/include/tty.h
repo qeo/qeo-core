@@ -17,12 +17,13 @@
 #ifndef __tty_h_
 #define	__tty_h_
 
+#include "dds/dds_error.h"
 #include "sock.h"
 
-extern HANDLE tty_stdin;
+DDS_EXPORT extern HANDLE tty_stdin;
 extern unsigned tty_width, tty_height;
 
-void tty_init (void);
+DDS_EXPORT void tty_init (void);
 
 /* Initialize the terminal.  Sets Raw mode and installs an exit handler to
    restore the mode on exit. */
@@ -146,7 +147,7 @@ void tty_restore_cursor_attr (void);
 /* Restore the cursor position and attributes. */
 
 
-void tty_input (HANDLE fd, short events, void *udata);
+DDS_EXPORT void tty_input (HANDLE fd, short events, void *udata);
 
 /* Utility function to queue characters in an input buffer. */
 
@@ -155,7 +156,7 @@ int tty_getch (void);
 /* Attempts to read a single character from the input buffer.  Blocks until
    a character is available. */
 
-int tty_gets (size_t nchars, char buf [], int number, int echo);
+DDS_EXPORT int tty_gets (size_t nchars, char buf [], int number, int echo);
 
 /* Attempts to read a complete line from the input buffer.  Blocks until an
    end-of-line is entered.  If the number argument is set, only numeric

@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/socket.h>
 #ifdef __linux__
 #include <sys/epoll.h>
 #define	EPOLL_USED
@@ -45,7 +46,6 @@
 #include "debug.h"
 #include "sock.h"
 #include <sys/types.h>
-#include <sys/socket.h>
 
 static int n_ready;
 static lock_t sock_lock;
@@ -352,7 +352,7 @@ int sock_fd_event_socket (SOCKET s, short events, int set)
 
 /* sock_fd_udata_socket -- Update the notified user data on a socket. */
 
-int sock_fd_udata_socket (SOCKET s, void *udata)
+void sock_fd_udata_socket (SOCKET s, void *udata)
 {
 	unsigned	i;
 	SockSocket_t	*sp;
@@ -364,7 +364,6 @@ int sock_fd_udata_socket (SOCKET s, void *udata)
 			break;
 		}
 	lock_release (sock_lock);
-	return (0);
 }
 
 /* sock_fd_schedule -- Schedule all pending event handlers. */

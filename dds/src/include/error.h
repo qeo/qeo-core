@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include "dds/dds_error.h"
 #include "sock.h"
 #include "sys.h"
 
@@ -126,7 +127,7 @@ unsigned log_logged (unsigned id, unsigned level);
 /* Return the logging status of the given id/level. */
 
 
-void dbg_printf (const char *fmt, ...)
+DDS_EXPORT void dbg_printf (const char *fmt, ...)
 	__attribute__((format(printf, 1, 2)));
 
 /* Display a debug shell request or response message. */
@@ -172,7 +173,7 @@ void err_printf (const char *fmt, ...)
 #ifdef _WIN32
 __declspec(noreturn)
 #endif
-void fatal_printf (const char *fmt, ...)
+DDS_EXPORT void fatal_printf (const char *fmt, ...)
 	__attribute__((noreturn, format(printf, 1, 2)));
 
 /* Non-recoverable error message. */

@@ -26,6 +26,7 @@
 #define __dds_debug_h_
 
 #include "dds/dds_error.h"
+#include "dds/dds_aux.h"
 #ifdef XTYPES_USED
 #include "dds/dds_xtypes.h"
 #endif

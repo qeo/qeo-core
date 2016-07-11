@@ -13,7 +13,9 @@
  */
 
 #include <pthread.h>
+#ifndef _WIN32
 #include <arpa/inet.h>
+#endif
 #include "test.h"
 #include "ta_type.h"
 #include "ta_disc.h"
