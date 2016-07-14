@@ -897,7 +897,7 @@ static void qt_durability_service_set (void *src, UniQos_t *qp, unsigned ofs, in
 
 #ifdef DURABILITY_SERVICE
 	qp->ds_history_kind = dsp->history_kind;
-	qp->ds_cleanup_delay = dsp->cleanup_delay;
+	qp->ds_cleanup_delay = dsp->service_cleanup_delay;
 	qp->ds_history_depth = dsp->history_depth;
 	qp->ds_limits.max_samples = dsp->max_samples;
 	qp->ds_limits.max_instances = dsp->max_instances;
@@ -916,7 +916,7 @@ static void qt_durability_service_get (const UniQos_t *qp, unsigned ofs, void *d
 
 #ifdef DURABILITY_SERVICE
 	dsp->history_kind = qp->ds_history_kind;
-	dsp->cleanup_delay = qp->ds_cleanup_delay;
+	dsp->service_cleanup_delay = qp->ds_cleanup_delay;
 	dsp->history_depth = qp->ds_history_depth;
 	dsp->max_samples = qp->ds_limits.max_samples;
 	dsp->max_instances = qp->ds_limits.max_instances;
