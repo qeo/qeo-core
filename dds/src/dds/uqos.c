@@ -948,8 +948,8 @@ static void qt_durability_service_disp (const UniQos_t *qp, unsigned ofs)
 	ARG_NOT_USED (ofs)
 
 #ifdef DURABILITY_SERVICE
-	dbg_printf ("%s,", qos_hist_kind_str [qp->ds_history_kind]);
-	display_duration (qp->ds_cleanup_delay);
+	dbg_printf ("%s,", qos_history_kind_str [qp->ds_history_kind]);
+	display_duration (&qp->ds_cleanup_delay);
 	if (qp->ds_history_kind == DDS_KEEP_LAST_HISTORY_QOS)
 		dbg_printf (",%u", qp->ds_history_depth);
 	dbg_printf (",");
