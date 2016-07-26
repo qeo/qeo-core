@@ -897,7 +897,7 @@ static void qt_durability_service_set (void *src, UniQos_t *qp, unsigned ofs, in
 
 #ifdef DURABILITY_SERVICE
 	qp->ds_history_kind = dsp->history_kind;
-	qp->ds_cleanup_delay = dsp->cleanup_delay;
+	qp->ds_cleanup_delay = dsp->service_cleanup_delay;
 	qp->ds_history_depth = dsp->history_depth;
 	qp->ds_limits.max_samples = dsp->max_samples;
 	qp->ds_limits.max_instances = dsp->max_instances;
@@ -916,7 +916,7 @@ static void qt_durability_service_get (const UniQos_t *qp, unsigned ofs, void *d
 
 #ifdef DURABILITY_SERVICE
 	dsp->history_kind = qp->ds_history_kind;
-	dsp->cleanup_delay = qp->ds_cleanup_delay;
+	dsp->service_cleanup_delay = qp->ds_cleanup_delay;
 	dsp->history_depth = qp->ds_history_depth;
 	dsp->max_samples = qp->ds_limits.max_samples;
 	dsp->max_instances = qp->ds_limits.max_instances;
@@ -948,8 +948,8 @@ static void qt_durability_service_disp (const UniQos_t *qp, unsigned ofs)
 	ARG_NOT_USED (ofs)
 
 #ifdef DURABILITY_SERVICE
-	dbg_printf ("%s,", qos_hist_kind_str [qp->ds_history_kind]);
-	display_duration (qp->ds_cleanup_delay);
+	dbg_printf ("%s,", qos_history_kind_str [qp->ds_history_kind]);
+	display_duration (&qp->ds_cleanup_delay);
 	if (qp->ds_history_kind == DDS_KEEP_LAST_HISTORY_QOS)
 		dbg_printf (",%u", qp->ds_history_depth);
 	dbg_printf (",");
